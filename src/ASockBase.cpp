@@ -130,7 +130,11 @@ bool ASockBase::Send (Context* pClientContext, const char* pData, int nLen)
             if ( errno == EWOULDBLOCK || errno == EAGAIN )
             {
                 //send later
-                cumbuffer_defines::OP_RESULT opRslt =pClientContext->sendBuffer_.Append(nLen-nSendBytes, pDataPosition); 
+                cumbuffer_defines::OP_RESULT opRslt ; 
+                {
+                std::lock_guard<std::mutex> guard(pClientContext->clientSendLock_);
+                opRslt =pClientContext->sendBuffer_.Append(nLen-nSendBytes, pDataPosition); 
+                }
                 if(cumbuffer_defines::OP_RSLT_OK!=opRslt) 
                 {
                     strErr_ = pClientContext->sendBuffer_.GetErrMsg();

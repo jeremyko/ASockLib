@@ -302,6 +302,7 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                 else if (pEpEvents_[i].events & EPOLLOUT) 
                 {
                     //############## send ############################
+                    std::lock_guard<std::mutex> guard(pClientContext->clientSendLock_);
                     while(true) 
                     {
                         size_t nBufferdLen = pClientContext->sendBuffer_.GetCumulatedLen() ;

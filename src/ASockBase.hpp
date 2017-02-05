@@ -14,6 +14,8 @@
 #include <sys/un.h>
 #include <signal.h>
 #include <string>
+#include <mutex> 
+
 
 #include <sys/epoll.h>
 #include "CumBuffer.h"
@@ -51,6 +53,7 @@ class Context
         CumBuffer       recvBuffer_;
         CumBuffer       sendBuffer_; 
         int             socket_{-1};
+        std::mutex      clientSendLock_; 
 };
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -184,6 +184,7 @@ void AClientSocketTCP::ClientThreadRoutine()
         else if (pEpEvents_[0].events & EPOLLOUT) 
         {
             //############## send ############################
+            std::lock_guard<std::mutex> guard( context_.clientSendLock_);
             while(true) 
             {
                 size_t nBufferdLen = context_.sendBuffer_.GetCumulatedLen() ;
