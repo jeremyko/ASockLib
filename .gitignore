@@ -1,0 +1,10 @@
+# Add any directories, files, or patterns you don't want to be tracked by version control
+*.swp
+*.bak
+*.o
+tags
+*.dSYM
+.DS_Store
+backup
+client
+server
