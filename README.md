@@ -16,22 +16,16 @@ a simple, easy to use c++ TCP server, client library using epoll (for linux) and
 typedef struct _ST_MY_CHAT_HEADER_
 {
     char szMsgLen[6];
-
 } ST_MY_HEADER ;
 #define CHAT_HEADER_SIZE sizeof(ST_MY_HEADER)
 
 class EchoServer : public AServerSocketTCP
 {
     public:
-        void    SetSigAction();
-
     private:
         static  EchoServer* pThisInstance_ ;
         size_t  GetOnePacketLength(Context* pClientContext);
-        bool    OnRecvOnePacketData(Context* pClientContext, char* pOnePacket, int nPacketLen ) ;
-        void    OnClientConnected(Context* pClientContext) ; 
-        void    OnClientDisConnected(Context* pClientContext) ; 
-        static void SigInt(int signo);
+        bool    OnRecvOnePacketData(Context* pClientContext, char* pOnePacket, int nPacketLen ) ;        
 };
 
 size_t EchoServer::GetOnePacketLength(Context* pClientContext)
@@ -44,10 +38,8 @@ size_t EchoServer::GetOnePacketLength(Context* pClientContext)
     {
         return asocklib::MORE_TO_COME ; //more to come 
     }
-
     ST_MY_HEADER sHeader ;
     pClientContext->recvBuffer_.PeekData(CHAT_HEADER_SIZE, (char*)&sHeader); 
-
     size_t nSupposedTotalLen = std::atoi(sHeader.szMsgLen) + CHAT_HEADER_SIZE;
     return nSupposedTotalLen ;
 }
@@ -57,9 +49,9 @@ bool    EchoServer::OnRecvOnePacketData(Context* pClientContext, char* pOnePacke
 {
     //---------------------------------------------------
     //user specific : 
-    //- your whole data has arrived.
-    //- 'pOnePacket' has length of 'nPacketLen' that you returned 
-    //  in 'GetOnePacketLength' function. 
+    //your whole data has arrived.
+    //'pOnePacket' has length of 'nPacketLen' that you returned 
+    // in 'GetOnePacketLength' function. 
     //---------------------------------------------------
     char szMsg[asocklib::DEFAULT_PACKET_SIZE];
     memcpy(&szMsg, pOnePacket+CHAT_HEADER_SIZE, nPacketLen-CHAT_HEADER_SIZE);
@@ -77,22 +69,18 @@ bool    EchoServer::OnRecvOnePacketData(Context* pClientContext, char* pOnePacke
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
-    //max client is 100000, 
-    //max message length is approximately 300 bytes...
+    //max client is 100000, max message length is approximately 300 bytes...
     EchoServer echoserver; 
     echoserver.SetConnInfo("127.0.0.1", 9990, 100000, 300);
-
     if(!echoserver.RunServer())
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
         return -1;
     }
-
     while( echoserver.IsServerRunnig() )
     {
         sleep(1);
     }
-
     std::cout << "server exit...\n";
     return 0;
 }
@@ -109,11 +97,10 @@ int main(int argc, char* argv[])
 class EchoClient : public AClientSocketTCP
 {
     public:
-
     private:
         size_t  GetOnePacketLength(Context* pContext); 
         bool    OnRecvOnePacketData(Context* pContext, char* pOnePacket, int nPacketLen); 
-        void    OnDisConnected() ; 
+        void    OnDisConnected() ; //callback
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -127,10 +114,8 @@ size_t EchoClient::GetOnePacketLength(Context* pContext)
     {
         return asocklib::MORE_TO_COME ; //more to come 
     }
-
     ST_MY_HEADER sHeader ;
     pContext->recvBuffer_.PeekData(CHAT_HEADER_SIZE, (char*)&sHeader);  
-
     size_t nSupposedTotalLen = std::atoi(sHeader.szMsgLen) + CHAT_HEADER_SIZE;
     return nSupposedTotalLen ;
 }
@@ -140,26 +125,21 @@ bool EchoClient:: OnRecvOnePacketData(Context* pContext, char* pOnePacket, int n
 {
     //---------------------------------------------------
     //user specific : 
-    //- your whole data has arrived.
-    //- 'pOnePacket' has length of 'nPacketLen' that you returned 
-    //  in 'GetOnePacketLength' function. 
+    //your whole data has arrived.
+    //'pOnePacket' has length of 'nPacketLen' that you returned 
+    // in 'GetOnePacketLength' function. 
     //---------------------------------------------------
     
     char szMsg[asocklib::DEFAULT_PACKET_SIZE]; //TODO cumbuffer size ?
     memcpy(&szMsg, pOnePacket+CHAT_HEADER_SIZE, nPacketLen-CHAT_HEADER_SIZE);
     szMsg[nPacketLen-CHAT_HEADER_SIZE] = '\0';
-    
     std::cout <<   "\n* server response ["<< szMsg <<"]\n";
-
     return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void EchoClient::OnDisConnected() 
-{
-    //---------------------------------------------------
-    //callback 
-    //---------------------------------------------------
+{    
     std::cout << "* server disconnected ! \n";
 }
 
