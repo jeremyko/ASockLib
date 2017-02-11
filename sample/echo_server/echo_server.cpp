@@ -2,7 +2,7 @@
 #include <iostream>
 #include <csignal>
 
-#include "../../src/AServerSocketTCP.hpp"
+#include "AServerSocketTCP.hpp"
 #include "msg_defines.h"
 
 //----- for debug assert !!!! ---------

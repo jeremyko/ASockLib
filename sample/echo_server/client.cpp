@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <stdio.h>
 
-#include "../../src/AClientSocketTCP.hpp"
+#include "AClientSocketTCP.hpp"
 #include "msg_defines.h"
 
 //----- for debug assert !!!! ---------

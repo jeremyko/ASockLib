@@ -4,6 +4,17 @@
 #ifndef __A_SOCKET_BASE_HPP__
 #define __A_SOCKET_BASE_HPP__
 
+#ifdef WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <stdio.h>
+
+#pragma comment(lib, "Ws2_32.lib")
+
+#elif __APPLE__
+
+#elif __linux__
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
@@ -15,9 +26,9 @@
 #include <signal.h>
 #include <string>
 #include <mutex> 
-
-
 #include <sys/epoll.h>
+#endif
+
 #include "CumBuffer.h"
 
 using namespace std;
