@@ -1,5 +1,7 @@
 
-#include "ASockBase.hpp"
+#include "../../include/ASockBase.hpp"
+
+using namespace asocklib ;
 
 ///////////////////////////////////////////////////////////////////////////////
 ASockBase::ASockBase(int nMaxMsgLen)
@@ -64,7 +66,7 @@ bool ASockBase::Recv(Context* pContext)
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< strErr_<<"\n";
         return false; 
     }
-    
+
     int nRecvedLen = recv( pContext->socket_, pContext->recvBuffer_.GetLinearAppendPtr(), nToRecvLen, 0); 
 
     if( nRecvedLen > 0)
@@ -141,9 +143,7 @@ bool ASockBase::Send (Context* pClientContext, const char* pData, int nLen)
                     std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
                     return false;
                 }
-#ifdef WIN32
-                //TODO
-#elif __APPLE__
+#ifdef __APPLE__
                 if(!KqueueCtl(pClientContext->socket_, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
 #elif __linux__
                 if(!EpollCtl (pClientContext->socket_, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
@@ -165,16 +165,13 @@ bool ASockBase::Send (Context* pClientContext, const char* pData, int nLen)
     return true;
 }
 
-#ifdef WIN32
-    //TODO
-
-#elif __APPLE__
+#ifdef __APPLE__
 ///////////////////////////////////////////////////////////////////////////////
 bool ASockBase::KqueueCtl(int nFd , uint32_t events, uint32_t fflags)
 {
     struct  kevent kEvent;
-   	memset(&kEvent, 0, sizeof(struct kevent));
-	EV_SET(&kEvent, nFd, events,fflags , 0, 0, NULL); 
+    memset(&kEvent, 0, sizeof(struct kevent));
+    EV_SET(&kEvent, nFd, events,fflags , 0, 0, NULL); 
 
     int nRslt = kevent(nKqfd_, &kEvent, 1, NULL, 0, NULL);
     if (nRslt == -1)

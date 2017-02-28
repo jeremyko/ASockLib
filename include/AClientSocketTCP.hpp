@@ -3,10 +3,7 @@
 #define __A_CLIENT_SOCKET_TCP_HPP__
 
 #include "ASockBase.hpp"
-#include "CumBuffer.h"
 #include <atomic>
-
-#define ROLE_CLIENT
 
 class AClientSocketTCP : public ASockBase
 {
@@ -26,12 +23,11 @@ class AClientSocketTCP : public ASockBase
         bool            bCumBufferInit_ {false};
         SOCKADDR_IN     connAddr_ ;
         bool            bConnected_ {false};
-        Context         context_;
+        asocklib::Context         context_;
 
     private :
         void            ClientThreadRoutine();
 
-        //socket events
         virtual void    OnDisConnected() =0; 
 };
 

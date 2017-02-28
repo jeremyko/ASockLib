@@ -2,7 +2,7 @@
 #include <iostream>
 #include <csignal>
 
-#include "AServerSocketTCP.hpp"
+#include "../../include/AServerSocketTCP.hpp"
 #include "msg_defines.h"
 
 //----- for debug assert !!!! ---------
@@ -19,10 +19,10 @@ class EchoServer : public AServerSocketTCP
 
     private:
         static  EchoServer* pThisInstance_ ;
-        size_t  GetOnePacketLength(Context* pClientContext);
-        bool    OnRecvOnePacketData(Context* pClientContext, char* pOnePacket, int nPacketLen ) ;
-        void    OnClientConnected(Context* pClientContext) ; 
-        void    OnClientDisConnected(Context* pClientContext) ; 
+        size_t  GetOnePacketLength(asocklib::Context* pClientContext);
+        bool    OnRecvOnePacketData(asocklib::Context* pClientContext, char* pOnePacket, int nPacketLen ) ;
+        void    OnClientConnected(asocklib::Context* pClientContext) ; 
+        void    OnClientDisConnected(asocklib::Context* pClientContext) ; 
         static void SigInt(int signo);
 };
 
@@ -56,7 +56,7 @@ void EchoServer::SigInt(int signo)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-size_t EchoServer::GetOnePacketLength(Context* pClientContext)
+size_t EchoServer::GetOnePacketLength(asocklib::Context* pClientContext)
 {
     //---------------------------------------------------
     //user specific : 
@@ -77,7 +77,7 @@ size_t EchoServer::GetOnePacketLength(Context* pClientContext)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool    EchoServer::OnRecvOnePacketData(Context* pClientContext, char* pOnePacket, int nPacketLen ) 
+bool    EchoServer::OnRecvOnePacketData(asocklib::Context* pClientContext, char* pOnePacket, int nPacketLen ) 
 {
     //---------------------------------------------------
     //user specific : 
@@ -99,13 +99,13 @@ bool    EchoServer::OnRecvOnePacketData(Context* pClientContext, char* pOnePacke
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void EchoServer::OnClientConnected(Context* pClientContext) 
+void EchoServer::OnClientConnected(asocklib::Context* pClientContext) 
 {
     std::cout << "client connected : socket fd ["<< pClientContext->socket_ <<"]\n";
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void EchoServer::OnClientDisConnected(Context* pClientContext) 
+void EchoServer::OnClientDisConnected(asocklib::Context* pClientContext) 
 {
     std::cout << "client disconnected : socket fd ["<< pClientContext->socket_ <<"]\n";
 }

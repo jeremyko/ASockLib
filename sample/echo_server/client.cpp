@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <stdio.h>
 
-#include "AClientSocketTCP.hpp"
+#include "../../include/AClientSocketTCP.hpp"
 #include "msg_defines.h"
 
 //----- for debug assert !!!! ---------
@@ -22,13 +22,13 @@ class EchoClient : public AClientSocketTCP
         //EchoClient();
 
     private:
-        size_t  GetOnePacketLength(Context* pContext); 
-        bool    OnRecvOnePacketData(Context* pContext, char* pOnePacket, int nPacketLen); 
+        size_t  GetOnePacketLength(asocklib::Context* pContext); 
+        bool    OnRecvOnePacketData(asocklib::Context* pContext, char* pOnePacket, int nPacketLen); 
         void    OnDisConnected() ; 
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-size_t EchoClient::GetOnePacketLength(Context* pContext)
+size_t EchoClient::GetOnePacketLength(asocklib::Context* pContext)
 {
     //---------------------------------------------------
     //user specific : 
@@ -49,7 +49,7 @@ size_t EchoClient::GetOnePacketLength(Context* pContext)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool EchoClient:: OnRecvOnePacketData(Context* pContext, char* pOnePacket, int nPacketLen) 
+bool EchoClient:: OnRecvOnePacketData(asocklib::Context* pContext, char* pOnePacket, int nPacketLen) 
 {
     //---------------------------------------------------
     //user specific : 
@@ -58,7 +58,7 @@ bool EchoClient:: OnRecvOnePacketData(Context* pContext, char* pOnePacket, int n
     //  in 'GetOnePacketLength' function. 
     //---------------------------------------------------
     
-    char szMsg[asocklib::DEFAULT_PACKET_SIZE]; //TODO cumbuffer size ?
+    char szMsg[asocklib::DEFAULT_PACKET_SIZE]; 
     memcpy(&szMsg, pOnePacket+CHAT_HEADER_SIZE, nPacketLen-CHAT_HEADER_SIZE);
     szMsg[nPacketLen-CHAT_HEADER_SIZE] = '\0';
     

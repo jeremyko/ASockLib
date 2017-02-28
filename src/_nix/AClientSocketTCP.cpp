@@ -1,7 +1,9 @@
 
 #include <thread>
 
-#include "AClientSocketTCP.hpp"
+#include "../../include/AClientSocketTCP.hpp"
+
+using namespace asocklib ;
 
 ///////////////////////////////////////////////////////////////////////////////
 AClientSocketTCP::AClientSocketTCP() 
@@ -12,18 +14,15 @@ AClientSocketTCP::AClientSocketTCP()
 ///////////////////////////////////////////////////////////////////////////////
 AClientSocketTCP::~AClientSocketTCP()
 {
-#ifdef WIN32
-
-#elif __APPLE__
+#ifdef __APPLE__
     if(pKqEvents_)
     {
         delete pKqEvents_;
     }
-
 #elif __linux__
     if(pEpEvents_)
     {
-        delete [] pEpEvents_;
+        delete pEpEvents_;
     }
 #endif
 
@@ -146,10 +145,7 @@ bool AClientSocketTCP::Connect(const char* connIP, int nPort, int nConnectTimeou
 
     if(!bClientThreadRunning_ )
     {
-#ifdef WIN32
-        //TODO
-#elif __APPLE__
-        //TODO
+#ifdef __APPLE__
         pKqEvents_ = new struct kevent;
         memset(pKqEvents_, 0x00, sizeof(struct kevent) );
         nKqfd_ = kqueue();
@@ -160,8 +156,8 @@ bool AClientSocketTCP::Connect(const char* connIP, int nPort, int nConnectTimeou
             return false;
         }
 #elif __linux__
-        pEpEvents_ = new struct epoll_event[1];
-        memset(pEpEvents_, 0x00, sizeof(struct epoll_event) * 1);
+        pEpEvents_ = new struct epoll_event;
+        memset(pEpEvents_, 0x00, sizeof(struct epoll_event) );
         nEpfd_ = epoll_create1(0);
         if ( nEpfd_== -1)
         {
@@ -182,18 +178,15 @@ bool AClientSocketTCP::Connect(const char* connIP, int nPort, int nConnectTimeou
 void AClientSocketTCP::ClientThreadRoutine()
 {
     bClientThreadRunning_ = true;
-#ifdef WIN32
-    //TODO
-#elif __APPLE__
+
+#ifdef __APPLE__
     if(!KqueueCtl(context_.socket_, EVFILT_READ, EV_ADD ))
     {
         return;
     }
-
     struct timespec ts;
     ts.tv_sec  =1;
     ts.tv_nsec =0;
-
 #elif __linux__
     if(!EpollCtl ( context_.socket_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
     {
@@ -205,34 +198,26 @@ void AClientSocketTCP::ClientThreadRoutine()
 
     while(bConnected_)
     {
-#ifdef WIN32
-        //TODO
-#elif __APPLE__
+#ifdef __APPLE__
         int nEventCnt = kevent(nKqfd_, NULL, 0, pKqEvents_, 1, &ts); 
+#elif __linux__
+        int nEventCnt = epoll_wait(nEpfd_, pEpEvents_, 1, 1000 );
+#endif
         if (nEventCnt < 0)
         {
+#ifdef __APPLE__
             strErr_ = "kevent error ["  + std::string(strerror(errno)) + "]";
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
-            bClientThreadRunning_ = false;
-            return;
-        }
 #elif __linux__
-        int n = epoll_wait(nEpfd_, pEpEvents_, 1, 1000 );
-        if (n < 0 )
-        {
             strErr_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
+#endif
             std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
             bClientThreadRunning_ = false;
             return;
         }
-#endif
-
-#ifdef WIN32
-        //TODO
-#elif __APPLE__
+#ifdef __APPLE__
         if (pKqEvents_->flags & EV_EOF)
 #elif __linux__
-        if (pEpEvents_[0].events & EPOLLRDHUP || pEpEvents_[0].events & EPOLLERR) 
+        if (pEpEvents_->events & EPOLLRDHUP || pEpEvents_->events & EPOLLERR) 
 #endif
         {
             //############## close ############################
@@ -241,13 +226,10 @@ void AClientSocketTCP::ClientThreadRoutine()
             OnDisConnected();
             break;
         }
-
-#ifdef WIN32
-        //TODO
-#elif __APPLE__
+#ifdef __APPLE__
         else if (EVFILT_READ == pKqEvents_->filter )
 #elif __linux__
-        else if (pEpEvents_[0].events & EPOLLIN) 
+        else if (pEpEvents_->events & EPOLLIN) 
 #endif
         {
             //############## recv ############################
@@ -259,12 +241,10 @@ void AClientSocketTCP::ClientThreadRoutine()
                 break;
             }
         }
-#ifdef WIN32
-        //TODO
-#elif __APPLE__
+#ifdef __APPLE__
         else if ( EVFILT_WRITE == pKqEvents_->filter )
 #elif __linux__
-        else if (pEpEvents_[0].events & EPOLLOUT) 
+        else if (pEpEvents_->events & EPOLLOUT) 
 #endif
         {
             //############## send ############################
@@ -295,26 +275,18 @@ void AClientSocketTCP::ClientThreadRoutine()
                         if(context_.sendBuffer_.GetCumulatedLen()==0)
                         {
                             //sent all data
-#ifdef WIN32
-                            //TODO
-#elif __APPLE__
+#ifdef __APPLE__
                             if(!KqueueCtl(context_.socket_, EVFILT_WRITE, EV_DELETE ) ||
                                !KqueueCtl(context_.socket_, EVFILT_READ, EV_ADD ) )
-                            {
-                                close( context_.socket_);
-                                OnDisConnected();
-                                bClientThreadRunning_ = false;
-                                return;
-                            }
 #elif __linux__
                             if(!EpollCtl(context_.socket_, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ))
+#endif
                             {
                                 close( context_.socket_);
                                 OnDisConnected();
                                 bClientThreadRunning_ = false;
                                 return;
                             }
-#endif
                             break;
                         }
                     }

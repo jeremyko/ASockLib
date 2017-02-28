@@ -111,3 +111,10 @@ int main(int argc, char* argv[])
 }
 
 ```
+
+####compile####
+    cd project_folder
+    mkdir build
+    cd build/
+    cmake -DCMAKE_BUILD_TYPE=RELEASE ../
+    make
