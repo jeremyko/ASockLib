@@ -2,7 +2,7 @@
 
 ### What ###
 
-a simple, easy to use c++ TCP server, client library using epoll (for linux) and [CumBuffer](https://github.com/jeremyko/CumBuffer).
+a simple, easy to use c++ TCP server, client library using epoll, kqueue and [CumBuffer](https://github.com/jeremyko/CumBuffer).
 
 
 ### Usage ###
