@@ -220,7 +220,7 @@ void AClientSocketTCP::ClientThreadRoutine()
         int n = epoll_wait(nEpfd_, pEpEvents_, 1, 1000 );
         if (n < 0 )
         {
-            strErr_ = "epoll wait error [" + string(strerror(errno)) + "]";
+            strErr_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
             std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
             bClientThreadRunning_ = false;
             return;

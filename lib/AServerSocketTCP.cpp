@@ -266,7 +266,7 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
         int nEventCnt = epoll_wait(nEpfd_, pEpEvents_, nMaxClientNum_, 1000 );
         if (nEventCnt < 0)
         {
-            strErr_ = "epoll wait error [" + string(strerror(errno)) + "]";
+            strErr_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
             std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
             bServerRunning_ = false;
             return;
@@ -383,7 +383,7 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                 itFound = clientMap_.find(pEpEvents_[i].data.fd);
                 if (itFound == clientMap_.end())
                 {
-                    strErr_ = "clientMap_ error [" + to_string(pEpEvents_[i].data.fd)+ " not found]";
+                    strErr_ = "clientMap_ error [" + std::to_string(pEpEvents_[i].data.fd)+ " not found]";
                     std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
                     bServerRunning_ = false;
                     return;
