@@ -22,7 +22,7 @@ class AClientSocketTCP : public ASockBase
         bool            IsConnected() { return bConnected_;}
 
     private :
-        atomic<bool>    bClientThreadRunning_ {false};
+        std::atomic<bool>    bClientThreadRunning_ {false};
         bool            bCumBufferInit_ {false};
         SOCKADDR_IN     connAddr_ ;
         bool            bConnected_ {false};

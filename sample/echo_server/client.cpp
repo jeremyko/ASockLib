@@ -63,7 +63,7 @@ bool EchoClient:: OnRecvOnePacketData(Context* pContext, char* pOnePacket, int n
     szMsg[nPacketLen-CHAT_HEADER_SIZE] = '\0';
     
     std::cout <<   "\n* server response ["<< szMsg <<"]\n";
-    assert( string(szMsg) == gStrSentMsg);
+    assert( std::string(szMsg) == gStrSentMsg);
 
     return true;
 }
@@ -92,8 +92,8 @@ int main(int argc, char* argv[])
 
     while( client.IsConnected() )
     {
-        cin.clear();
-        getline(cin, gStrMyMsg); //block....
+        std::cin.clear();
+        getline(std::cin, gStrMyMsg); //block....
         gStrSentMsg = gStrMyMsg ;
 
         int nMsgLen = gStrMyMsg.length();

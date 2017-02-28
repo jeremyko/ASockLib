@@ -30,13 +30,13 @@ class AServerSocketTCP : public ASockBase
     private :
         int             nCores_         {0};
         SOCKADDR_IN     serverAddr_  ;
-        string          strServerIp_    {""};
+        std::string     strServerIp_    {""};
         int             listen_socket_  {-1};
         int             nMaxClientNum_  {-1};
         int             nServerPort_    {-1};
-        atomic<int>     nClientCnt_     {0}; 
-        atomic<bool>    bServerRun_     {false};
-        atomic<bool>    bServerRunning_ {false};
+        std::atomic<int>     nClientCnt_     {0}; 
+        std::atomic<bool>    bServerRun_     {false};
+        std::atomic<bool>    bServerRunning_ {false};
 
         CLIENT_UNORDERMAP_T     clientMap_; 
         std::queue<Context*>    clientInfoCacheQueue_;

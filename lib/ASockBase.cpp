@@ -102,7 +102,7 @@ bool ASockBase::Recv(Context* pContext)
     }   
     else if( nRecvedLen == 0 )
     {
-        strErr_ = "recv 0, client disconnected , fd:" + to_string(pContext->socket_);
+        strErr_ = "recv 0, client disconnected , fd:" + std::to_string(pContext->socket_);
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< strErr_<<"\n";
         return false ;
     }
@@ -141,12 +141,21 @@ bool ASockBase::Send (Context* pClientContext, const char* pData, int nLen)
                     std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
                     return false;
                 }
-                EpollCtlModify(pClientContext, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP );
+#ifdef WIN32
+                //TODO
+#elif __APPLE__
+                if(!KqueueCtl(pClientContext->socket_, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
+#elif __linux__
+                if(!EpollCtl (pClientContext->socket_, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
+#endif
+                {
+                    return false;
+                }
                 return true;
             }
             else if ( errno != EINTR )
             {
-                strErr_ = "send error [" + string(strerror(errno)) + "]";
+                strErr_ = "send error [" + std::string(strerror(errno)) + "]";
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< GetLastErrMsg() <<"\n"; 
                 return false;
             }
@@ -156,13 +165,42 @@ bool ASockBase::Send (Context* pClientContext, const char* pData, int nLen)
     return true;
 }
 
+#ifdef WIN32
+    //TODO
+
+#elif __APPLE__
 ///////////////////////////////////////////////////////////////////////////////
-void ASockBase::EpollCtlModify(Context* pClientContext , uint32_t events)
+bool ASockBase::KqueueCtl(int nFd , uint32_t events, uint32_t fflags)
+{
+    struct  kevent kEvent;
+   	memset(&kEvent, 0, sizeof(struct kevent));
+	EV_SET(&kEvent, nFd, events,fflags , 0, 0, NULL); 
+
+    int nRslt = kevent(nKqfd_, &kEvent, 1, NULL, 0, NULL);
+    if (nRslt == -1)
+    {
+        strErr_ = "kevent error [" + std::string(strerror(errno)) + "]";
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< GetLastErrMsg() <<"\n"; 
+        return false; 
+    }
+    return true;
+    //man:Re-adding an existing event will modify the parameters of the
+    //    original event, and not result in a duplicate entry.
+}
+#elif __linux__
+///////////////////////////////////////////////////////////////////////////////
+bool ASockBase::EpollCtl(int nFd , uint32_t events, int op)
 {
     struct  epoll_event evClient{};
-    evClient.data.fd = pClientContext->socket_;
+    evClient.data.fd = nFd;
     evClient.events = events ;
-    epoll_ctl(nEpfd_, EPOLL_CTL_MOD, pClientContext->socket_, &evClient);
+    if(epoll_ctl(nEpfd_, op, nFd, &evClient)<0)
+    {
+        strErr_ = "kevent error [" + std::string(strerror(errno)) + "]";
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< GetLastErrMsg() <<"\n"; 
+        return false; 
+    }
+    return true;
 }
-
+#endif
 

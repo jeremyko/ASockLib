@@ -19,11 +19,22 @@ AServerSocketTCP::AServerSocketTCP (const char* connIP,
 ///////////////////////////////////////////////////////////////////////////////
 AServerSocketTCP::~AServerSocketTCP()
 {
+#ifdef WIN32
+
+#elif __APPLE__
+    if ( pKqEvents_ )
+    { 
+        delete [] pKqEvents_;    
+        pKqEvents_   = nullptr; 
+    }
+
+#elif __linux__
     if (pEpEvents_)   
     { 
         delete [] pEpEvents_;    
         pEpEvents_   = nullptr; 
     }
+#endif
 
     ClearClientInfoToCache();
    
@@ -53,14 +64,20 @@ bool AServerSocketTCP::SetConnInfo (const char* connIP, int nPort, int nMaxClien
 ///////////////////////////////////////////////////////////////////////////////
 bool AServerSocketTCP::RunServer()
 {
-    nCores_ = sysconf(_SC_NPROCESSORS_ONLN) ; //TODO
 
+#ifdef WIN32
+
+#elif __APPLE__
+
+#elif __linux__
+    nCores_ = sysconf(_SC_NPROCESSORS_ONLN) ; //TODO
     if (pEpEvents_)   
     { 
         strErr_ = "error [server is already running]";
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
+#endif
 
     if(nBufferCapcity_ <0)
     {
@@ -72,7 +89,7 @@ bool AServerSocketTCP::RunServer()
     listen_socket_ = socket(AF_INET,SOCK_STREAM,0) ;
     if( listen_socket_ < 0 )
     {
-        strErr_ = "init error [" + string(strerror(errno)) + "]";
+        strErr_ = "init error [" + std::string(strerror(errno)) + "]";
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }   
@@ -88,7 +105,7 @@ bool AServerSocketTCP::RunServer()
 
     if (setsockopt(listen_socket_,SOL_SOCKET,SO_REUSEADDR,&reuseaddr,sizeof(reuseaddr))==-1) 
     {
-        strErr_ = "setsockopt SO_REUSEADDR error ["  + string(strerror(errno)) + "]";
+        strErr_ = "setsockopt SO_REUSEADDR error ["  + std::string(strerror(errno)) + "]";
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
@@ -101,7 +118,7 @@ bool AServerSocketTCP::RunServer()
     nRtn = bind(listen_socket_,(SOCKADDR*)&serverAddr_,sizeof(serverAddr_)) ;
     if ( nRtn < 0 )
     {
-        strErr_ = "bind error ["  + string(strerror(errno)) + "]";
+        strErr_ = "bind error ["  + std::string(strerror(errno)) + "]";
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false ;
     }
@@ -109,24 +126,53 @@ bool AServerSocketTCP::RunServer()
     nRtn = listen(listen_socket_,SOMAXCONN) ;
     if ( nRtn < 0 )
     {
-        strErr_ = "listrn error [" + string(strerror(errno)) + "]";
+        strErr_ = "listrn error [" + std::string(strerror(errno)) + "]";
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false ;
     }
 
-    nEpfd_ = epoll_create1(0);
-    
+#if defined __APPLE__ || defined __linux__ 
     struct sigaction act;
     act.sa_handler = SIG_IGN;
     sigemptyset( &act.sa_mask );
     act.sa_flags = 0;
     sigaction( SIGPIPE, &act, NULL );
+#endif
 
-    struct  epoll_event ev;
-    memset(&ev, 0x00, sizeof(ev));
-    ev.events = EPOLLIN | EPOLLERR;
-    ev.data.fd = listen_socket_;
-    epoll_ctl(nEpfd_, EPOLL_CTL_ADD, listen_socket_, &ev);
+#ifdef WIN32
+    //TODO
+#elif __APPLE__
+    nKqfd_ = kqueue();
+	if (nKqfd_ == -1)
+    {
+        strErr_ = "kqueue error ["  + std::string(strerror(errno)) + "]";
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        return false;
+    }
+
+    if(!KqueueCtl(listen_socket_, EVFILT_READ, EV_ADD ))
+    {
+        return false;
+    }
+
+    struct timespec ts;
+    ts.tv_sec  =1;
+    ts.tv_nsec =0;
+
+#elif __linux__
+    nEpfd_ = epoll_create1(0);
+	if (nEpfd_ == -1)
+    {
+        strErr_ = "epoll create error ["  + std::string(strerror(errno)) + "]";
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        return false;
+    }
+
+    if(!EpollCtl ( listen_socket_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
+    {
+        return false;
+    }
+#endif
 
     //start server thread
     bServerRun_ = true;
@@ -184,25 +230,58 @@ void AServerSocketTCP::ClearClientInfoToCache()
 ///////////////////////////////////////////////////////////////////////////////
 void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
 {
+
+#ifdef WIN32
+    //TODO XXX
+
+#elif __APPLE__
+    pKqEvents_ = new struct kevent[nMaxClientNum_];
+    memset(pKqEvents_, 0x00, sizeof(struct kevent) * nMaxClientNum_);
+    struct timespec ts;
+    ts.tv_sec  =1;
+    ts.tv_nsec =0;
+#elif __linux__
     pEpEvents_ = new struct epoll_event[nMaxClientNum_];
     memset(pEpEvents_, 0x00, sizeof(struct epoll_event) * nMaxClientNum_);
+#endif
 
     char szTempData[asocklib::DEFAULT_PACKET_SIZE];
 
     while(bServerRun_)
     {
-        int n = epoll_wait(nEpfd_, pEpEvents_, nMaxClientNum_, 1000 );
-        if (n < 0 )
+#ifdef WIN32
+    //TODO XXX
+
+#elif __APPLE__
+        int nEventCnt = kevent(nKqfd_, NULL, 0, pKqEvents_, nMaxClientNum_, &ts); 
+        if (nEventCnt < 0)
+        {
+            strErr_ = "kevent error ["  + std::string(strerror(errno)) + "]";
+            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+            bServerRunning_ = false;
+            return;
+        }
+
+#elif __linux__
+        int nEventCnt = epoll_wait(nEpfd_, pEpEvents_, nMaxClientNum_, 1000 );
+        if (nEventCnt < 0)
         {
             strErr_ = "epoll wait error [" + string(strerror(errno)) + "]";
             std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
             bServerRunning_ = false;
             return;
         }
+#endif
 
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < nEventCnt; i++)
         {
+#ifdef WIN32
+            //TODO XXX
+#elif __APPLE__
+		    if (pKqEvents_[i].ident   == listen_socket_) 
+#elif __linux__
             if (pEpEvents_[i].data.fd == listen_socket_)
+#endif
             {
                 //############## accept ############################
                 while(1)
@@ -217,9 +296,13 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                             //all accept done...
                             break;
                         }
+                        else if (errno == ECONNABORTED)
+                        {
+                            break;
+                        }
                         else
                         {
-                            strErr_ = "accept error [" + string(strerror(errno)) + "]";
+                            strErr_ = "accept error [" + std::string(strerror(errno)) + "]";
                             std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
                             bServerRunning_ = false;
                             return;
@@ -258,7 +341,7 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                     clientMapRslt = clientMap_.insert ( std::pair<int, Context*>(newClientFd, pClientContext) );
                     if (!clientMapRslt.second) 
                     {
-                        strErr_ = "clientMap_ insert error [" + to_string(newClientFd)+ " already exist]";
+                        strErr_ = "clientMap_ insert error [" + std::to_string(newClientFd)+ " already exist]";
                         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
                         bServerRunning_ = false;
                         return;
@@ -266,10 +349,18 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
 
                     OnClientConnected(pClientContext);
 
-                    struct  epoll_event evClient{};
-                    evClient.data.fd = newClientFd;
-                    evClient.events = EPOLLIN | EPOLLRDHUP   ; 
-                    epoll_ctl(nEpfd_, EPOLL_CTL_ADD, newClientFd, &evClient);
+#ifdef WIN32
+                    //TODO XXX
+
+#elif __APPLE__
+                    if(!KqueueCtl(newClientFd, EVFILT_READ, EV_ADD ))
+#elif __linux__
+                    if(!EpollCtl ( newClientFd, EPOLLIN |EPOLLRDHUP  , EPOLL_CTL_ADD ))
+#endif
+                    {
+                        bServerRunning_ = false;
+                        return;
+                    }
 
                 }//while : accept
             }
@@ -277,6 +368,18 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
             {
                 //############## send/recv ############################
                 CLIENT_UNORDERMAP_ITER_T itFound;
+#ifdef WIN32
+                //TODO XXX
+#elif __APPLE__
+                itFound = clientMap_.find(pKqEvents_[i].ident );
+                if (itFound == clientMap_.end())
+                {
+                    strErr_ = "clientMap_ error [" + std::to_string( pKqEvents_[i].ident)+ " not found]";
+                    std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+                    bServerRunning_ = false;
+                    return;
+                }
+#elif __linux__
                 itFound = clientMap_.find(pEpEvents_[i].data.fd);
                 if (itFound == clientMap_.end())
                 {
@@ -285,12 +388,31 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                     bServerRunning_ = false;
                     return;
                 }
+#endif
                 
                 //now, found client
                 Context* pClientContext = itFound->second;
 
+#ifdef WIN32
+                //TODO XXX
+#elif __APPLE__
+                if (pKqEvents_[i].flags & EV_EOF)
 
-                if (pEpEvents_[i].events & EPOLLIN) 
+#elif __linux__
+                if (pEpEvents_[i].events & EPOLLRDHUP || pEpEvents_[i].events & EPOLLERR) 
+#endif
+                {
+                    //############## close ############################
+                    std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] Terminate client"<< "\n"; 
+                    TerminateClient(i, pClientContext); 
+                }
+#ifdef WIN32
+                //TODO XXX
+#elif __APPLE__
+                else if (EVFILT_READ == pKqEvents_[i].filter)
+#elif __linux__
+                else if (pEpEvents_[i].events & EPOLLIN) 
+#endif
                 {
                     //############## recv ############################
                     if(! Recv(pClientContext) ) 
@@ -299,7 +421,13 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                         TerminateClient(i, pClientContext); 
                     }
                 }
+#ifdef WIN32
+                //TODO XXX
+#elif __APPLE__
+                else if (EVFILT_WRITE == pKqEvents_[i].filter )
+#elif __linux__
                 else if (pEpEvents_[i].events & EPOLLOUT) 
+#endif
                 {
                     //############## send ############################
                     std::lock_guard<std::mutex> guard(pClientContext->clientSendLock_);
@@ -327,7 +455,22 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                                 if(pClientContext->sendBuffer_.GetCumulatedLen()==0)
                                 {
                                     //sent all data
-                                    EpollCtlModify(pClientContext, EPOLLIN | EPOLLERR | EPOLLRDHUP );
+#ifdef WIN32
+                                    //TODO XXX
+#elif __APPLE__
+                                    if(!KqueueCtl(pClientContext->socket_, EVFILT_WRITE, EV_DELETE ) ||
+                                       !KqueueCtl(pClientContext->socket_, EVFILT_READ, EV_ADD ) )
+                                    {
+                                        bServerRunning_ = false;
+                                        return;
+                                    }
+#elif __linux__
+                                    if(!EpollCtl (pClientContext->socket_, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ))
+                                    {
+                                        bServerRunning_ = false;
+                                        return;
+                                    }
+#endif
                                     break;
                                 }
                             }
@@ -339,24 +482,20 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                                 }
                                 else if ( errno != EINTR )
                                 {
-                                    strErr_ = "send error ["  + string(strerror(errno)) + "]";
+                                    strErr_ = "send error ["  + std::string(strerror(errno)) + "]";
                                     std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< GetLastErrMsg() <<"\n"; 
                                     TerminateClient(i, pClientContext); 
                                     break;
                                 }
                             }
-                        }
+                        } //if( nBufferdLen > 0 )
                         else
                         {
-                            EpollCtlModify(pClientContext, EPOLLIN | EPOLLERR | EPOLLRDHUP ); //just in case
+                            //something wrong...: no data but write event? -> should not happen
+                            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] write event, no data\n"; 
+                            break;
                         }
                     }//while : EPOLLOUT
-                }
-                else if (pEpEvents_[i].events & EPOLLRDHUP || pEpEvents_[i].events & EPOLLERR) 
-                {
-                    //############## close ############################
-                    std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] Terminate client"<< "\n"; 
-                    TerminateClient(i, pClientContext); 
                 }
             }
         } //for
@@ -369,8 +508,16 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
 void  AServerSocketTCP::TerminateClient(int nClientIndex, Context* pClientContext)
 {
     --nClientCnt_;
-    close(pEpEvents_[nClientIndex].data.fd);
-    epoll_ctl(nEpfd_, EPOLL_CTL_DEL, pEpEvents_[nClientIndex].data.fd, pEpEvents_);
+
+#ifdef WIN32
+    //TODO
+#elif __APPLE__
+    KqueueCtl(pClientContext->socket_, EVFILT_READ, EV_DELETE );
+#elif __linux__
+    EpollCtl (pClientContext->socket_, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL ); //just in case
+#endif
+
+    close(pClientContext->socket_);
     OnClientDisConnected(pClientContext);
     PushClientInfoToCache(pClientContext);
 }
