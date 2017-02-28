@@ -12,34 +12,23 @@ a simple, easy to use c++ TCP server, client library using epoll (for linux) and
 //see sample directory
 
 #include "AServerSocketTCP.hpp"
-
 class EchoServer : public AServerSocketTCP
 {
     public:
     private:
-        static  EchoServer* pThisInstance_ ;
         size_t  GetOnePacketLength(Context* pClientContext);
         bool    OnRecvOnePacketData(Context* pClientContext, char* pOnePacket, int nPacketLen ) ;        
 };
 
 size_t EchoServer::GetOnePacketLength(Context* pClientContext)
 {
-    //---------------------------------------------------
-    //user specific : 
     //calculate your complete packet length here using buffer data.
-    //---------------------------------------------------
     return pClientContext->recvBuffer_.GetCumulatedLen() ; //just echo for example
 }
 
-///////////////////////////////////////////////////////////////////////////////
 bool    EchoServer::OnRecvOnePacketData(Context* pClientContext, char* pOnePacket, int nPacketLen ) 
 {
-    //---------------------------------------------------
-    //user specific : 
-    //your whole data has arrived.
-    //'pOnePacket' has length of 'nPacketLen' that you returned 
-    // in 'GetOnePacketLength' function. 
-    //---------------------------------------------------
+    //'pOnePacket' has length of 'nPacketLen' that you returned in 'GetOnePacketLength' function. 
     if(! Send(pClientContext, pOnePacket, nPacketLen) ) //just echo for example
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
@@ -48,7 +37,6 @@ bool    EchoServer::OnRecvOnePacketData(Context* pClientContext, char* pOnePacke
     return true;
 }
 
-///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
     //max client is 100000, max message length is approximately 300 bytes...
@@ -74,8 +62,6 @@ int main(int argc, char* argv[])
 ```{.cpp}
 
 #include "AClientSocketTCP.hpp"
-
-///////////////////////////////////////////////////////////////////////////////
 class EchoClient : public AClientSocketTCP
 {
     public:
@@ -85,25 +71,15 @@ class EchoClient : public AClientSocketTCP
         void    OnDisConnected() ; //callback
 };
 
-///////////////////////////////////////////////////////////////////////////////
 size_t EchoClient::GetOnePacketLength(Context* pContext)
 {
-    //---------------------------------------------------
-    //user specific : 
     //calculate your complete packet length here using buffer data.
-    //---------------------------------------------------
     return pContext->recvBuffer_.GetCumulatedLen() ; //just echo for example
 }
 
-///////////////////////////////////////////////////////////////////////////////
 bool EchoClient:: OnRecvOnePacketData(Context* pContext, char* pOnePacket, int nPacketLen) 
 {
-    //---------------------------------------------------
-    //user specific : 
-    //your whole data has arrived.
-    //'pOnePacket' has length of 'nPacketLen' that you returned 
-    // in 'GetOnePacketLength' function. 
-    //---------------------------------------------------
+    //'pOnePacket' has length of 'nPacketLen' that you returned in 'GetOnePacketLength' function. 
     char szMsg[asocklib::DEFAULT_PACKET_SIZE]; 
     memcpy(&szMsg, pOnePacket, nPacketLen);
     szMsg[nPacketLen] = '\0';
@@ -111,13 +87,6 @@ bool EchoClient:: OnRecvOnePacketData(Context* pContext, char* pOnePacket, int n
     return true;
 }
 
-///////////////////////////////////////////////////////////////////////////////
-void EchoClient::OnDisConnected() 
-{    
-    std::cout << "* server disconnected ! \n";
-}
-
-///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
     EchoClient client;
@@ -128,23 +97,16 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    std::string strMsg;
+    std::string strMsg = "hello" ;
     while( client.IsConnected() )
     {
-        cin.clear();
-        getline(cin, strMsg); //block....
-        int nMsgLen = strMsg.length();
-
-        if(nMsgLen>0)
+        if(! client.SendToServer(strMsg.c_str(), strMsg.length()) )
         {
-            if(! client.SendToServer(strMsg.c_str(), strMsg.length()) )
-            {
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
-                return -1;
-            }
+            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
+            return -1;
         }
+        sleep(1);
     }
-    std::cout << "client exit...\n";
     return 0;
 }
 
