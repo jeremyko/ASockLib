@@ -348,7 +348,11 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
 #endif
                 if (itFound == clientMap_.end())
                 {
+#ifdef __APPLE__
+                    strErr_ = "clientMap_ error [" + std::to_string(pKqEvents_[i].ident)+ " not found]";
+#elif __linux__
                     strErr_ = "clientMap_ error [" + std::to_string(pEpEvents_[i].data.fd)+ " not found]";
+#endif
                     std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
                     bServerRunning_ = false;
                     return;
