@@ -7,6 +7,7 @@
 #include <atomic> 
 #include <unordered_map> 
 
+using Context = asocklib::Context ;
 using CLIENT_UNORDERMAP_T      = std::unordered_map<int, asocklib::Context*> ;
 using CLIENT_UNORDERMAP_ITER_T = std::unordered_map<int, asocklib::Context*>::iterator ;
 
@@ -36,18 +37,18 @@ class AServerSocketTCP : public ASockBase
         std::atomic<bool>    bServerRun_     {false};
         std::atomic<bool>    bServerRunning_ {false};
 
-        CLIENT_UNORDERMAP_T     clientMap_; 
-        std::queue<asocklib::Context*>    clientInfoCacheQueue_;
+        CLIENT_UNORDERMAP_T     clientMap_;
+        std::queue<Context*>    clientInfoCacheQueue_;
 
     private :
         void            ServerThreadRoutine(int nCoreIndex);
-        void            TerminateClient(int nClientIndex, asocklib::Context* pClientContext);
-        asocklib::Context*        PopClientContextFromCache();
-        void            PushClientInfoToCache(asocklib::Context* pClientContext);
+        void            TerminateClient(int nClientIndex, Context* pClientContext);
+        Context*        PopClientContextFromCache();
+        void            PushClientInfoToCache(Context* pClientContext);
         void            ClearClientInfoToCache();
 
-        virtual void    OnClientConnected(asocklib::Context* pClientContext)=0; 
-        virtual void    OnClientDisConnected(asocklib::Context* pClientContext)=0; 
+        virtual void    OnClientConnected(Context* pClientContext)=0; 
+        virtual void    OnClientDisConnected(Context* pClientContext)=0; 
 };
 
 #endif 

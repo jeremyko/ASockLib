@@ -25,24 +25,32 @@ AServerSocketTCP::~AServerSocketTCP()
     if ( pKqEvents_ )
     { 
         delete [] pKqEvents_;    
-        pKqEvents_   = nullptr; 
     }
 #elif __linux__
     if (pEpEvents_)   
     { 
         delete [] pEpEvents_;    
-        pEpEvents_   = nullptr; 
     }
 #endif
 
-    ClearClientInfoToCache();
-   
     CLIENT_UNORDERMAP_ITER_T itDel = clientMap_.begin();
     while (itDel != clientMap_.end()) 
     {
         delete itDel->second;
         itDel = clientMap_.erase(itDel);
     }
+
+    ClearClientInfoToCache();
+
+#ifdef __APPLE__
+    KqueueCtl(pContextListen_, EVFILT_READ, EV_DELETE );
+#elif __linux__
+    EpollCtl (pContextListen_, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL ); //just in case
+#endif
+
+#if defined __APPLE__ || defined __linux__ 
+    delete pContextListen_ ;
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -133,6 +141,18 @@ bool AServerSocketTCP::RunServer()
     act.sa_flags = 0;
     sigaction( SIGPIPE, &act, NULL );
 
+#if defined __APPLE__ || defined __linux__ 
+    pContextListen_ = new (std::nothrow) Context();
+    if(!pContextListen_)
+    {
+        strErr_ = "Context alloc failed !";
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        return false;
+    }
+
+    pContextListen_->socket_ = listen_socket_;
+#endif
+
 #ifdef __APPLE__
     nKqfd_ = kqueue();
     if (nKqfd_ == -1)
@@ -141,8 +161,7 @@ bool AServerSocketTCP::RunServer()
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
-
-    if(!KqueueCtl(listen_socket_, EVFILT_READ, EV_ADD ))
+    if(!KqueueCtl(pContextListen_, EVFILT_READ, EV_ADD ))
     {
         return false;
     }
@@ -155,7 +174,7 @@ bool AServerSocketTCP::RunServer()
         return false;
     }
 
-    if(!EpollCtl ( listen_socket_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
+    if(!EpollCtl ( pContextListen_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD )) 
     {
         return false;
     }
@@ -181,7 +200,7 @@ Context* AServerSocketTCP::PopClientContextFromCache()
 {
     if (!clientInfoCacheQueue_.empty())
     {
-        asocklib::Context* pRtn = clientInfoCacheQueue_.front();
+        Context* pRtn = clientInfoCacheQueue_.front();
         clientInfoCacheQueue_.pop();
 
         return pRtn;
@@ -257,7 +276,8 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
 #ifdef __APPLE__
             if (pKqEvents_[i].ident   == listen_socket_) 
 #elif __linux__
-            if (pEpEvents_[i].data.fd == listen_socket_)
+            //if (pEpEvents_[i].data.fd == listen_socket_)
+            if (((Context*)pEpEvents_[i].data.ptr)->socket_ == listen_socket_)
 #endif
             {
                 //############## accept ############################
@@ -288,7 +308,6 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                     ++nClientCnt_;
                     SetNonBlocking(newClientFd);
 
-                    //---- add client map
                     Context* pClientContext = PopClientContextFromCache();
                     if(pClientContext==nullptr)
                     {
@@ -314,21 +333,20 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                         }
                     }
 
-                    std::pair<CLIENT_UNORDERMAP_ITER_T,bool> clientMapRslt;
-                    clientMapRslt = clientMap_.insert ( std::pair<int, Context*>(newClientFd, pClientContext) );
-                    if (!clientMapRslt.second) 
+                    std::pair<CLIENT_UNORDERMAP_ITER_T, bool> clientMapRslt;
+                    clientMapRslt = clientMap_.insert(std::pair<int, Context*>(newClientFd, pClientContext));
+                    if (!clientMapRslt.second)
                     {
-                        strErr_ = "clientMap_ insert error [" + std::to_string(newClientFd)+ " already exist]";
-                        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
-                        bServerRunning_ = false;
-                        return;
+                        strErr_ = "clientMap_ insert error [" + std::to_string(newClientFd) + " already exist]";
+                        std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " << GetLastErrMsg() << "\n";
+                        break;
                     }
 
                     OnClientConnected(pClientContext);
 #ifdef __APPLE__
-                    if(!KqueueCtl(newClientFd, EVFILT_READ, EV_ADD ))
+                    if(!KqueueCtl(pClientContext, EVFILT_READ, EV_ADD ))
 #elif __linux__
-                    if(!EpollCtl ( newClientFd, EPOLLIN |EPOLLRDHUP  , EPOLL_CTL_ADD ))
+                    if(!EpollCtl ( pClientContext, EPOLLIN |EPOLLRDHUP  , EPOLL_CTL_ADD ))
 #endif
                     {
                         bServerRunning_ = false;
@@ -340,26 +358,12 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
             else
             {
                 //############## send/recv ############################
-                CLIENT_UNORDERMAP_ITER_T itFound;
 #ifdef __APPLE__
-                itFound = clientMap_.find(pKqEvents_[i].ident );
+                Context* pClientContext = pKqEvents_[i].udata;
 #elif __linux__
-                itFound = clientMap_.find(pEpEvents_[i].data.fd);
+                Context* pClientContext = (Context*)pEpEvents_[i].data.ptr ;
 #endif
-                if (itFound == clientMap_.end())
-                {
-#ifdef __APPLE__
-                    strErr_ = "clientMap_ error [" + std::to_string(pKqEvents_[i].ident)+ " not found]";
-#elif __linux__
-                    strErr_ = "clientMap_ error [" + std::to_string(pEpEvents_[i].data.fd)+ " not found]";
-#endif
-                    std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
-                    bServerRunning_ = false;
-                    return;
-                }
-                
-                //now, found client
-                Context* pClientContext = itFound->second;
+
 #ifdef __APPLE__
                 if (pKqEvents_[i].flags & EV_EOF)
 #elif __linux__
@@ -416,10 +420,10 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                                 {
                                     //sent all data
 #ifdef __APPLE__
-                                    if(!KqueueCtl(pClientContext->socket_, EVFILT_WRITE, EV_DELETE ) ||
-                                       !KqueueCtl(pClientContext->socket_, EVFILT_READ, EV_ADD ) )
+                                    if(!KqueueCtl(pClientContext, EVFILT_WRITE, EV_DELETE ) ||
+                                       !KqueueCtl(pClientContext, EVFILT_READ, EV_ADD ) )
 #elif __linux__
-                                    if(!EpollCtl (pClientContext->socket_, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ))
+                                    if(!EpollCtl (pClientContext, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ))
 #endif
                                     {
                                         bServerRunning_ = false;
@@ -463,9 +467,9 @@ void  AServerSocketTCP::TerminateClient(int nClientIndex, Context* pClientContex
 {
     --nClientCnt_;
 #ifdef __APPLE__
-    KqueueCtl(pClientContext->socket_, EVFILT_READ, EV_DELETE );
+    KqueueCtl(pClientContext, EVFILT_READ, EV_DELETE );
 #elif __linux__
-    EpollCtl (pClientContext->socket_, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL ); //just in case
+    EpollCtl (pClientContext, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL ); //just in case
 #endif
 
     close(pClientContext->socket_);

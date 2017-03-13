@@ -188,7 +188,7 @@ void AClientSocketTCP::ClientThreadRoutine()
     ts.tv_sec  =1;
     ts.tv_nsec =0;
 #elif __linux__
-    if(!EpollCtl ( context_.socket_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
+    if(!EpollCtl ( &context_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
     {
         return;
     }
@@ -276,10 +276,10 @@ void AClientSocketTCP::ClientThreadRoutine()
                         {
                             //sent all data
 #ifdef __APPLE__
-                            if(!KqueueCtl(context_.socket_, EVFILT_WRITE, EV_DELETE ) ||
-                               !KqueueCtl(context_.socket_, EVFILT_READ, EV_ADD ) )
+                            if(!KqueueCtl(&context_, EVFILT_WRITE, EV_DELETE ) ||
+                               !KqueueCtl(&context_, EVFILT_READ, EV_ADD ) )
 #elif __linux__
-                            if(!EpollCtl(context_.socket_, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ))
+                            if(!EpollCtl(&context_, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ))
 #endif
                             {
                                 close( context_.socket_);

@@ -144,9 +144,9 @@ bool ASockBase::Send (Context* pClientContext, const char* pData, int nLen)
                     return false;
                 }
 #ifdef __APPLE__
-                if(!KqueueCtl(pClientContext->socket_, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
+                if(!KqueueCtl(pClientContext, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
 #elif __linux__
-                if(!EpollCtl (pClientContext->socket_, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
+                if(!EpollCtl (pClientContext, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
 #endif
                 {
                     return false;
@@ -167,11 +167,11 @@ bool ASockBase::Send (Context* pClientContext, const char* pData, int nLen)
 
 #ifdef __APPLE__
 ///////////////////////////////////////////////////////////////////////////////
-bool ASockBase::KqueueCtl(int nFd , uint32_t events, uint32_t fflags)
+bool ASockBase::KqueueCtl(Context* pContext , uint32_t events, uint32_t fflags)
 {
     struct  kevent kEvent;
     memset(&kEvent, 0, sizeof(struct kevent));
-    EV_SET(&kEvent, nFd, events,fflags , 0, 0, NULL); 
+    EV_SET(&kEvent, pContext->socket_, events,fflags , 0, 0, pContext); //udata = pContext
 
     int nRslt = kevent(nKqfd_, &kEvent, 1, NULL, 0, NULL);
     if (nRslt == -1)
@@ -186,12 +186,14 @@ bool ASockBase::KqueueCtl(int nFd , uint32_t events, uint32_t fflags)
 }
 #elif __linux__
 ///////////////////////////////////////////////////////////////////////////////
-bool ASockBase::EpollCtl(int nFd , uint32_t events, int op)
+bool ASockBase::EpollCtl(Context* pContext , uint32_t events, int op)
 {
     struct  epoll_event evClient{};
-    evClient.data.fd = nFd;
-    evClient.events = events ;
-    if(epoll_ctl(nEpfd_, op, nFd, &evClient)<0)
+    evClient.data.fd    = pContext->socket_;
+    evClient.events     = events ;
+    evClient.data.ptr   = pContext;
+
+    if(epoll_ctl(nEpfd_, op, pContext->socket_, &evClient)<0)
     {
         strErr_ = "kevent error [" + std::string(strerror(errno)) + "]";
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< GetLastErrMsg() <<"\n"; 

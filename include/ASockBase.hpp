@@ -49,6 +49,7 @@ namespace asocklib
     };
 } //namespace asocklib
 
+using Context = asocklib::Context ;
 ///////////////////////////////////////////////////////////////////////////////
 class ASockBase
 {
@@ -75,20 +76,21 @@ class ASockBase
         //epoll
         struct          epoll_event* pEpEvents_{nullptr};
         int             nEpfd_          {-1};
+        Context*        pContextListen_{nullptr};
 #endif
 
     protected :
-        bool            Recv(asocklib::Context* pContext);
-        bool            Send(asocklib::Context* pContext, const char* pData, int nLen); 
+        bool            Recv(Context* pContext);
+        bool            Send(Context* pContext, const char* pData, int nLen); 
 #ifdef __APPLE__
-        bool            KqueueCtl(int nFd , uint32_t events, uint32_t fflags);
+        bool            KqueueCtl(Context* pContext , uint32_t events, uint32_t fflags);
 #elif __linux__
-        bool            EpollCtl (int nFd , uint32_t events, int op);
+        bool            EpollCtl (Context* pContext , uint32_t events, int op);
 #endif
 
     private:
-        virtual size_t  GetOnePacketLength(asocklib::Context* pContext)=0; 
-        virtual bool    OnRecvOnePacketData(asocklib::Context* pContext, char* pOnePacket, int nPacketLen)=0; 
+        virtual size_t  GetOnePacketLength(Context* pContext)=0; 
+        virtual bool    OnRecvOnePacketData(Context* pContext, char* pOnePacket, int nPacketLen)=0; 
 };
 
 #endif 

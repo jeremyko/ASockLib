@@ -5,6 +5,8 @@
 #include "ASockBase.hpp"
 #include <atomic>
 
+using Context = asocklib::Context ;
+
 class AClientSocketTCP : public ASockBase
 {
 
@@ -23,7 +25,7 @@ class AClientSocketTCP : public ASockBase
         bool            bCumBufferInit_ {false};
         SOCKADDR_IN     connAddr_ ;
         bool            bConnected_ {false};
-        asocklib::Context         context_;
+        Context         context_;
 
     private :
         void            ClientThreadRoutine();
