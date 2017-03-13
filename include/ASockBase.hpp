@@ -76,6 +76,9 @@ class ASockBase
         //epoll
         struct          epoll_event* pEpEvents_{nullptr};
         int             nEpfd_          {-1};
+#endif
+
+#if defined __APPLE__ || defined __linux__ 
         Context*        pContextListen_{nullptr};
 #endif
 

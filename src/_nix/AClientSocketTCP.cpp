@@ -180,7 +180,7 @@ void AClientSocketTCP::ClientThreadRoutine()
     bClientThreadRunning_ = true;
 
 #ifdef __APPLE__
-    if(!KqueueCtl(context_.socket_, EVFILT_READ, EV_ADD ))
+    if(!KqueueCtl(&context_, EVFILT_READ, EV_ADD ))
     {
         return;
     }

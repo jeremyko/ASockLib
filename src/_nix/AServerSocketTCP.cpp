@@ -359,7 +359,7 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
             {
                 //############## send/recv ############################
 #ifdef __APPLE__
-                Context* pClientContext = pKqEvents_[i].udata;
+                Context* pClientContext = (Context*)pKqEvents_[i].udata;
 #elif __linux__
                 Context* pClientContext = (Context*)pEpEvents_[i].data.ptr ;
 #endif
