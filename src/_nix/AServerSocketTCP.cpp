@@ -246,6 +246,7 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
     pEpEvents_ = new struct epoll_event[nMaxClientNum_];
     memset(pEpEvents_, 0x00, sizeof(struct epoll_event) * nMaxClientNum_);
 #endif
+    SOCKADDR_IN     clientAddr  ;
 
     char szTempData[asocklib::DEFAULT_PACKET_SIZE];
 
@@ -284,7 +285,7 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                 while(1)
                 {
                     SOCKLEN_T socklen=0;
-                    int newClientFd = accept(listen_socket_,(SOCKADDR*)&serverAddr_,&socklen ) ;
+                    int newClientFd = accept(listen_socket_,(SOCKADDR*)&clientAddr,&socklen ) ;
 
                     if (newClientFd == -1)
                     {
