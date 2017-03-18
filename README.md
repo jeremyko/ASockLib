@@ -7,7 +7,8 @@ a simple, easy to use c++ TCP server, client library using epoll, kqueue and [Cu
 
 ### Usage ###
 
-####echo server####
+#### echo server ####
+
 ```{.cpp}
 //see sample directory
 
@@ -57,7 +58,7 @@ int main(int argc, char* argv[])
 
 ```
 
-####echo client####
+#### echo client ####
 
 ```{.cpp}
 
@@ -112,9 +113,14 @@ int main(int argc, char* argv[])
 
 ```
 
-####compile####
+#### compile ####
+
     cd project_folder
+    
     mkdir build
+    
     cd build/
+    
     cmake -DCMAKE_BUILD_TYPE=RELEASE ../
+    
     make
