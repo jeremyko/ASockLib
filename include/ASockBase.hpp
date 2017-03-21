@@ -38,15 +38,18 @@ namespace asocklib
     const size_t    MORE_TO_COME        = -1;
 
     ///////////////////////////////////////////////////////////////////////////////
-    class Context 
+    //class Context 
+    typedef struct _Context_
     {
-        public :
+        //public :
 
             CumBuffer       recvBuffer_;
             CumBuffer       sendBuffer_; 
             int             socket_{-1};
             std::mutex      clientSendLock_; 
-    };
+            bool            bPacketLenCalculated {false};
+            size_t          nOnePacketLength {0} ;
+    } Context ;
 } //namespace asocklib
 
 using Context = asocklib::Context ;

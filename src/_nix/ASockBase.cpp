@@ -76,29 +76,37 @@ bool ASockBase::Recv(Context* pContext)
         while(pContext->recvBuffer_.GetCumulatedLen())
         {
             //invoke user specific implementation
-            size_t nOnePacketLength = GetOnePacketLength( pContext ); 
-
-            if(nOnePacketLength == asocklib::MORE_TO_COME)
+            if(!pContext->bPacketLenCalculated )
             {
+                //only when calculation is necessary
+                pContext->nOnePacketLength = GetOnePacketLength( pContext ); 
+                pContext->bPacketLenCalculated = true;
+            }
+
+            if(pContext->nOnePacketLength == asocklib::MORE_TO_COME)
+            {
+                pContext->bPacketLenCalculated = false;
                 return true; //need to recv more
             }
-            else if(nOnePacketLength > pContext->recvBuffer_.GetCumulatedLen())
+            else if(pContext->nOnePacketLength > pContext->recvBuffer_.GetCumulatedLen())
             {
                 return true; //need to recv more
             }
             else
             {
                 //got complete packet 
-                if(cumbuffer_defines::OP_RSLT_OK!=pContext->recvBuffer_.GetData(nOnePacketLength, szOnePacketData_ ))
+                if(cumbuffer_defines::OP_RSLT_OK!=pContext->recvBuffer_.GetData(pContext->nOnePacketLength, szOnePacketData_ ))
                 {
                     //error !
                     strErr_ = pContext->recvBuffer_.GetErrMsg();
                     std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< strErr_ <<"\n";
+                    pContext->bPacketLenCalculated = false;
                     return false; 
                 }
                 
                 //invoke user specific implementation
-                OnRecvOnePacketData(pContext, szOnePacketData_ , nOnePacketLength ); 
+                OnRecvOnePacketData(pContext, szOnePacketData_ , pContext->nOnePacketLength ); 
+                pContext->bPacketLenCalculated = false;
             }
         } //while
     }   
