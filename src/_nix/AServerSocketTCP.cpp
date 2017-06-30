@@ -219,6 +219,12 @@ void AServerSocketTCP::PushClientInfoToCache(Context* pClientContext)
         clientMap_.erase(itFound);
     }
 
+    //reset
+    pClientContext->recvBuffer_.ReSet();
+    pClientContext->socket_ = -1;
+    pClientContext->bPacketLenCalculated = false;
+    pClientContext->nOnePacketLength = 0;
+
     clientInfoCacheQueue_.push(pClientContext);
 }
 
@@ -321,7 +327,6 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                             return ;
                         }
 
-                        pClientContext->socket_ = newClientFd;
                         if  (
                                 cumbuffer_defines::OP_RSLT_OK != pClientContext->recvBuffer_.Init(nBufferCapcity_) ||
                                 cumbuffer_defines::OP_RSLT_OK != pClientContext->sendBuffer_.Init(nBufferCapcity_)
@@ -333,6 +338,7 @@ void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
                             return ;
                         }
                     }
+                    pClientContext->socket_ = newClientFd;
 
                     std::pair<CLIENT_UNORDERMAP_ITER_T, bool> clientMapRslt;
                     clientMapRslt = clientMap_.insert(std::pair<int, Context*>(newClientFd, pClientContext));
