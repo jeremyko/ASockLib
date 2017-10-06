@@ -12,8 +12,8 @@ a simple, easy to use c++ TCP server, client library using epoll, kqueue and [Cu
 ```{.cpp}
 //see sample directory
 
-#include "AServerSocketTCP.hpp"
-class EchoServer : public AServerSocketTCP
+#include "ASock.hpp"
+class EchoServer : public ASock
 {
     public:
     private:
@@ -42,7 +42,7 @@ int main(int argc, char* argv[])
 {
     //max client is 100000, max message length is approximately 300 bytes...
     EchoServer echoserver; 
-    echoserver.SetConnInfo("127.0.0.1", 9990, 100000, 300);
+    echoserver.InitTcpServer("127.0.0.1", 9990, 100000, 300);
     if(!echoserver.RunServer())
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
@@ -62,8 +62,8 @@ int main(int argc, char* argv[])
 
 ```{.cpp}
 
-#include "AClientSocketTCP.hpp"
-class EchoClient : public AClientSocketTCP
+#include "ASock.hpp"
+class EchoClient : public ASock
 {
     public:
     private:
@@ -91,8 +91,9 @@ bool EchoClient:: OnRecvOnePacketData(Context* pContext, char* pOnePacket, int n
 int main(int argc, char* argv[])
 {
     EchoClient client;
+    //connect timeout is 10 secs.
     //max message length is approximately 300 bytes...
-    if(!client.SetBufferCapacity(300) || !client.Connect("127.0.0.1", 9990)) 
+    if(!client.InitTcpClient("127.0.0.1", 9990, 10, 300 ) )
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
         return -1;

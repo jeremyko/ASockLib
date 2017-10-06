@@ -2,7 +2,7 @@
 #include <iostream>
 #include <csignal>
 
-#include "../../include/AServerSocketTCP.hpp"
+#include "ASock.hpp"
 #include "msg_defines.h"
 
 //----- for debug assert !!!! ---------
@@ -11,7 +11,7 @@
 //----- for debug assert !!!! ---------
 
 ///////////////////////////////////////////////////////////////////////////////
-class EchoServer : public AServerSocketTCP
+class EchoServer : public ASock
 {
     public:
         EchoServer();
@@ -116,7 +116,7 @@ int main(int argc, char* argv[])
     //max client is 100000, 
     //max message length is approximately 300 bytes...
     EchoServer echoserver; 
-    echoserver.SetConnInfo("127.0.0.1", 9990, 100000, 300);
+    echoserver.InitTcpServer("127.0.0.1", 9990, 100000, 300);
 
     echoserver.SetSigAction();
 

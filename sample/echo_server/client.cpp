@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <stdio.h>
 
-#include "../../include/AClientSocketTCP.hpp"
+#include "ASock.hpp"
 #include "msg_defines.h"
 
 //----- for debug assert !!!! ---------
@@ -16,7 +16,7 @@ std::string gStrMyMsg  {""};
 std::string gStrSentMsg{""}; 
 
 ///////////////////////////////////////////////////////////////////////////////
-class EchoClient : public AClientSocketTCP
+class EchoClient : public ASock
 {
     public:
         //EchoClient();
@@ -78,13 +78,10 @@ void EchoClient::OnDisConnected()
 int main(int argc, char* argv[])
 {
     EchoClient client;
-    if(!client.SetBufferCapacity(300)) //max message length is approximately 300 bytes...
-    {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
-        return -1;
-    }
 
-    if(!client.Connect("127.0.0.1", 9990) )
+    //connect timeout is 10 secs.
+    //max message length is approximately 300 bytes...
+    if(!client.InitTcpClient("127.0.0.1", 9990, 10, 300 ) )
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
         return -1;

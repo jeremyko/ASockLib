@@ -1,4 +1,4 @@
-#ifndef __CUMBUFFER_HPP__
+﻿#ifndef __CUMBUFFER_HPP__
 #define __CUMBUFFER_HPP__
 /****************************************************************************
  Copyright (c) 2016, ko jung hyun
@@ -23,7 +23,7 @@
  ****************************************************************************/
 // https://github.com/jeremyko/CumBuffer
 
-// NO THREAD SAFETY HERE
+// NO THREAD SAFETY HERE !!! 
 ///////////////////////////////////////////////////////////////////////////////
 #include <iostream>
 #include <string>
@@ -36,7 +36,6 @@
 namespace cumbuffer_defines
 {
     const int DEFAULT_BUFFER_LEN = 1024 * 4;
-    const int CACHE_LINE_SIZE = 64;
 
     enum OP_RESULT
     {
@@ -423,12 +422,14 @@ class CumBuffer
     char*       pBuffer_;
     size_t      nBufferLen_;
     size_t      nCumulatedLen_;
-    uint64_t    nCurHead_ __attribute__ ((aligned (cumbuffer_defines::CACHE_LINE_SIZE))) ; 
-    uint64_t    nCurTail_ __attribute__ ((aligned (cumbuffer_defines::CACHE_LINE_SIZE))) ; 
 
-} __attribute__ ((aligned(cumbuffer_defines::CACHE_LINE_SIZE))) ;
+    uint64_t    nCurHead_  ; 
+    uint64_t    nCurTail_  ; 
+}
+;
 
 #endif
+
 
 
 
