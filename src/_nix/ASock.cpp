@@ -749,7 +749,7 @@ bool  ASock::InitTcpClient( const char* connIP,
     } 
     else
     {
-        strErr_ = "select error : unexpected [" + std::string(strerror(errno))+ "]";
+        strErr_ = "fd not set ";
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
