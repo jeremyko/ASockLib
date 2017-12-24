@@ -857,7 +857,8 @@ bool  ASock::init_tcp_client(const char* server_ip,
     } 
     else
     {
-        err_msg_ = "select error : unexpected [" + std::string(strerror(errno))+ "]";
+        err_msg_ = "fd not set ";
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< err_msg_ <<"\n"; 
         return false;
     }
 
