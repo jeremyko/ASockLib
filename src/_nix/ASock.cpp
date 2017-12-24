@@ -1,104 +1,104 @@
+/******************************************************************************
+MIT License
+
+Copyright (c) 2017 jung hyun, ko
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+ *****************************************************************************/
 
 #include "ASock.hpp"
 
-using namespace asocklib ;
-
-///////////////////////////////////////////////////////////////////////////////
-ASock::ASock() 
-{
-    //SockUsage_ = SOCK_USAGE_UNKNOWN ;
-}
+using namespace asock ;
 
 ///////////////////////////////////////////////////////////////////////////////
 ASock::~ASock()
 {
-    if(OnePacketDataPtr_!=NULL)
+    if(complete_packet_data_!=NULL)
     {
-        delete [] OnePacketDataPtr_ ;
-        OnePacketDataPtr_ = NULL;
+        delete [] complete_packet_data_ ;
+        complete_packet_data_ = NULL;
     }
 
-    if   (
-            SockUsage_ == SOCK_USAGE_TCP_CLIENT || 
-            SockUsage_ == SOCK_USAGE_IPC_CLIENT  
-         ) 
+    if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || sock_usage_ == SOCK_USAGE_IPC_CLIENT ) 
     {
 #ifdef __APPLE__
-        if(pKqEvents_)
+        if(kq_events_ptr_)
         {
-            delete pKqEvents_;
+            delete kq_events_ptr_;
         }
 #elif __linux__
-        if(pEpEvents_)
+        if(ep_events_)
         {
-            delete pEpEvents_;
+            delete ep_events_;
         }
 #endif
 
-        Disconnect();
+        disconnect();
     }
-    else if (
-                SockUsage_ == SOCK_USAGE_TCP_SERVER || 
-                SockUsage_ == SOCK_USAGE_IPC_SERVER  
-            ) 
+    else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
+              sock_usage_ == SOCK_USAGE_IPC_SERVER  ) 
     {
 #ifdef __APPLE__
-        if ( pKqEvents_ )
+        if ( kq_events_ptr_ )
         { 
-            delete [] pKqEvents_;    
+            delete [] kq_events_ptr_;    
         }
 #elif __linux__
-        if (pEpEvents_)   
+        if (ep_events_)   
         { 
-            delete [] pEpEvents_;    
+            delete [] ep_events_;    
         }
 #endif
 
-        CLIENT_UNORDERMAP_ITER_T itDel = clientMap_.begin();
-        while (itDel != clientMap_.end()) 
+        CLIENT_UNORDERMAP_ITER_T itDel = client_map_.begin();
+        while (itDel != client_map_.end()) 
         {
             delete itDel->second;
-            itDel = clientMap_.erase(itDel);
+            itDel = client_map_.erase(itDel);
         }
 
-        ClearClientInfoToCache();
+        clear_client_cache();
 
 #ifdef __APPLE__
-        KqueueCtl(pContextListen_, EVFILT_READ, EV_DELETE );
+        control_kq(listen_context_ptr_, EVFILT_READ, EV_DELETE );
 #elif __linux__
-        EpollCtl (pContextListen_, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL ); //just in case
+        control_ep(listen_context_ptr_, EPOLLIN | EPOLLERR | EPOLLRDHUP, 
+                                        EPOLL_CTL_DEL ); //just in case
 #endif
 
 #if defined __APPLE__ || defined __linux__ 
-        delete pContextListen_ ;
+        delete listen_context_ptr_ ;
 #endif
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetBufferCapacity(int nMaxMsgLen)
+bool ASock::set_cb_on_calculate_packet_len(std::function<size_t(Context*)> cb)  
 {
-    if(nMaxMsgLen<0)
+    //for composition usage 
+    if(cb != nullptr)
     {
-        strErr_ = "length is negative";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< strErr_<<"\n";
-        return false;
-    }
-
-    if(nMaxMsgLen==0) 
-    {
-        nBufferCapcity_ = asocklib::DEFAULT_CAPACITY ;
+        cb_on_calculate_data_len_ = cb;
     }
     else
     {
-        nBufferCapcity_ = nMaxMsgLen*2; 
-    }
-
-    OnePacketDataPtr_ = new (std::nothrow) char [nBufferCapcity_] ;
-    if(OnePacketDataPtr_ == NULL)
-    {
-        strErr_ = "memory alloc failed!";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< strErr_<<"\n";
+        err_msg_ = "callback is null";
         return false;
     }
 
@@ -106,20 +106,116 @@ bool ASock::SetBufferCapacity(int nMaxMsgLen)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool   ASock::SetNonBlocking(int nSockFd)
+bool ASock::set_cb_on_recved_complete_packet(std::function<bool(Context*, char*, int)> cb) 
+{
+    //for composition usage 
+    if(cb != nullptr)
+    {
+        cb_on_recved_complete_packet_ = cb;
+    }
+    else
+    {
+        err_msg_ = "callback is null";
+        return false;
+    }
+
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool  ASock::set_cb_on_disconnected_from_server(std::function<void()> cb)  
+{
+    //for composition usage 
+    if(cb != nullptr)
+    {
+        cb_on_disconnected_from_server_ = cb;
+    }
+    else
+    {
+        err_msg_ = "callback is null";
+        return false;
+    }
+
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::set_cb_on_client_connected(std::function<void(Context*)> cb)  
+{
+    //for composition usage 
+    if(cb != nullptr)
+    {
+         cb_on_client_connected_= cb;
+    }
+    else
+    {
+        err_msg_ = "callback is null";
+        return false;
+    }
+
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::set_cb_on_client_disconnected(std::function<void(Context*)> cb)  
+{
+    //for composition usage 
+    if(cb != nullptr)
+    {
+        cb_on_client_disconnected_ = cb;
+    }
+    else
+    {
+        err_msg_ = "callback is null";
+        return false;
+    }
+
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::set_buffer_capacity(int max_data_len)
+{
+    if(max_data_len<0)
+    {
+        err_msg_ = "length is negative";
+        return false;
+    }
+
+    if(max_data_len==0) 
+    {
+        recv_buffer_capcity_ = asock::DEFAULT_CAPACITY ;
+    }
+    else
+    {
+        recv_buffer_capcity_ = max_data_len; 
+    }
+
+    complete_packet_data_ = new (std::nothrow) char [recv_buffer_capcity_] ;
+    if(complete_packet_data_ == NULL)
+    {
+        err_msg_ = "memory alloc failed!";
+        return false;
+    }
+
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool   ASock::set_socket_non_blocking(int sock_fd)
 {
     int oldflags  ;
 
-    if ((oldflags = fcntl( nSockFd,F_GETFL, 0)) < 0 )
+    if ((oldflags = fcntl( sock_fd,F_GETFL, 0)) < 0 )
     {
-        strErr_ = "fcntl F_GETFL error [" + std::string(strerror(errno))+ "]";
+        err_msg_ = "fcntl F_GETFL error [" + std::string(strerror(errno))+ "]";
         return  false;
     }
 
-    int ret  = fcntl( nSockFd,F_SETFL,oldflags | O_NONBLOCK) ;
+    int ret  = fcntl( sock_fd,F_SETFL,oldflags | O_NONBLOCK) ;
     if ( ret < 0 )
     {
-        strErr_ = "fcntl O_NONBLOCK error [" + std::string(strerror(errno))+ "]";
+        err_msg_ = "fcntl O_NONBLOCK error [" + std::string(strerror(errno))+ "]";
         return  false;
     }
 
@@ -127,68 +223,91 @@ bool   ASock::SetNonBlocking(int nSockFd)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::Recv(Context* pContext) 
+bool ASock::recv_data(Context* context_ptr) 
 {
-    int nToRecvLen = asocklib::DEFAULT_PACKET_SIZE ;
-    if(asocklib::DEFAULT_PACKET_SIZE > pContext->recvBuffer_.GetLinearFreeSpace() )
+    int nToRecvLen = asock::DEFAULT_PACKET_SIZE ;
+    if(asock::DEFAULT_PACKET_SIZE > context_ptr->recvBuffer_.GetLinearFreeSpace() )
     {
-        nToRecvLen = pContext->recvBuffer_.GetLinearFreeSpace() ; 
+        nToRecvLen = context_ptr->recvBuffer_.GetLinearFreeSpace() ; 
     }
 
     if(nToRecvLen==0) 
     {
-        strErr_ = "no linear free space left ";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< strErr_<<"\n";
+        err_msg_ = "no linear free space left ";
         return false; 
     }
 
-    int nRecvedLen = recv( pContext->socket_, pContext->recvBuffer_.GetLinearAppendPtr(), nToRecvLen, 0); 
+    int nRecvedLen = recv( context_ptr->socket_, 
+                           context_ptr->recvBuffer_.GetLinearAppendPtr(), 
+                           nToRecvLen, 0); 
 
     if( nRecvedLen > 0)
     {
-        pContext->recvBuffer_.IncreaseData(nRecvedLen);
+        context_ptr->recvBuffer_.IncreaseData(nRecvedLen);
 
-        while(pContext->recvBuffer_.GetCumulatedLen())
+        while(context_ptr->recvBuffer_.GetCumulatedLen())
         {
             //invoke user specific implementation
-            if(!pContext->bPacketLenCalculated )
+            if(!context_ptr->is_packet_len_calculated_ )
             {
                 //only when calculation is necessary
-                pContext->nOnePacketLength = GetOnePacketLength( pContext ); 
-                pContext->bPacketLenCalculated = true;
+                if(cb_on_calculate_data_len_!=nullptr)
+                {
+                    //invoke user specific callback
+                    context_ptr->complete_packet_len_ =cb_on_calculate_data_len_ ( context_ptr ); 
+                }
+                else
+                {
+                    //invoke user specific implementation
+                    context_ptr->complete_packet_len_ = on_calculate_data_len( context_ptr ); 
+                }
+                context_ptr->is_packet_len_calculated_ = true;
             }
 
-            if(pContext->nOnePacketLength == asocklib::MORE_TO_COME)
+            if(context_ptr->complete_packet_len_ == asock::MORE_TO_COME)
             {
-                pContext->bPacketLenCalculated = false;
+                context_ptr->is_packet_len_calculated_ = false;
                 return true; //need to recv more
             }
-            else if(pContext->nOnePacketLength > pContext->recvBuffer_.GetCumulatedLen())
+            else if(context_ptr->complete_packet_len_ > context_ptr->recvBuffer_.GetCumulatedLen())
             {
                 return true; //need to recv more
             }
             else
             {
                 //got complete packet 
-                if(cumbuffer_defines::OP_RSLT_OK!=pContext->recvBuffer_.GetData(pContext->nOnePacketLength, OnePacketDataPtr_ ))
+                if(cumbuffer_defines::OP_RSLT_OK!=
+                        context_ptr->recvBuffer_.GetData(context_ptr->complete_packet_len_, 
+                                                      complete_packet_data_ ))
                 {
                     //error !
-                    strErr_ = pContext->recvBuffer_.GetErrMsg();
-                    std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< strErr_ <<"\n";
-                    pContext->bPacketLenCalculated = false;
+                    err_msg_ = context_ptr->recvBuffer_.GetErrMsg();
+                    context_ptr->is_packet_len_calculated_ = false;
                     return false; 
                 }
                 
-                //invoke user specific implementation
-                OnRecvOnePacketData(pContext, OnePacketDataPtr_ , pContext->nOnePacketLength ); 
-                pContext->bPacketLenCalculated = false;
+                if(cb_on_recved_complete_packet_!=nullptr)
+                {
+                    //invoke user specific callback
+                    cb_on_recved_complete_packet_ (context_ptr, 
+                                                   complete_packet_data_ , 
+                                                   context_ptr->complete_packet_len_ ); 
+                }
+                else
+                {
+                    //invoke user specific implementation
+                    on_recved_complete_data(context_ptr, 
+                                            complete_packet_data_ , 
+                                            context_ptr->complete_packet_len_ ); 
+                }
+                
+                context_ptr->is_packet_len_calculated_ = false;
             }
         } //while
     }   
     else if( nRecvedLen == 0 )
     {
-        strErr_ = "recv 0, client disconnected , fd:" + std::to_string(pContext->socket_);
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< strErr_<<"\n";
+        err_msg_ = "recv 0, client disconnected , fd:" + std::to_string(context_ptr->socket_);
         return false ;
     }
 
@@ -197,31 +316,33 @@ bool ASock::Recv(Context* pContext)
 
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::Send (Context* pClientContext, const char* pData, int nLen) 
+bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len) 
 {
-    char* pDataPosition = const_cast<char*>(pData) ;   
-    int nSendBytes = 0;           
+    std::lock_guard<std::mutex> lock(context_ptr->send_lock_);
 
-    while( nSendBytes < nLen ) 
+    char* data_position_ptr = const_cast<char*>(data_ptr) ;   
+    int sent_bytes = 0;           
+
+    while( sent_bytes < len ) 
     {
-        int nSent = send(pClientContext->socket_, pDataPosition, nLen-nSendBytes, 0);
+        int nSent = send(context_ptr->socket_, data_position_ptr, len-sent_bytes, 0);
         if(nSent > 0)
         {
-            nSendBytes += nSent ;  
-            pDataPosition += nSent ;      
+            sent_bytes += nSent ;  
+            data_position_ptr += nSent ;      
         }
         else if( nSent < 0 )
         {
             if ( errno == EWOULDBLOCK || errno == EAGAIN )
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1)); 
+                //XXX this can cause infinite loop! XXX
                 continue;
 
             }
             else if ( errno != EINTR )
             {
-                strErr_ = "send error [" + std::string(strerror(errno)) + "]";
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< GetLastErrMsg() <<"\n"; 
+                err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
                 return false;
             }
         }
@@ -232,17 +353,16 @@ bool ASock::Send (Context* pClientContext, const char* pData, int nLen)
 
 #ifdef __APPLE__
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::KqueueCtl(Context* pContext , uint32_t events, uint32_t fflags)
+bool ASock::control_kq(Context* context_ptr , uint32_t events, uint32_t fflags)
 {
     struct  kevent kEvent;
     memset(&kEvent, 0, sizeof(struct kevent));
-    EV_SET(&kEvent, pContext->socket_, events,fflags , 0, 0, pContext); //udata = pContext
+    EV_SET(&kEvent, context_ptr->socket_, events,fflags , 0, 0, context_ptr); //udata = context_ptr
 
-    int nRslt = kevent(nKqfd_, &kEvent, 1, NULL, 0, NULL);
+    int nRslt = kevent(kq_fd_, &kEvent, 1, NULL, 0, NULL);
     if (nRslt == -1)
     {
-        strErr_ = "kevent error [" + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
         return false; 
     }
     return true;
@@ -251,17 +371,16 @@ bool ASock::KqueueCtl(Context* pContext , uint32_t events, uint32_t fflags)
 }
 #elif __linux__
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::EpollCtl(Context* pContext , uint32_t events, int op)
+bool ASock::control_ep(Context* context_ptr , uint32_t events, int op)
 {
     struct  epoll_event evClient{};
-    evClient.data.fd    = pContext->socket_;
+    evClient.data.fd    = context_ptr->socket_;
     evClient.events     = events ;
-    evClient.data.ptr   = pContext;
+    evClient.data.ptr   = context_ptr;
 
-    if(epoll_ctl(nEpfd_, op, pContext->socket_, &evClient)<0)
+    if(epoll_ctl(ep_fd_, op, context_ptr->socket_, &evClient)<0)
     {
-        strErr_ = "kevent error [" + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
         return false; 
     }
     return true;
@@ -272,50 +391,46 @@ bool ASock::EpollCtl(Context* pContext , uint32_t events, int op)
 ///////////////////////////////////////////////////////////////////////////////
 // SERVER
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::InitTcpServer ( const char* connIP, 
-                            int         nPort, 
-                            int         nMaxClient, 
-                            int         nMaxMsgLen)
+bool ASock::init_tcp_server(const char* bind_ip, 
+                            int         bind_port, 
+                            int         max_client, 
+                            int         max_data_len)
 {
-    SockUsage_ = SOCK_USAGE_TCP_SERVER  ;
+    sock_usage_ = SOCK_USAGE_TCP_SERVER  ;
 
-    strServerIp_ = connIP ; 
-    nServerPort_ = nPort ; 
-    nMaxClientNum_ = nMaxClient ; 
-    if(nMaxClientNum_<0)
+    server_ip_ = bind_ip ; 
+    server_port_ = bind_port ; 
+    max_client_limit_ = max_client ; 
+    if(max_client_limit_<0)
     {
         return false;
     }
 
-    return SetBufferCapacity(nMaxMsgLen);
+    return set_buffer_capacity(max_data_len);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::RunServer()
+bool ASock::run_server()
 {
 #ifdef __APPLE__
-    if ( pKqEvents_ )
+    if ( kq_events_ptr_ )
 #elif __linux__
-    //nCores_ = sysconf(_SC_NPROCESSORS_ONLN) ; //TODO
-    if (pEpEvents_)   
+    if (ep_events_)   
 #endif
     { 
-        strErr_ = "error [server is already running]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "error [server is already running]";
         return false;
     }
 
     listen_socket_ = socket(AF_INET,SOCK_STREAM,0) ;
     if( listen_socket_ < 0 )
     {
-        strErr_ = "init error [" + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "init error [" + std::string(strerror(errno)) + "]";
         return false;
     }   
 
-    if(!SetNonBlocking (listen_socket_))
+    if(!set_socket_non_blocking (listen_socket_))
     {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return  false;
     }
 
@@ -324,29 +439,27 @@ bool ASock::RunServer()
 
     if (setsockopt(listen_socket_,SOL_SOCKET,SO_REUSEADDR,&reuseaddr,sizeof(reuseaddr))==-1) 
     {
-        strErr_ = "setsockopt SO_REUSEADDR error ["  + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "setsockopt SO_REUSEADDR error ["  + std::string(strerror(errno)) + "]";
         return false;
     }
 
-    memset((void *)&serverAddr_,0x00,sizeof(serverAddr_)) ;
-    serverAddr_.sin_family      = AF_INET ;
-    serverAddr_.sin_addr.s_addr = inet_addr(strServerIp_.c_str()) ;
-    serverAddr_.sin_port = htons(nServerPort_);
+    SOCKADDR_IN    server_addr  ;
+    memset((void *)&server_addr,0x00,sizeof(server_addr)) ;
+    server_addr.sin_family      = AF_INET ;
+    server_addr.sin_addr.s_addr = inet_addr(server_ip_.c_str()) ;
+    server_addr.sin_port = htons(server_port_);
 
-    nRtn = bind(listen_socket_,(SOCKADDR*)&serverAddr_,sizeof(serverAddr_)) ;
+    nRtn = bind(listen_socket_,(SOCKADDR*)&server_addr,sizeof(server_addr)) ;
     if ( nRtn < 0 )
     {
-        strErr_ = "bind error ["  + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "bind error ["  + std::string(strerror(errno)) + "]";
         return false ;
     }
 
     nRtn = listen(listen_socket_,SOMAXCONN) ;
     if ( nRtn < 0 )
     {
-        strErr_ = "listrn error [" + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "listrn error [" + std::string(strerror(errno)) + "]";
         return false ;
     }
 
@@ -357,66 +470,63 @@ bool ASock::RunServer()
     sigaction( SIGPIPE, &act, NULL );
 
 #if defined __APPLE__ || defined __linux__ 
-    pContextListen_ = new (std::nothrow) Context();
-    if(!pContextListen_)
+    listen_context_ptr_ = new (std::nothrow) Context();
+    if(!listen_context_ptr_)
     {
-        strErr_ = "Context alloc failed !";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "Context alloc failed !";
         return false;
     }
 
-    pContextListen_->socket_ = listen_socket_;
+    listen_context_ptr_->socket_ = listen_socket_;
 #endif
 
 #ifdef __APPLE__
-    nKqfd_ = kqueue();
-    if (nKqfd_ == -1)
+    kq_fd_ = kqueue();
+    if (kq_fd_ == -1)
     {
-        strErr_ = "kqueue error ["  + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "kqueue error ["  + std::string(strerror(errno)) + "]";
         return false;
     }
-    if(!KqueueCtl(pContextListen_, EVFILT_READ, EV_ADD ))
+    if(!control_kq(listen_context_ptr_, EVFILT_READ, EV_ADD ))
     {
         return false;
     }
 #elif __linux__
-    nEpfd_ = epoll_create1(0);
-    if (nEpfd_ == -1)
+    ep_fd_ = epoll_create1(0);
+    if (ep_fd_ == -1)
     {
-        strErr_ = "epoll create error ["  + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "epoll create error ["  + std::string(strerror(errno)) + "]";
         return false;
     }
 
-    if(!EpollCtl ( pContextListen_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD )) 
+    if(!control_ep ( listen_context_ptr_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD )) 
     {
         return false;
     }
 #endif
 
     //start server thread
-    bServerRun_ = true;
-    std::thread server_thread(&ASock::ServerThreadRoutine, this, 0);
+    is_need_server_run_ = true;
+    is_server_running_  = true;
+    std::thread server_thread(&ASock::server_thread_routine, this);
     server_thread.detach();
 
-    bServerRunning_ = true;
     return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ASock::StopServer()
+void ASock::stop_server()
 {
-    bServerRun_ = false;
+    is_need_server_run_ = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-Context* ASock::PopClientContextFromCache()
+Context* ASock::pop_client_context_from_cache()
 {
-    if (!clientInfoCacheQueue_.empty())
+    if (!queue_client_cache_.empty())
     {
-        Context* pRtn = clientInfoCacheQueue_.front();
-        clientInfoCacheQueue_.pop();
+        Context* pRtn = queue_client_cache_.front();
+        queue_client_cache_.pop();
 
         return pRtn;
     }
@@ -425,70 +535,68 @@ Context* ASock::PopClientContextFromCache()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ASock::PushClientInfoToCache(Context* pClientContext)
+void ASock::push_client_context_to_cache(Context* context_ptr)
 {
     CLIENT_UNORDERMAP_ITER_T itFound;
-    itFound = clientMap_.find(pClientContext->socket_);
-    if (itFound != clientMap_.end())
+    itFound = client_map_.find(context_ptr->socket_);
+    if (itFound != client_map_.end())
     {
-        clientMap_.erase(itFound);
+        client_map_.erase(itFound);
     }
 
     //reset
-    pClientContext->recvBuffer_.ReSet();
-    pClientContext->socket_ = -1;
-    pClientContext->bPacketLenCalculated = false;
-    pClientContext->nOnePacketLength = 0;
+    context_ptr->recvBuffer_.ReSet();
+    context_ptr->socket_ = -1;
+    context_ptr->is_packet_len_calculated_ = false;
+    context_ptr->complete_packet_len_ = 0;
 
-    clientInfoCacheQueue_.push(pClientContext);
+    queue_client_cache_.push(context_ptr);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ASock::ClearClientInfoToCache()
+void ASock::clear_client_cache()
 {
-    while(!clientInfoCacheQueue_.empty() ) 
+    while(!queue_client_cache_.empty() ) 
     {
-        delete clientInfoCacheQueue_.front();
-        clientInfoCacheQueue_.pop();
+        delete queue_client_cache_.front();
+        queue_client_cache_.pop();
     }
 }
 
 
 ///////////////////////////////////////////////////////////////////////////////
-void ASock:: ServerThreadRoutine(int nCoreIndex)
+void ASock:: server_thread_routine()
 {
 #ifdef __APPLE__
-    pKqEvents_ = new struct kevent[nMaxClientNum_];
-    memset(pKqEvents_, 0x00, sizeof(struct kevent) * nMaxClientNum_);
+    kq_events_ptr_ = new struct kevent[max_client_limit_];
+    memset(kq_events_ptr_, 0x00, sizeof(struct kevent) * max_client_limit_);
     struct timespec ts;
     ts.tv_sec  =1;
     ts.tv_nsec =0;
 #elif __linux__
-    pEpEvents_ = new struct epoll_event[nMaxClientNum_];
-    memset(pEpEvents_, 0x00, sizeof(struct epoll_event) * nMaxClientNum_);
+    ep_events_ = new struct epoll_event[max_client_limit_];
+    memset(ep_events_, 0x00, sizeof(struct epoll_event) * max_client_limit_);
 #endif
     SOCKADDR_IN     clientAddr  ;
 
-    char szTempData[asocklib::DEFAULT_PACKET_SIZE];
+    char szTempData[asock::DEFAULT_PACKET_SIZE];
 
-    while(bServerRun_)
+    while(is_need_server_run_)
     {
 #ifdef __APPLE__
-        int nEventCnt = kevent(nKqfd_, NULL, 0, pKqEvents_, nMaxClientNum_, &ts); 
+        int nEventCnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, max_client_limit_, &ts); 
         if (nEventCnt < 0)
         {
-            strErr_ = "kevent error ["  + std::string(strerror(errno)) + "]";
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
-            bServerRunning_ = false;
+            err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";
+            is_server_running_ = false;
             return;
         }
 #elif __linux__
-        int nEventCnt = epoll_wait(nEpfd_, pEpEvents_, nMaxClientNum_, 1000 );
+        int nEventCnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 1000 );
         if (nEventCnt < 0)
         {
-            strErr_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
-            bServerRunning_ = false;
+            err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
+            is_server_running_ = false;
             return;
         }
 #endif
@@ -496,13 +604,13 @@ void ASock:: ServerThreadRoutine(int nCoreIndex)
         for (int i = 0; i < nEventCnt; i++)
         {
 #ifdef __APPLE__
-            if (pKqEvents_[i].ident   == listen_socket_) 
+            if (kq_events_ptr_[i].ident   == listen_socket_) 
 #elif __linux__
-            //if (pEpEvents_[i].data.fd == listen_socket_)
-            if (((Context*)pEpEvents_[i].data.ptr)->socket_ == listen_socket_)
+            //if (ep_events_[i].data.fd == listen_socket_)
+            if (((Context*)ep_events_[i].data.ptr)->socket_ == listen_socket_)
 #endif
             {
-                //############## accept ############################
+                //# accept #----------
                 while(1)
                 {
                     SOCKLEN_T socklen=0;
@@ -521,54 +629,60 @@ void ASock:: ServerThreadRoutine(int nCoreIndex)
                         }
                         else
                         {
-                            strErr_ = "accept error [" + std::string(strerror(errno)) + "]";
-                            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
-                            bServerRunning_ = false;
+                            err_msg_ = "accept error [" + std::string(strerror(errno)) + "]";
+                            is_server_running_ = false;
                             return;
                         }
                     }
-                    ++nClientCnt_;
-                    SetNonBlocking(newClientFd);
+                    ++client_cnt_;
+                    set_socket_non_blocking(newClientFd);
 
-                    Context* pClientContext = PopClientContextFromCache();
-                    if(pClientContext==nullptr)
+                    Context* client_context_ptr = pop_client_context_from_cache();
+                    if(client_context_ptr==nullptr)
                     {
-                        pClientContext = new (std::nothrow) Context();
-                        if(!pClientContext)
+                        client_context_ptr = new (std::nothrow) Context();
+                        if(!client_context_ptr)
                         {
-                            strErr_ = "Context alloc failed !";
-                            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
-                            bServerRunning_ = false;
+                            err_msg_ = "Context alloc failed !";
+                            is_server_running_ = false;
                             return ;
                         }
 
-                        if  ( cumbuffer_defines::OP_RSLT_OK != pClientContext->recvBuffer_.Init(nBufferCapcity_) )
+                        if  ( cumbuffer_defines::OP_RSLT_OK != 
+                                  client_context_ptr->recvBuffer_.Init(recv_buffer_capcity_) )
                         {
-                            strErr_  = "cumBuffer Init error : " + pClientContext->recvBuffer_.GetErrMsg();
-                            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
-                            bServerRunning_ = false;
+                            err_msg_  = "cumBuffer Init error : " + 
+                                        client_context_ptr->recvBuffer_.GetErrMsg();
+                            is_server_running_ = false;
                             return ;
                         }
                     }
-                    pClientContext->socket_ = newClientFd;
+                    client_context_ptr->socket_ = newClientFd;
 
                     std::pair<CLIENT_UNORDERMAP_ITER_T, bool> clientMapRslt;
-                    clientMapRslt = clientMap_.insert(std::pair<int, Context*>(newClientFd, pClientContext));
+                    clientMapRslt = client_map_.insert(std::pair<int, Context*>(newClientFd, client_context_ptr));
                     if (!clientMapRslt.second)
                     {
-                        strErr_ = "clientMap_ insert error [" + std::to_string(newClientFd) + " already exist]";
-                        std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " << GetLastErrMsg() << "\n";
+                        err_msg_ = "client_map_ insert error [" + 
+                                   std::to_string(newClientFd) + " already exist]";
                         break;
                     }
 
-                    OnClientConnected(pClientContext);
+                    if(cb_on_client_connected_!=nullptr)
+                    {
+                        cb_on_client_connected_(client_context_ptr);
+                    }
+                    else
+                    {
+                        on_client_connected(client_context_ptr);
+                    }
 #ifdef __APPLE__
-                    if(!KqueueCtl(pClientContext, EVFILT_READ, EV_ADD ))
+                    if(!control_kq(client_context_ptr, EVFILT_READ, EV_ADD ))
 #elif __linux__
-                    if(!EpollCtl ( pClientContext, EPOLLIN |EPOLLRDHUP  , EPOLL_CTL_ADD ))
+                    if(!control_ep( client_context_ptr, EPOLLIN |EPOLLRDHUP  , EPOLL_CTL_ADD ))
 #endif
                     {
-                        bServerRunning_ = false;
+                        is_server_running_ = false;
                         return;
                     }
 
@@ -576,78 +690,79 @@ void ASock:: ServerThreadRoutine(int nCoreIndex)
             }
             else
             {
-                //############## send/recv ############################
+                //# send/recv #----------
 #ifdef __APPLE__
-                Context* pClientContext = (Context*)pKqEvents_[i].udata;
+                Context* client_context_ptr = (Context*)kq_events_ptr_[i].udata;
 #elif __linux__
-                Context* pClientContext = (Context*)pEpEvents_[i].data.ptr ;
+                Context* client_context_ptr = (Context*)ep_events_[i].data.ptr ;
 #endif
 
 #ifdef __APPLE__
-                if (pKqEvents_[i].flags & EV_EOF)
+                if (kq_events_ptr_[i].flags & EV_EOF)
 #elif __linux__
-                if (pEpEvents_[i].events & EPOLLRDHUP || pEpEvents_[i].events & EPOLLERR) 
+                if (ep_events_[i].events & EPOLLRDHUP || ep_events_[i].events & EPOLLERR) 
 #endif
                 {
-                    //############## close ############################
-                    //std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] Terminate client"<< "\n"; 
-                    TerminateClient(i, pClientContext); 
+                    //# close #----------
+                    terminate_client(client_context_ptr); 
                 }
 #ifdef __APPLE__
-                else if (EVFILT_READ == pKqEvents_[i].filter)
+                else if (EVFILT_READ == kq_events_ptr_[i].filter)
 #elif __linux__
-                else if (pEpEvents_[i].events & EPOLLIN) 
+                else if (ep_events_[i].events & EPOLLIN) 
 #endif
                 {
-                    //############## recv ############################
-                    if(! Recv(pClientContext) ) 
+                    //# recv #----------
+                    if(! recv_data(client_context_ptr) ) 
                     {
-                        //std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] Terminate client : "<< GetLastErrMsg() <<"\n"; 
-                        TerminateClient(i, pClientContext); 
+                        terminate_client(client_context_ptr); 
                     }
                 }
             }
         } //for
     } //while
 
-    bServerRunning_ = false;
+    is_server_running_ = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void  ASock::TerminateClient(int nClientIndex, Context* pClientContext)
+void  ASock::terminate_client(Context* context_ptr)
 {
-    --nClientCnt_;
+    client_cnt_--;
 #ifdef __APPLE__
-    KqueueCtl(pClientContext, EVFILT_READ, EV_DELETE );
+    control_kq(context_ptr, EVFILT_READ, EV_DELETE );
 #elif __linux__
-    EpollCtl (pClientContext, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL ); //just in case
+    control_ep(context_ptr, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL ); //just in case
 #endif
 
-    close(pClientContext->socket_);
-    OnClientDisConnected(pClientContext);
-    PushClientInfoToCache(pClientContext);
+    close(context_ptr->socket_);
+    if(cb_on_client_connected_!=nullptr)
+    {
+        cb_on_client_disconnected_(context_ptr);
+    }
+    else
+    {
+        on_client_disconnected(context_ptr);
+    }
+
+    push_client_context_to_cache(context_ptr);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-int  ASock::GetCountOfClients()
-{
-    return nClientCnt_ ; 
-}
 
 
 ///////////////////////////////////////////////////////////////////////////////
 // CLIENT
 ///////////////////////////////////////////////////////////////////////////////
-bool  ASock::InitTcpClient( const char* connIP, 
-                            int         nPort, 
-                            int         nConnectTimeoutSecs,
-                            int         nMaxMsgLen)
+bool  ASock::init_tcp_client(const char* server_ip, 
+                             int         server_port, 
+                             int         connect_timeout_secs, 
+                             int         max_data_len )
 {
-    SockUsage_ = SOCK_USAGE_TCP_CLIENT  ;
+    sock_usage_ = SOCK_USAGE_TCP_CLIENT  ;
 
-    Disconnect(); 
+    disconnect(); 
 
-    if(!SetBufferCapacity(nMaxMsgLen) )
+    if(!set_buffer_capacity(max_data_len) )
     {
         return false;
     }
@@ -656,26 +771,23 @@ bool  ASock::InitTcpClient( const char* connIP,
 
     if( context_.socket_ < 0 )
     {
-        strErr_ = "init error [" + std::string(strerror(errno)) ;
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "init error [" + std::string(strerror(errno)) ;
         return false;
     }   
 
-    if(!SetNonBlocking (context_.socket_))
+    if(!set_socket_non_blocking (context_.socket_))
     {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return  false;
     }
     
-    if(!bCumBufferInit_ )
+    if(!is_buffer_init_ )
     {
-        if  ( cumbuffer_defines::OP_RSLT_OK != context_.recvBuffer_.Init(nBufferCapcity_) )
+        if  ( cumbuffer_defines::OP_RSLT_OK != context_.recvBuffer_.Init(recv_buffer_capcity_) )
         {
-            strErr_ = "cumBuffer Init error :" + context_.recvBuffer_.GetErrMsg();
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+            err_msg_ = "cumBuffer Init error :" + context_.recvBuffer_.GetErrMsg();
             return false;
         }
-        bCumBufferInit_ = true;
+        is_buffer_init_ = true;
     }
     else
     {
@@ -683,30 +795,30 @@ bool  ASock::InitTcpClient( const char* connIP,
         context_.recvBuffer_.ReSet(); 
     }
 
-    memset((void *)&connAddr_,0x00,sizeof(connAddr_)) ;
-    connAddr_.sin_family      = AF_INET ;
-    connAddr_.sin_addr.s_addr = inet_addr( connIP ) ;
-    connAddr_.sin_port = htons( nPort );
+    SOCKADDR_IN       server_addr ;
+    memset((void *)&server_addr,0x00,sizeof(server_addr)) ;
+    server_addr.sin_family      = AF_INET ;
+    server_addr.sin_addr.s_addr = inet_addr( server_ip ) ;
+    server_addr.sin_port = htons( server_port );
 
     struct timeval timeoutVal;
-    timeoutVal.tv_sec  = nConnectTimeoutSecs ;  
+    timeoutVal.tv_sec  = connect_timeout_secs ;  
     timeoutVal.tv_usec = 0;
 
-    int nRslt = connect(context_.socket_,(SOCKADDR *)&connAddr_, (SOCKLEN_T )sizeof(SOCKADDR_IN)) ;
+    int nRslt = connect(context_.socket_,(SOCKADDR *)&server_addr, (SOCKLEN_T )sizeof(SOCKADDR_IN)) ;
 
     if ( nRslt < 0)
     {
         if (errno != EINPROGRESS)
         {
-            strErr_ = "connect error [" + std::string(strerror(errno))+ "]";
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+            err_msg_ = "connect error [" + std::string(strerror(errno))+ "]";
             return false;
         }
     }
 
     if (nRslt == 0)
     {
-        bConnected_ = true;
+        is_connected_ = true;
         return true;
     }
 
@@ -718,14 +830,12 @@ bool  ASock::InitTcpClient( const char* connIP,
     nRslt = select(context_.socket_+1, &rset, &wset, NULL, &timeoutVal ) ;
     if (nRslt == 0 )
     {
-        strErr_ = "connect timeout";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "connect timeout";
         return false;
     }
     else if (nRslt< 0)
     {
-        strErr_ = "select :error [" + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "select :error [" + std::string(strerror(errno)) + "]";
         return false;
     }
 
@@ -735,52 +845,47 @@ bool  ASock::InitTcpClient( const char* connIP,
         socklen_t  len = sizeof(nSocketError);
         if (getsockopt(context_.socket_, SOL_SOCKET, SO_ERROR, &nSocketError, &len) < 0)
         {
-            strErr_ = "getsockopt :SO_ERROR :error [" + std::string(strerror(errno)) + "]";
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+            err_msg_ = "getsockopt :SO_ERROR :error [" + std::string(strerror(errno)) + "]";
             return false;
         }
 
         if (nSocketError) 
         {
-            strErr_ = "getsockopt :SO_ERROR :error [" + std::string(strerror(errno)) + "]";
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+            err_msg_ = "getsockopt :SO_ERROR :error [" + std::string(strerror(errno)) + "]";
             return false;
         }
     } 
     else
     {
-        strErr_ = "select error : unexpected [" + std::string(strerror(errno))+ "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "select error : unexpected [" + std::string(strerror(errno))+ "]";
         return false;
     }
 
-    bConnected_ = true;
+    is_connected_ = true;
 
-    if(!bClientThreadRunning_ )
+    if(!is_client_thread_running_ )
     {
 #ifdef __APPLE__
-        pKqEvents_ = new struct kevent;
-        memset(pKqEvents_, 0x00, sizeof(struct kevent) );
-        nKqfd_ = kqueue();
-        if (nKqfd_ == -1)
+        kq_events_ptr_ = new struct kevent;
+        memset(kq_events_ptr_, 0x00, sizeof(struct kevent) );
+        kq_fd_ = kqueue();
+        if (kq_fd_ == -1)
         {
-            strErr_ = "kqueue error ["  + std::string(strerror(errno)) + "]";
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+            err_msg_ = "kqueue error ["  + std::string(strerror(errno)) + "]";
             return false;
         }
 #elif __linux__
-        pEpEvents_ = new struct epoll_event;
-        memset(pEpEvents_, 0x00, sizeof(struct epoll_event) );
-        nEpfd_ = epoll_create1(0);
-        if ( nEpfd_== -1)
+        ep_events_ = new struct epoll_event;
+        memset(ep_events_, 0x00, sizeof(struct epoll_event) );
+        ep_fd_ = epoll_create1(0);
+        if ( ep_fd_== -1)
         {
-            strErr_ = "epoll create error ["  + std::string(strerror(errno)) + "]";
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+            err_msg_ = "epoll create error ["  + std::string(strerror(errno)) + "]";
             return false;
         }
 #endif
 
-        std::thread client_thread(&ASock::ClientThreadRoutine, this);
+        std::thread client_thread(&ASock::client_thread_routine, this);
         client_thread.detach();
     }
 
@@ -788,12 +893,12 @@ bool  ASock::InitTcpClient( const char* connIP,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ASock::ClientThreadRoutine()
+void ASock::client_thread_routine()
 {
-    bClientThreadRunning_ = true;
+    is_client_thread_running_ = true;
 
 #ifdef __APPLE__
-    if(!KqueueCtl(&context_, EVFILT_READ, EV_ADD ))
+    if(!control_kq(&context_, EVFILT_READ, EV_ADD ))
     {
         return;
     }
@@ -801,80 +906,90 @@ void ASock::ClientThreadRoutine()
     ts.tv_sec  =1;
     ts.tv_nsec =0;
 #elif __linux__
-    if(!EpollCtl ( &context_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
+    if(!control_ep( &context_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
     {
         return;
     }
 #endif
 
-    char szTempData[asocklib::DEFAULT_PACKET_SIZE];
+    char szTempData[asock::DEFAULT_PACKET_SIZE];
 
-    while(bConnected_)
+    while(is_connected_)
     {
 #ifdef __APPLE__
-        int nEventCnt = kevent(nKqfd_, NULL, 0, pKqEvents_, 1, &ts); 
+        int nEventCnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, 1, &ts); 
 #elif __linux__
-        int nEventCnt = epoll_wait(nEpfd_, pEpEvents_, 1, 1000 );
+        int nEventCnt = epoll_wait(ep_fd_, ep_events_, 1, 1000 );
 #endif
         if (nEventCnt < 0)
         {
 #ifdef __APPLE__
-            strErr_ = "kevent error ["  + std::string(strerror(errno)) + "]";
+            err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";
 #elif __linux__
-            strErr_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
+            err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
 #endif
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
-            bClientThreadRunning_ = false;
+            is_client_thread_running_ = false;
             return;
         }
 #ifdef __APPLE__
-        if (pKqEvents_->flags & EV_EOF)
+        if (kq_events_ptr_->flags & EV_EOF)
 #elif __linux__
-        if (pEpEvents_->events & EPOLLRDHUP || pEpEvents_->events & EPOLLERR) 
+        if (ep_events_->events & EPOLLRDHUP || ep_events_->events & EPOLLERR) 
 #endif
         {
             //############## close ############################
-            //std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] close"<< "\n"; 
             close( context_.socket_);
-            OnDisConnected();
+            if(cb_on_disconnected_from_server_!=nullptr)
+            {
+                cb_on_disconnected_from_server_();
+            }
+            else
+            {
+                on_disconnected_from_server();
+            }
             break;
         }
 #ifdef __APPLE__
-        else if (EVFILT_READ == pKqEvents_->filter )
+        else if (EVFILT_READ == kq_events_ptr_->filter )
 #elif __linux__
-        else if (pEpEvents_->events & EPOLLIN) 
+        else if (ep_events_->events & EPOLLIN) 
 #endif
         {
             //############## recv ############################
-            if(! Recv(&context_) ) 
+            if(! recv_data(&context_) ) 
             {
-                //std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] close : "<< GetLastErrMsg() <<"\n"; 
                 close( context_.socket_);
-                OnDisConnected();
+                if(cb_on_disconnected_from_server_!=nullptr)
+                {
+                    cb_on_disconnected_from_server_();
+                }
+                else
+                {
+                    on_disconnected_from_server();
+                }
                 break;
             }
         }
 
     } //while
 
-    bClientThreadRunning_ = false;
+    is_client_thread_running_ = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock:: SendToServer(const char* pData, int nLen)
+bool ASock:: send_to_server(const char* data, int len)
 {
-    if ( !bConnected_ )
+    if ( !is_connected_ )
     {
-        strErr_ = "not connected";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error : "<< GetLastErrMsg() <<"\n"; 
+        err_msg_ = "not connected";
         return false;
     }
 
-    return Send(&context_, pData, nLen);
+    return send_data(&context_, data, len);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ASock:: Disconnect()
+void ASock:: disconnect()
 {
     if(context_.socket_ > 0 )
     {

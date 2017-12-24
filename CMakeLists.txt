@@ -11,5 +11,6 @@ elseif ( CMAKE_SYSTEM_NAME MATCHES "Linux")
     add_subdirectory (src/_nix)
 endif()
 
-add_subdirectory (sample/echo_server)
+add_subdirectory (sample/echo_server/inheritance)
+add_subdirectory (sample/echo_server/composition)
 

@@ -1,3 +1,26 @@
+/******************************************************************************
+MIT License
+
+Copyright (c) 2017 jung hyun, ko
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+ *****************************************************************************/
 
 #ifndef __ASOCK_HPP__
 #define __ASOCK_HPP__
@@ -11,15 +34,20 @@
 #include <arpa/inet.h>
 #include <sys/un.h>
 #include <signal.h>
+#include <sys/time.h>
 
+//======================
 #ifdef __APPLE__
+//======================
 #include <sys/select.h>
 #include <sys/types.h>
 #include <sys/event.h>
-#include <sys/time.h>
+//======================
 #elif __linux__
+//======================
 #include <sys/epoll.h>
 #endif
+//======================
 
 #include <string>
 #include <atomic>
@@ -27,6 +55,7 @@
 #include <queue>
 #include <unordered_map>
 #include <mutex> 
+#include <functional>
 #include "CumBuffer.h"
 
 typedef struct  sockaddr_in SOCKADDR_IN ;
@@ -34,7 +63,8 @@ typedef struct  sockaddr    SOCKADDR ;
 typedef         socklen_t   SOCKLEN_T ;
 
 
-namespace asocklib
+///////////////////////////////////////////////////////////////////////////////
+namespace asock
 {
     const int       DEFAULT_PACKET_SIZE =4096;
     const int       DEFAULT_CAPACITY    =4096;
@@ -44,24 +74,24 @@ namespace asocklib
     {
         CumBuffer       recvBuffer_;
         int             socket_{-1};
-        std::mutex      clientSendLock_; 
-        bool            bPacketLenCalculated {false};
-        size_t          nOnePacketLength {0} ;
+        std::mutex      send_lock_ ; 
+        bool            is_packet_len_calculated_ {false};
+        size_t          complete_packet_len_ {0} ;
     } Context ;
 
     typedef enum _ENUM_SOCK_USAGE_
     {
         SOCK_USAGE_UNKNOWN = 0 ,
         SOCK_USAGE_TCP_SERVER ,
-        SOCK_USAGE_IPC_SERVER ,
+        SOCK_USAGE_IPC_SERVER , //TODO
         SOCK_USAGE_TCP_CLIENT ,
-        SOCK_USAGE_IPC_CLIENT 
+        SOCK_USAGE_IPC_CLIENT   //TODO
 
     } ENUM_SOCK_USAGE ;
 } 
 
-using Context = asocklib::Context ;
-using ENUM_SOCK_USAGE = asocklib::ENUM_SOCK_USAGE ;
+using Context = asock::Context ;
+using ENUM_SOCK_USAGE = asock::ENUM_SOCK_USAGE ;
 using CLIENT_UNORDERMAP_T      = std::unordered_map<int, Context*> ;
 using CLIENT_UNORDERMAP_ITER_T = std::unordered_map<int, Context*>::iterator ;
 
@@ -69,105 +99,134 @@ using CLIENT_UNORDERMAP_ITER_T = std::unordered_map<int, Context*>::iterator ;
 class ASock
 {
     public :
-
-        ASock();
+        ASock()=default;
         virtual ~ASock()  ;
 
-        bool            SetBufferCapacity(int nMaxMsgLen);
-        std::string     GetLastErrMsg(){return strErr_; }
-        bool            SetNonBlocking(int nSockFd);
+        bool        set_buffer_capacity(int max_data_len);
+        std::string get_last_err_msg(){return err_msg_; }
+        bool        set_socket_non_blocking(int sock_fd);
+        bool        send_data(Context* context_ptr, const char* data_ptr, int len); 
 
     protected :
-        std::string     strErr_ ;
-        char            szRecvBuff_     [asocklib::DEFAULT_PACKET_SIZE];
-        char*           OnePacketDataPtr_ {nullptr}; 
-        int             nBufferCapcity_ {-1};
+        char*      complete_packet_data_ {nullptr}; 
+        int        recv_buffer_capcity_ {-1};
 
 #ifdef __APPLE__
-        //kqueue 
-        struct          kevent*      pKqEvents_{nullptr};
-        int             nKqfd_          {-1};
+        struct     kevent* kq_events_ptr_ {nullptr};
+        int        kq_fd_ {-1};
 #elif __linux__
-        //epoll
-        struct          epoll_event* pEpEvents_{nullptr};
-        int             nEpfd_          {-1};
+        struct     epoll_event* ep_events_{nullptr};
+        int        ep_fd_ {-1};
 #endif
-
-#if defined __APPLE__ || defined __linux__ 
-        Context*        pContextListen_{nullptr};
-#endif
-        ENUM_SOCK_USAGE SockUsage_ {asocklib::SOCK_USAGE_UNKNOWN};
+        std::string   err_msg_ ;
+        ENUM_SOCK_USAGE sock_usage_ {asock::SOCK_USAGE_UNKNOWN};
 
     protected :
-        bool            Recv(Context* pContext);
-        bool            Send(Context* pContext, const char* pData, int nLen); 
+        bool   recv_data(Context* context_ptr);
 #ifdef __APPLE__
-        bool            KqueueCtl(Context* pContext , uint32_t events, uint32_t fflags);
+        bool   control_kq(Context* context_ptr , uint32_t events, uint32_t fflags);
 #elif __linux__
-        bool            EpollCtl (Context* pContext , uint32_t events, int op);
+        bool   control_ep(Context* context_ptr , uint32_t events, int op);
 #endif
 
     private:
-        virtual size_t  GetOnePacketLength(Context* pContext)=0; 
-        virtual bool    OnRecvOnePacketData(Context* pContext, char* pOnePacket, int nPacketLen)=0; 
-        //TODO : composition support
+        //choose usage, inheritance or composition.
+        //1.for inheritance : Implement these virtual functions.
+        virtual size_t  on_calculate_data_len(Context* context_ptr){return -1;}; 
+        virtual bool    on_recved_complete_data(Context* context_ptr, 
+                                                char*    data_ptr, 
+                                                int      len){return false;}; 
 
-    // CLIENT -------------------------------------------------
+        //2.for composition : Assign yours to these callbacks 
+    public:
+        bool set_cb_on_calculate_packet_len(std::function<size_t(Context*)> cb)  ;
+        bool set_cb_on_recved_complete_packet(std::function<bool(Context*, char*, int)> cb) ;
+    private:
+        std::function<size_t(Context*)>           cb_on_calculate_data_len_ {nullptr} ;
+        std::function<bool(Context*, char*, int)> cb_on_recved_complete_packet_{nullptr};
+
+    //---------------------------------------------------------    
+    // CLIENT Usage
+    //---------------------------------------------------------    
     public :
-        bool            InitTcpClient(  const char* connIP, 
-                                        int         nPort, 
-                                        int         nConnectTimeoutSecs=10, 
-                                        int         nMaxMsgLen = 0 );
-        //bool            InitIpcClient(const char* sock_path); //TODO
-        bool            SendToServer (const char* packet, int sendSize) ; 
-        void            Disconnect() ;
-        int             GetSocket () { return  context_.socket_ ; }
-        bool            IsConnected() { return bConnected_;}
+        bool   init_tcp_client(const char* server_ip, 
+                               int         server_port, 
+                               int         connect_timeout_secs=10, 
+                               int         max_data_len = 0 );
+        //bool  init_ipc_client(const char* sock_path); //TODO
+        bool   send_to_server (const char* data, int len) ; 
+        void   disconnect() ;
+        int    get_socket () { return  context_.socket_ ; }
+        bool   is_connected() { return is_connected_;}
 
     private :
-        std::atomic<bool>    bClientThreadRunning_ {false};
-        bool            bCumBufferInit_ {false};
-        SOCKADDR_IN     connAddr_ ;
-        bool            bConnected_ {false};
-        Context         context_;
+        std::atomic<bool> is_client_thread_running_ {false};
+        bool     is_buffer_init_ {false};
+        bool     is_connected_ {false};
+        Context  context_;
 
     private :
-        void            ClientThreadRoutine();
-        virtual void    OnDisConnected() {}; 
+        void client_thread_routine();
 
-    // SERVER -------------------------------------------------
+        //for composition : Assign yours to these callbacks 
     public :
-        bool            InitTcpServer (const char* connIP, int nPort, int nMaxClient, int nMaxMsgLen=0);
-        //bool            InitIpcServer (const char* sock_path, int nMaxClient, int nMaxMsgLen=0); //TODO
-        bool            RunServer();
-        bool            IsServerRunnig(){return bServerRunning_;};
-        void            StopServer();
-        int             GetMaxClientNum(){return nMaxClientNum_ ; };
-        int             GetCountOfClients();
+        bool set_cb_on_disconnected_from_server(std::function<void()> cb)  ;
+    private :
+        std::function<void()> cb_on_disconnected_from_server_ {nullptr} ;
+
+        //for inheritance : Implement these virtual functions.
+        virtual void    on_disconnected_from_server() {}; 
+
+    //---------------------------------------------------------    
+    // SERVER Usage
+    //---------------------------------------------------------    
+    public :
+        bool  init_tcp_server (const char* bind_ip, 
+                               int         bind_port, 
+                               int         max_client, 
+                               int         max_data_len=0);
+        //bool init_ipc_server(const char* sock_path, 
+        //                     int         max_client, 
+        //                     int         max_data_len=0); //TODO
+        bool  run_server();
+        bool  is_server_running(){return is_server_running_;};
+        void  stop_server();
+        int   get_max_client_limit(){return max_client_limit_ ; }
+        int   get_count_of_clients(){ return client_cnt_ ; }
 
     private :
-        int                  nCores_         {0};
-        SOCKADDR_IN          serverAddr_  ;
-        std::string          strServerIp_    {""};
-        int                  listen_socket_  {-1};
-        int                  nMaxClientNum_  {-1};
-        int                  nServerPort_    {-1};
-        std::atomic<int>     nClientCnt_     {0}; 
-        std::atomic<bool>    bServerRun_     {false};
-        std::atomic<bool>    bServerRunning_ {false};
+        std::string       server_ip_   {""};
+        int               server_port_ {-1};
+        std::atomic<int>  client_cnt_ {0}; 
+        std::atomic<bool> is_need_server_run_ {false};
+        std::atomic<bool> is_server_running_  {false};
+        int  listen_socket_     {-1};
+        int  max_client_limit_  {-1};
 
-        CLIENT_UNORDERMAP_T     clientMap_;
-        std::queue<Context*>    clientInfoCacheQueue_;
+        CLIENT_UNORDERMAP_T  client_map_;
+        std::queue<Context*> queue_client_cache_;
+#if defined __APPLE__ || defined __linux__ 
+        Context*  listen_context_ptr_ {nullptr};
+#endif
 
     private :
-        void            ServerThreadRoutine(int nCoreIndex);
-        void            TerminateClient(int nClientIndex, Context* pClientContext);
-        Context*        PopClientContextFromCache();
-        void            PushClientInfoToCache(Context* pClientContext);
-        void            ClearClientInfoToCache();
+        void       server_thread_routine();
+        void       terminate_client(Context* context_ptr);
+        void       push_client_context_to_cache(Context* context_ptr);
+        void       clear_client_cache();
+        Context*   pop_client_context_from_cache();
 
-        virtual void    OnClientConnected(Context* pClientContext) {}; 
-        virtual void    OnClientDisConnected(Context* pClientContext) {} ;  
+        //for composition : Assign yours to these callbacks 
+    public :
+        bool  set_cb_on_client_connected(std::function<void(Context*)> cb)  ;
+        bool  set_cb_on_client_disconnected(std::function<void(Context*)> cb)  ;
+    private :
+        std::function<void(Context*)> cb_on_client_connected_ {nullptr} ;
+        std::function<void(Context*)> cb_on_client_disconnected_ {nullptr} ;
+
+        //for inheritance : Implement these virtual functions.
+        virtual void    on_client_connected(Context* context_ptr) {}; 
+        virtual void    on_client_disconnected(Context* context_ptr) {} ;  
 };
 
 #endif 

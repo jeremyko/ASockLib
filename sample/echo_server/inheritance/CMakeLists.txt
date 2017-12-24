@@ -1,8 +1,8 @@
-add_executable (server echo_server.cpp msg_defines.h)
-add_executable (client client.cpp msg_defines.h)
+add_executable (server_inher echo_server.cpp msg_defines.h)
+add_executable (client_inher client.cpp msg_defines.h)
  
-target_link_libraries (server LINK_PUBLIC ASockLib)
-target_link_libraries (client LINK_PUBLIC ASockLib)
+target_link_libraries (server_inher LINK_PUBLIC ASockLib)
+target_link_libraries (client_inher LINK_PUBLIC ASockLib)
 
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
