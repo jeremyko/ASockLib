@@ -434,12 +434,18 @@ bool ASock::run_server()
         return  false;
     }
 
-    int reuseaddr=1;
+    int opt_on=1;
     int nRtn = -1;
 
-    if (setsockopt(listen_socket_,SOL_SOCKET,SO_REUSEADDR,&reuseaddr,sizeof(reuseaddr))==-1) 
+    if (setsockopt(listen_socket_,SOL_SOCKET,SO_REUSEADDR,&opt_on,sizeof(opt_on))==-1) 
     {
         err_msg_ = "setsockopt SO_REUSEADDR error ["  + std::string(strerror(errno)) + "]";
+        return false;
+    }
+
+    if (setsockopt(listen_socket_,SOL_SOCKET,SO_KEEPALIVE, &opt_on, sizeof(opt_on))==-1) 
+    {
+        err_msg_ = "setsockopt SO_KEEPALIVE error ["  + std::string(strerror(errno)) + "]";
         return false;
     }
 
