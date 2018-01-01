@@ -1,20 +1,23 @@
 #include <iostream>
 #include <cassert>
+#include <csignal>//TEST
 
 #include "ASock.hpp"
 #include "msg_defines.h"
-//#define NDEBUG
 
 ///////////////////////////////////////////////////////////////////////////////
 class EchoServer 
 {
     public:
+		EchoServer(){this_instance_ = this; }
         bool    initialize_tcp_server();
         bool    is_server_running(){return tcp_server_.is_server_running();};
         std::string  get_last_err_msg(){return  tcp_server_.get_last_err_msg() ; }
+        void    set_sighandler();
 
     private:
         ASock tcp_server_ ; //composite usage
+        static  EchoServer* this_instance_ ;
     private:
         size_t  on_calculate_data_len(asock::Context* context_ptr);
         bool    on_recved_complete_data(asock::Context* context_ptr, 
@@ -22,13 +25,16 @@ class EchoServer
                                         int             len ) ;
         void    on_client_connected(asock::Context* context_ptr) ; 
         void    on_client_disconnected(asock::Context* context_ptr) ; 
+        static void sigint_handler(int signo);
 };
+
+EchoServer* EchoServer::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
 bool EchoServer::initialize_tcp_server()
 {
-    //max client is 100000, max message length is approximately 300 bytes...
-    tcp_server_.init_tcp_server("127.0.0.1", 9990, 100000, 300);
+    //max client is 100000, max message length is approximately 1024 bytes...
+    tcp_server_.init_tcp_server("127.0.0.1", 9990, 100000, 1024);
 
     //register callbacks
     using std::placeholders::_1;
@@ -57,15 +63,15 @@ bool EchoServer::initialize_tcp_server()
 size_t EchoServer::on_calculate_data_len(asock::Context* context_ptr)
 {
     //user specific : calculate your complete packet length here using buffer data.
-    if(context_ptr->recvBuffer_.GetCumulatedLen() < (int)CHAT_HEADER_SIZE )
+    if(context_ptr->recv_buffer_.GetCumulatedLen() < (int)CHAT_HEADER_SIZE )
     {
         return asock::MORE_TO_COME ; //more to come 
     }
 
-    ST_MY_HEADER sHeader ;
-    context_ptr->recvBuffer_.PeekData(CHAT_HEADER_SIZE, (char*)&sHeader); 
-    size_t supposed_total_len = std::atoi(sHeader.szMsgLen) + CHAT_HEADER_SIZE;
-    assert(supposed_total_len<=context_ptr->recvBuffer_.GetCapacity());
+    ST_MY_HEADER header ;
+    context_ptr->recv_buffer_.PeekData(CHAT_HEADER_SIZE, (char*)&header); 
+    size_t supposed_total_len = std::atoi(header.msg_len) + CHAT_HEADER_SIZE;
+    assert(supposed_total_len<=context_ptr->recv_buffer_.GetCapacity());
     return supposed_total_len ;
 }
 
@@ -86,6 +92,7 @@ bool    EchoServer::on_recved_complete_data(asock::Context* context_ptr,
                   <<"] error! "<< get_last_err_msg() <<"\n"; 
         return false;
     }
+
     return true;
 }
 
@@ -102,9 +109,30 @@ void EchoServer::on_client_disconnected(asock::Context* context_ptr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+void EchoServer::set_sighandler()
+{
+    std::signal(SIGINT,EchoServer::sigint_handler);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void EchoServer::sigint_handler(int signo)
+{
+    sigset_t sigset, oldset;
+    sigfillset(&sigset);
+    if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0)
+    {
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< strerror(errno) <<"\n"; 
+    }
+    
+    std::cout << "Stop Server! \n";
+    this_instance_->tcp_server_.stop_server();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
     EchoServer echoserver; 
+    echoserver.set_sighandler(); 
     echoserver.initialize_tcp_server();
 
     while( echoserver.is_server_running() )

@@ -3,7 +3,6 @@
 
 #include "ASock.hpp"
 #include "msg_defines.h"
-//#define NDEBUG
 
 ///////////////////////////////////////////////////////////////////////////////
 class EchoServer : public ASock
@@ -26,16 +25,16 @@ size_t EchoServer::on_calculate_data_len(asock::Context* context_ptr)
     //user specific : 
     //calculate your complete packet length here using buffer data.
     //---------------------------------------------------
-    if(context_ptr->recvBuffer_.GetCumulatedLen() < (int)CHAT_HEADER_SIZE )
+    if(context_ptr->recv_buffer_.GetCumulatedLen() < (int)CHAT_HEADER_SIZE )
     {
         return asock::MORE_TO_COME ; //more to come 
     }
 
-    ST_MY_HEADER sHeader ;
-    context_ptr->recvBuffer_.PeekData(CHAT_HEADER_SIZE, (char*)&sHeader); 
+    ST_MY_HEADER header ;
+    context_ptr->recv_buffer_.PeekData(CHAT_HEADER_SIZE, (char*)&header); 
 
-    size_t supposed_total_len = std::atoi(sHeader.szMsgLen) + CHAT_HEADER_SIZE;
-    assert(supposed_total_len<=context_ptr->recvBuffer_.GetCapacity());
+    size_t supposed_total_len = std::atoi(header.msg_len) + CHAT_HEADER_SIZE;
+    assert(supposed_total_len<=context_ptr->recv_buffer_.GetCapacity());
     return supposed_total_len ;
 }
 
@@ -75,9 +74,9 @@ void EchoServer::on_client_disconnected(asock::Context* context_ptr)
 int main(int argc, char* argv[])
 {
     //max client is 100000, 
-    //max message length is approximately 300 bytes...
+    //max message length is approximately 1024 bytes...
     EchoServer echoserver; 
-    echoserver.init_tcp_server("127.0.0.1", 9990, 100000, 300);
+    echoserver.init_tcp_server("127.0.0.1", 9990, 100000, 1024);
 
     if(!echoserver.run_server())
     {

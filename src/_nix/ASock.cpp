@@ -48,11 +48,9 @@ ASock::~ASock()
             delete ep_events_;
         }
 #endif
-
         disconnect();
     }
-    else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
-              sock_usage_ == SOCK_USAGE_IPC_SERVER  ) 
+    else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || sock_usage_ == SOCK_USAGE_IPC_SERVER  ) 
     {
 #ifdef __APPLE__
         if ( kq_events_ptr_ )
@@ -66,11 +64,11 @@ ASock::~ASock()
         }
 #endif
 
-        CLIENT_UNORDERMAP_ITER_T itDel = client_map_.begin();
-        while (itDel != client_map_.end()) 
+        CLIENT_UNORDERMAP_ITER_T it_del = client_map_.begin();
+        while (it_del != client_map_.end()) 
         {
-            delete itDel->second;
-            itDel = client_map_.erase(itDel);
+            delete it_del->second;
+            it_del = client_map_.erase(it_del);
         }
 
         clear_client_cache();
@@ -225,27 +223,27 @@ bool   ASock::set_socket_non_blocking(int sock_fd)
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::recv_data(Context* context_ptr) 
 {
-    int nToRecvLen = asock::DEFAULT_PACKET_SIZE ;
-    if(asock::DEFAULT_PACKET_SIZE > context_ptr->recvBuffer_.GetLinearFreeSpace() )
+    int want_recv_len = asock::DEFAULT_PACKET_SIZE ;
+    if(asock::DEFAULT_PACKET_SIZE > context_ptr->recv_buffer_.GetLinearFreeSpace() )
     {
-        nToRecvLen = context_ptr->recvBuffer_.GetLinearFreeSpace() ; 
+        want_recv_len = context_ptr->recv_buffer_.GetLinearFreeSpace() ; 
     }
 
-    if(nToRecvLen==0) 
+    if(want_recv_len==0) 
     {
         err_msg_ = "no linear free space left ";
         return false; 
     }
 
-    int nRecvedLen = recv( context_ptr->socket_, 
-                           context_ptr->recvBuffer_.GetLinearAppendPtr(), 
-                           nToRecvLen, 0); 
+    int recved_len = recv( context_ptr->socket_, 
+                           context_ptr->recv_buffer_.GetLinearAppendPtr(), 
+                           want_recv_len, 0); 
 
-    if( nRecvedLen > 0)
+    if( recved_len > 0)
     {
-        context_ptr->recvBuffer_.IncreaseData(nRecvedLen);
+        context_ptr->recv_buffer_.IncreaseData(recved_len);
 
-        while(context_ptr->recvBuffer_.GetCumulatedLen())
+        while(context_ptr->recv_buffer_.GetCumulatedLen())
         {
             //invoke user specific implementation
             if(!context_ptr->is_packet_len_calculated_ )
@@ -269,7 +267,7 @@ bool ASock::recv_data(Context* context_ptr)
                 context_ptr->is_packet_len_calculated_ = false;
                 return true; //need to recv more
             }
-            else if(context_ptr->complete_packet_len_ > context_ptr->recvBuffer_.GetCumulatedLen())
+            else if(context_ptr->complete_packet_len_ > context_ptr->recv_buffer_.GetCumulatedLen())
             {
                 return true; //need to recv more
             }
@@ -277,11 +275,11 @@ bool ASock::recv_data(Context* context_ptr)
             {
                 //got complete packet 
                 if(cumbuffer_defines::OP_RSLT_OK!=
-                        context_ptr->recvBuffer_.GetData(context_ptr->complete_packet_len_, 
-                                                      complete_packet_data_ ))
+                   context_ptr->recv_buffer_.GetData(context_ptr->complete_packet_len_, 
+                                                     complete_packet_data_ ))
                 {
                     //error !
-                    err_msg_ = context_ptr->recvBuffer_.GetErrMsg();
+                    err_msg_ = context_ptr->recv_buffer_.GetErrMsg();
                     context_ptr->is_packet_len_calculated_ = false;
                     return false; 
                 }
@@ -305,7 +303,7 @@ bool ASock::recv_data(Context* context_ptr)
             }
         } //while
     }   
-    else if( nRecvedLen == 0 )
+    else if( recved_len == 0 )
     {
         err_msg_ = "recv 0, client disconnected , fd:" + std::to_string(context_ptr->socket_);
         return false ;
@@ -321,23 +319,62 @@ bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len)
     std::lock_guard<std::mutex> lock(context_ptr->send_lock_);
 
     char* data_position_ptr = const_cast<char*>(data_ptr) ;   
-    int sent_bytes = 0;           
+    int total_sent = 0;           
 
-    while( sent_bytes < len ) 
+    //if sent is pending, just push to queue. 
+    if(context_ptr->is_sent_pending_)
     {
-        int nSent = send(context_ptr->socket_, data_position_ptr, len-sent_bytes, 0);
-        if(nSent > 0)
+        //std::cout << "is_sent_pending_ is true\n";//debug
+        PENDING_SENT pending_sent;
+        pending_sent.pending_sent_data = new char [len]; 
+        pending_sent.pending_sent_len  = len;
+        memcpy(pending_sent.pending_sent_data, data_ptr, len);
+        context_ptr->pending_send_deque_.push_back(pending_sent);
+
+#ifdef __APPLE__
+        if(!control_kq(context_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
+#elif __linux__
+        if(!control_ep (context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
+#endif
         {
-            sent_bytes += nSent ;  
-            data_position_ptr += nSent ;      
+            delete [] pending_sent.pending_sent_data ;
+            context_ptr->pending_send_deque_.pop_back();
+            return false;
         }
-        else if( nSent < 0 )
+        return true;
+    }
+
+    while( total_sent < len ) 
+    {
+        int sent_len = send(context_ptr->socket_, data_position_ptr, len-total_sent, 0);
+        if(sent_len > 0)
+        {
+            total_sent += sent_len ;  
+            data_position_ptr += sent_len ;      
+        }
+        else if( sent_len < 0 )
         {
             if ( errno == EWOULDBLOCK || errno == EAGAIN )
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1)); 
-                //XXX this can cause infinite loop! XXX
-                continue;
+                //send later
+                PENDING_SENT pending_sent;
+                pending_sent.pending_sent_data = new char [len-total_sent]; 
+                pending_sent.pending_sent_len  = len-total_sent;
+                memcpy(pending_sent.pending_sent_data, data_position_ptr, len-total_sent);
+                context_ptr->pending_send_deque_.push_back(pending_sent);
+#ifdef __APPLE__
+                if(!control_kq(context_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
+#elif __linux__
+                if(!control_ep (context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
+#endif
+                {
+                    delete [] pending_sent.pending_sent_data;
+                    context_ptr->pending_send_deque_.pop_back();
+                    return false;
+                }
+                context_ptr->is_sent_pending_ = true;
+                //std::cout << "sent is pending\n";//debug
+                return true;
 
             }
             else if ( errno != EINTR )
@@ -355,12 +392,13 @@ bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len)
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::control_kq(Context* context_ptr , uint32_t events, uint32_t fflags)
 {
-    struct  kevent kEvent;
-    memset(&kEvent, 0, sizeof(struct kevent));
-    EV_SET(&kEvent, context_ptr->socket_, events,fflags , 0, 0, context_ptr); //udata = context_ptr
+    struct  kevent kq_event;
+    memset(&kq_event, 0, sizeof(struct kevent));
+    EV_SET(&kq_event, context_ptr->socket_, events,fflags , 0, 0, context_ptr); 
+    //udata = context_ptr
 
-    int nRslt = kevent(kq_fd_, &kEvent, 1, NULL, 0, NULL);
-    if (nRslt == -1)
+    int result = kevent(kq_fd_, &kq_event, 1, NULL, 0, NULL);
+    if (result == -1)
     {
         err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
         return false; 
@@ -373,12 +411,12 @@ bool ASock::control_kq(Context* context_ptr , uint32_t events, uint32_t fflags)
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::control_ep(Context* context_ptr , uint32_t events, int op)
 {
-    struct  epoll_event evClient{};
-    evClient.data.fd    = context_ptr->socket_;
-    evClient.events     = events ;
-    evClient.data.ptr   = context_ptr;
+    struct  epoll_event ev_client{};
+    ev_client.data.fd    = context_ptr->socket_;
+    ev_client.events     = events ;
+    ev_client.data.ptr   = context_ptr;
 
-    if(epoll_ctl(ep_fd_, op, context_ptr->socket_, &evClient)<0)
+    if(epoll_ctl(ep_fd_, op, context_ptr->socket_, &ev_client)<0)
     {
         err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
         return false; 
@@ -435,7 +473,7 @@ bool ASock::run_server()
     }
 
     int opt_on=1;
-    int nRtn = -1;
+    int result = -1;
 
     if (setsockopt(listen_socket_,SOL_SOCKET,SO_REUSEADDR,&opt_on,sizeof(opt_on))==-1) 
     {
@@ -455,15 +493,15 @@ bool ASock::run_server()
     server_addr.sin_addr.s_addr = inet_addr(server_ip_.c_str()) ;
     server_addr.sin_port = htons(server_port_);
 
-    nRtn = bind(listen_socket_,(SOCKADDR*)&server_addr,sizeof(server_addr)) ;
-    if ( nRtn < 0 )
+    result = bind(listen_socket_,(SOCKADDR*)&server_addr,sizeof(server_addr)) ;
+    if ( result < 0 )
     {
         err_msg_ = "bind error ["  + std::string(strerror(errno)) + "]";
         return false ;
     }
 
-    nRtn = listen(listen_socket_,SOMAXCONN) ;
-    if ( nRtn < 0 )
+    result = listen(listen_socket_,SOMAXCONN) ;
+    if ( result < 0 )
     {
         err_msg_ = "listrn error [" + std::string(strerror(errno)) + "]";
         return false ;
@@ -531,10 +569,10 @@ Context* ASock::pop_client_context_from_cache()
 {
     if (!queue_client_cache_.empty())
     {
-        Context* pRtn = queue_client_cache_.front();
+        Context* context_ptr = queue_client_cache_.front();
         queue_client_cache_.pop();
 
-        return pRtn;
+        return context_ptr;
     }
 
     return nullptr;
@@ -543,32 +581,130 @@ Context* ASock::pop_client_context_from_cache()
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::push_client_context_to_cache(Context* context_ptr)
 {
-    CLIENT_UNORDERMAP_ITER_T itFound;
-    itFound = client_map_.find(context_ptr->socket_);
-    if (itFound != client_map_.end())
+    CLIENT_UNORDERMAP_ITER_T it_found;
+    it_found = client_map_.find(context_ptr->socket_);
+    if (it_found != client_map_.end())
     {
-        client_map_.erase(itFound);
+        client_map_.erase(it_found);
     }
 
     //reset
-    context_ptr->recvBuffer_.ReSet();
+    context_ptr->recv_buffer_.ReSet();
     context_ptr->socket_ = -1;
     context_ptr->is_packet_len_calculated_ = false;
+    context_ptr->is_sent_pending_ = false;
     context_ptr->complete_packet_len_ = 0;
+
+    while(!context_ptr->pending_send_deque_.empty() ) 
+    {
+        PENDING_SENT pending_sent= context_ptr->pending_send_deque_.front();
+        delete [] pending_sent.pending_sent_data;
+        context_ptr->pending_send_deque_.pop_front();
+    }
 
     queue_client_cache_.push(context_ptr);
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::clear_client_cache()
 {
     while(!queue_client_cache_.empty() ) 
     {
-        delete queue_client_cache_.front();
+        Context* context_ptr = queue_client_cache_.front();
+        while(!context_ptr->pending_send_deque_.empty() ) 
+        {
+            PENDING_SENT pending_sent= context_ptr->pending_send_deque_.front();
+            //std::cout <<"***delete pending_sent_data\n";//debug
+            delete [] pending_sent.pending_sent_data;
+            context_ptr->pending_send_deque_.pop_front();
+        }
+        delete context_ptr;
         queue_client_cache_.pop();
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::accept_new_client()
+{
+    while(true)
+    {
+        SOCKLEN_T socklen=0;
+        SOCKADDR_IN     client_addr  ;
+        int client_fd = accept(listen_socket_,(SOCKADDR*)&client_addr,&socklen ) ;
+
+        if (client_fd == -1)
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                //all accept done...
+                break;
+            }
+            else if (errno == ECONNABORTED)
+            {
+                break;
+            }
+            else
+            {
+                err_msg_ = "accept error [" + std::string(strerror(errno)) + "]";
+                is_server_running_ = false;
+                return false;
+            }
+        }
+        ++client_cnt_;
+        set_socket_non_blocking(client_fd);
+
+        Context* client_context_ptr = pop_client_context_from_cache();
+        if(client_context_ptr==nullptr)
+        {
+            client_context_ptr = new (std::nothrow) Context();
+            if(!client_context_ptr)
+            {
+                err_msg_ = "Context alloc failed !";
+                is_server_running_ = false;
+                return false;
+            }
+
+            if ( cumbuffer_defines::OP_RSLT_OK != 
+                 client_context_ptr->recv_buffer_.Init(recv_buffer_capcity_) )
+            {
+                err_msg_  = "cumBuffer Init error : " + 
+                             client_context_ptr->recv_buffer_.GetErrMsg();
+                is_server_running_ = false;
+                return false;
+            }
+        }
+        client_context_ptr->socket_ = client_fd;
+
+        std::pair<CLIENT_UNORDERMAP_ITER_T, bool> client_map_rslt;
+        client_map_rslt = client_map_.insert(std::pair<int, Context*>(client_fd, client_context_ptr));
+        if (!client_map_rslt.second)
+        {
+            err_msg_ = "client_map_ insert error [" + 
+                        std::to_string(client_fd) + " already exist]";
+            return false;
+        }
+
+        if(cb_on_client_connected_!=nullptr)
+        {
+            cb_on_client_connected_(client_context_ptr);
+        }
+        else
+        {
+            on_client_connected(client_context_ptr);
+        }
+#ifdef __APPLE__
+        if(!control_kq(client_context_ptr, EVFILT_READ, EV_ADD ))
+#elif __linux__
+        if(!control_ep( client_context_ptr, EPOLLIN |EPOLLRDHUP  , EPOLL_CTL_ADD ))
+#endif
+        {
+            is_server_running_ = false;
+            return false;
+        }
+    }//while : accept
+    return true;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 void ASock:: server_thread_routine()
@@ -583,120 +719,42 @@ void ASock:: server_thread_routine()
     ep_events_ = new struct epoll_event[max_client_limit_];
     memset(ep_events_, 0x00, sizeof(struct epoll_event) * max_client_limit_);
 #endif
-    SOCKADDR_IN     clientAddr  ;
-
-    char szTempData[asock::DEFAULT_PACKET_SIZE];
 
     while(is_need_server_run_)
     {
 #ifdef __APPLE__
-        int nEventCnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, max_client_limit_, &ts); 
-        if (nEventCnt < 0)
+        int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, max_client_limit_, &ts); 
+        if (event_cnt < 0)
         {
             err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";
             is_server_running_ = false;
             return;
         }
 #elif __linux__
-        int nEventCnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 1000 );
-        if (nEventCnt < 0)
+        int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 1000 );
+        if (event_cnt < 0)
         {
             err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
             is_server_running_ = false;
             return;
         }
 #endif
-
-        for (int i = 0; i < nEventCnt; i++)
+        for (int i = 0; i < event_cnt; i++)
         {
 #ifdef __APPLE__
             if (kq_events_ptr_[i].ident   == listen_socket_) 
 #elif __linux__
-            //if (ep_events_[i].data.fd == listen_socket_)
             if (((Context*)ep_events_[i].data.ptr)->socket_ == listen_socket_)
 #endif
             {
                 //# accept #----------
-                while(1)
+                if(!accept_new_client())
                 {
-                    SOCKLEN_T socklen=0;
-                    int newClientFd = accept(listen_socket_,(SOCKADDR*)&clientAddr,&socklen ) ;
-
-                    if (newClientFd == -1)
-                    {
-                        if (errno == EAGAIN || errno == EWOULDBLOCK)
-                        {
-                            //all accept done...
-                            break;
-                        }
-                        else if (errno == ECONNABORTED)
-                        {
-                            break;
-                        }
-                        else
-                        {
-                            err_msg_ = "accept error [" + std::string(strerror(errno)) + "]";
-                            is_server_running_ = false;
-                            return;
-                        }
-                    }
-                    ++client_cnt_;
-                    set_socket_non_blocking(newClientFd);
-
-                    Context* client_context_ptr = pop_client_context_from_cache();
-                    if(client_context_ptr==nullptr)
-                    {
-                        client_context_ptr = new (std::nothrow) Context();
-                        if(!client_context_ptr)
-                        {
-                            err_msg_ = "Context alloc failed !";
-                            is_server_running_ = false;
-                            return ;
-                        }
-
-                        if  ( cumbuffer_defines::OP_RSLT_OK != 
-                                  client_context_ptr->recvBuffer_.Init(recv_buffer_capcity_) )
-                        {
-                            err_msg_  = "cumBuffer Init error : " + 
-                                        client_context_ptr->recvBuffer_.GetErrMsg();
-                            is_server_running_ = false;
-                            return ;
-                        }
-                    }
-                    client_context_ptr->socket_ = newClientFd;
-
-                    std::pair<CLIENT_UNORDERMAP_ITER_T, bool> clientMapRslt;
-                    clientMapRslt = client_map_.insert(std::pair<int, Context*>(newClientFd, client_context_ptr));
-                    if (!clientMapRslt.second)
-                    {
-                        err_msg_ = "client_map_ insert error [" + 
-                                   std::to_string(newClientFd) + " already exist]";
-                        break;
-                    }
-
-                    if(cb_on_client_connected_!=nullptr)
-                    {
-                        cb_on_client_connected_(client_context_ptr);
-                    }
-                    else
-                    {
-                        on_client_connected(client_context_ptr);
-                    }
-#ifdef __APPLE__
-                    if(!control_kq(client_context_ptr, EVFILT_READ, EV_ADD ))
-#elif __linux__
-                    if(!control_ep( client_context_ptr, EPOLLIN |EPOLLRDHUP  , EPOLL_CTL_ADD ))
-#endif
-                    {
-                        is_server_running_ = false;
-                        return;
-                    }
-
-                }//while : accept
+                    return;
+                }
             }
             else
             {
-                //# send/recv #----------
 #ifdef __APPLE__
                 Context* client_context_ptr = (Context*)kq_events_ptr_[i].udata;
 #elif __linux__
@@ -724,17 +782,131 @@ void ASock:: server_thread_routine()
                         terminate_client(client_context_ptr); 
                     }
                 }
+#ifdef __APPLE__
+                else if (EVFILT_WRITE == kq_events_ptr_[i].filter )
+#elif __linux__
+                else if (ep_events_[i].events & EPOLLOUT) 
+#endif
+                {
+                    //# send #----------
+                    if(!send_pending_data(client_context_ptr))
+                    {
+                        return; //error!
+                    }
+                } 
+            } 
+        } 
+    } //while
+    is_server_running_ = false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::send_pending_data(Context* context_ptr)
+{
+    std::lock_guard<std::mutex> guard(context_ptr->send_lock_);
+    while(!context_ptr->pending_send_deque_.empty()) 
+    {
+        PENDING_SENT pending_sent = context_ptr->pending_send_deque_.front();
+
+        int sent_len = send(context_ptr->socket_, 
+                            pending_sent.pending_sent_data, 
+                            pending_sent.pending_sent_len, 0) ;
+
+        if( sent_len > 0 )
+        {
+            if(sent_len == pending_sent.pending_sent_len)
+            {
+                delete [] pending_sent.pending_sent_data;
+                context_ptr->pending_send_deque_.pop_front();
+
+                if(context_ptr->pending_send_deque_.empty())
+                {
+                    //sent all data
+                    //std::cout << "sent all : set is_sent_pending_ false\n";
+                    context_ptr->is_sent_pending_ = false; 
+#ifdef __APPLE__
+                    if(!control_kq(context_ptr, EVFILT_WRITE, EV_DELETE ) ||
+                       !control_kq(context_ptr, EVFILT_READ, EV_ADD ) )
+#elif __linux__
+                    if(!control_ep (context_ptr, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ))
+#endif
+                    {
+                        //error!!!
+                        if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || 
+                             sock_usage_ == SOCK_USAGE_IPC_CLIENT ) 
+                        {
+                            close( context_ptr->socket_);
+                            invoke_server_disconnected_handler();
+                            is_client_thread_running_ = false;
+                        }
+                        else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
+                                  sock_usage_ == SOCK_USAGE_IPC_SERVER  ) 
+                        {
+                            is_server_running_ = false;
+                        }
+                        return false;
+                    }
+                    break;
+                }
             }
-        } //for
+            else
+            {
+                //partial sent ---> 남은 부분을 다시 제일 처음으로
+                PENDING_SENT partial_pending_sent;
+                int alloc_len = pending_sent.pending_sent_len - sent_len;
+                partial_pending_sent.pending_sent_data = new char [alloc_len]; 
+                partial_pending_sent.pending_sent_len  = alloc_len;
+                memcpy( partial_pending_sent.pending_sent_data, 
+                        pending_sent.pending_sent_data+sent_len, 
+                        alloc_len);
+
+                //remove first.
+                delete [] pending_sent.pending_sent_data;
+                context_ptr->pending_send_deque_.pop_front();
+
+                //push_front
+                context_ptr->pending_send_deque_.push_front(partial_pending_sent);
+
+                break; //next time
+            }
+        }
+        else if( sent_len < 0 )
+        {
+            if ( errno == EWOULDBLOCK || errno == EAGAIN )
+            {
+                break; //next time
+            }
+            else if ( errno != EINTR )
+            {
+                err_msg_ = "send error ["  + std::string(strerror(errno)) + "]";
+                //std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< GetLastErrMsg() <<"\n"; 
+                if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || 
+                     sock_usage_ == SOCK_USAGE_IPC_CLIENT ) 
+                {
+                    //client error!!!
+                    close( context_ptr->socket_);
+                    invoke_server_disconnected_handler();
+                    is_client_thread_running_ = false;
+                    return false; 
+                }
+                else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
+                          sock_usage_ == SOCK_USAGE_IPC_SERVER  ) 
+                {
+                    terminate_client(context_ptr); 
+                }
+                break;
+            } 
+        } 
     } //while
 
-    is_server_running_ = false;
+    return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void  ASock::terminate_client(Context* context_ptr)
 {
     client_cnt_--;
+    //std::cout<< "terminate_client :" << client_cnt_ <<"\n";//debug
 #ifdef __APPLE__
     control_kq(context_ptr, EVFILT_READ, EV_DELETE );
 #elif __linux__
@@ -753,7 +925,6 @@ void  ASock::terminate_client(Context* context_ptr)
 
     push_client_context_to_cache(context_ptr);
 }
-
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -788,9 +959,9 @@ bool  ASock::init_tcp_client(const char* server_ip,
     
     if(!is_buffer_init_ )
     {
-        if  ( cumbuffer_defines::OP_RSLT_OK != context_.recvBuffer_.Init(recv_buffer_capcity_) )
+        if  ( cumbuffer_defines::OP_RSLT_OK != context_.recv_buffer_.Init(recv_buffer_capcity_) )
         {
-            err_msg_ = "cumBuffer Init error :" + context_.recvBuffer_.GetErrMsg();
+            err_msg_ = "cumBuffer Init error :" + context_.recv_buffer_.GetErrMsg();
             return false;
         }
         is_buffer_init_ = true;
@@ -798,7 +969,7 @@ bool  ASock::init_tcp_client(const char* server_ip,
     else
     {
         //in case of reconnect
-        context_.recvBuffer_.ReSet(); 
+        context_.recv_buffer_.ReSet(); 
     }
 
     SOCKADDR_IN       server_addr ;
@@ -811,9 +982,9 @@ bool  ASock::init_tcp_client(const char* server_ip,
     timeoutVal.tv_sec  = connect_timeout_secs ;  
     timeoutVal.tv_usec = 0;
 
-    int nRslt = connect(context_.socket_,(SOCKADDR *)&server_addr, (SOCKLEN_T )sizeof(SOCKADDR_IN)) ;
+    int result = connect(context_.socket_,(SOCKADDR *)&server_addr, (SOCKLEN_T )sizeof(SOCKADDR_IN)) ;
 
-    if ( nRslt < 0)
+    if ( result < 0)
     {
         if (errno != EINPROGRESS)
         {
@@ -822,7 +993,7 @@ bool  ASock::init_tcp_client(const char* server_ip,
         }
     }
 
-    if (nRslt == 0)
+    if (result == 0)
     {
         is_connected_ = true;
         return true;
@@ -833,15 +1004,15 @@ bool  ASock::init_tcp_client(const char* server_ip,
     FD_SET(context_.socket_, &rset);
     wset = rset;
 
-    nRslt = select(context_.socket_+1, &rset, &wset, NULL, &timeoutVal ) ;
-    if (nRslt == 0 )
+    result = select(context_.socket_+1, &rset, &wset, NULL, &timeoutVal ) ;
+    if (result == 0 )
     {
         err_msg_ = "connect timeout";
         return false;
     }
-    else if (nRslt< 0)
+    else if (result< 0)
     {
-        err_msg_ = "select :error [" + std::string(strerror(errno)) + "]";
+        err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
         return false;
     }
 
@@ -851,19 +1022,19 @@ bool  ASock::init_tcp_client(const char* server_ip,
         socklen_t  len = sizeof(nSocketError);
         if (getsockopt(context_.socket_, SOL_SOCKET, SO_ERROR, &nSocketError, &len) < 0)
         {
-            err_msg_ = "getsockopt :SO_ERROR :error [" + std::string(strerror(errno)) + "]";
+            err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
             return false;
         }
 
         if (nSocketError) 
         {
-            err_msg_ = "getsockopt :SO_ERROR :error [" + std::string(strerror(errno)) + "]";
+            err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
             return false;
         }
     } 
     else
     {
-        err_msg_ = "fd not set ";
+        err_msg_ = "connect error : fd not set ";
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< err_msg_ <<"\n"; 
         return false;
     }
@@ -891,7 +1062,6 @@ bool  ASock::init_tcp_client(const char* server_ip,
             return false;
         }
 #endif
-
         std::thread client_thread(&ASock::client_thread_routine, this);
         client_thread.detach();
     }
@@ -902,7 +1072,6 @@ bool  ASock::init_tcp_client(const char* server_ip,
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::client_thread_routine()
 {
-    is_client_thread_running_ = true;
 
 #ifdef __APPLE__
     if(!control_kq(&context_, EVFILT_READ, EV_ADD ))
@@ -919,16 +1088,16 @@ void ASock::client_thread_routine()
     }
 #endif
 
-    char szTempData[asock::DEFAULT_PACKET_SIZE];
+    is_client_thread_running_ = true;
 
     while(is_connected_)
     {
 #ifdef __APPLE__
-        int nEventCnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, 1, &ts); 
+        int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, 1, &ts); 
 #elif __linux__
-        int nEventCnt = epoll_wait(ep_fd_, ep_events_, 1, 1000 );
+        int event_cnt = epoll_wait(ep_fd_, ep_events_, 1, 1000 );
 #endif
-        if (nEventCnt < 0)
+        if (event_cnt < 0)
         {
 #ifdef __APPLE__
             err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";
@@ -944,16 +1113,9 @@ void ASock::client_thread_routine()
         if (ep_events_->events & EPOLLRDHUP || ep_events_->events & EPOLLERR) 
 #endif
         {
-            //############## close ############################
+            //############## close ###########################
             close( context_.socket_);
-            if(cb_on_disconnected_from_server_!=nullptr)
-            {
-                cb_on_disconnected_from_server_();
-            }
-            else
-            {
-                on_disconnected_from_server();
-            }
+            invoke_server_disconnected_handler();
             break;
         }
 #ifdef __APPLE__
@@ -966,21 +1128,38 @@ void ASock::client_thread_routine()
             if(! recv_data(&context_) ) 
             {
                 close( context_.socket_);
-                if(cb_on_disconnected_from_server_!=nullptr)
-                {
-                    cb_on_disconnected_from_server_();
-                }
-                else
-                {
-                    on_disconnected_from_server();
-                }
+                invoke_server_disconnected_handler();
                 break;
             }
         }
-
+#ifdef __APPLE__
+        else if ( EVFILT_WRITE == kq_events_ptr_->filter )
+#elif __linux__
+        else if (ep_events_->events & EPOLLOUT) 
+#endif
+        {
+            //############## send ############################
+            if(!send_pending_data(&context_)) 
+            {
+                return; //error!
+            }
+        }//send
     } //while
 
     is_client_thread_running_ = false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ASock::invoke_server_disconnected_handler()
+{
+    if(cb_on_disconnected_from_server_!=nullptr)
+    {
+        cb_on_disconnected_from_server_();
+    }
+    else
+    {
+        on_disconnected_from_server();
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

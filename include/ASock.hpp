@@ -53,6 +53,7 @@ SOFTWARE.
 #include <atomic>
 #include <thread>
 #include <queue>
+#include <deque>
 #include <unordered_map>
 #include <mutex> 
 #include <functional>
@@ -66,17 +67,24 @@ typedef         socklen_t   SOCKLEN_T ;
 ///////////////////////////////////////////////////////////////////////////////
 namespace asock
 {
-    const int       DEFAULT_PACKET_SIZE =4096;
-    const int       DEFAULT_CAPACITY    =4096;
+    const int       DEFAULT_PACKET_SIZE =1024;
+    const int       DEFAULT_CAPACITY    =1024;
     const size_t    MORE_TO_COME        = -1;
+    typedef struct _PENDING_SENT_
+    {
+		char*	pending_sent_data ; 
+        int     pending_sent_len  ;
+    } PENDING_SENT ;
 
     typedef struct _Context_
     {
-        CumBuffer       recvBuffer_;
+        CumBuffer       recv_buffer_;
         int             socket_{-1};
         std::mutex      send_lock_ ; 
         bool            is_packet_len_calculated_ {false};
         size_t          complete_packet_len_ {0} ;
+		std::deque<PENDING_SENT> pending_send_deque_ ; 
+		bool            is_sent_pending_ {false}; 
     } Context ;
 
     typedef enum _ENUM_SOCK_USAGE_
@@ -110,6 +118,7 @@ class ASock
     protected :
         char*      complete_packet_data_ {nullptr}; 
         int        recv_buffer_capcity_ {-1};
+        int        send_buffer_capcity_ {asock::DEFAULT_CAPACITY};
 
 #ifdef __APPLE__
         struct     kevent* kq_events_ptr_ {nullptr};
@@ -130,6 +139,8 @@ class ASock
 #endif
 
     private:
+        bool send_pending_data(Context* context_ptr);
+
         //choose usage, inheritance or composition.
         //1.for inheritance : Implement these virtual functions.
         virtual size_t  on_calculate_data_len(Context* context_ptr){return -1;}; 
@@ -167,6 +178,7 @@ class ASock
 
     private :
         void client_thread_routine();
+        void invoke_server_disconnected_handler();
 
         //for composition : Assign yours to these callbacks 
     public :
@@ -210,11 +222,12 @@ class ASock
 #endif
 
     private :
-        void       server_thread_routine();
-        void       terminate_client(Context* context_ptr);
-        void       push_client_context_to_cache(Context* context_ptr);
-        void       clear_client_cache();
-        Context*   pop_client_context_from_cache();
+        void		server_thread_routine();
+        void		terminate_client(Context* context_ptr);
+        void		push_client_context_to_cache(Context* context_ptr);
+        void		clear_client_cache();
+		bool		accept_new_client();
+        Context*	pop_client_context_from_cache();
 
         //for composition : Assign yours to these callbacks 
     public :

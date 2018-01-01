@@ -5,7 +5,7 @@
 //user specific define
 typedef struct _ST_MY_CHAT_HEADER_
 {
-    char szMsgLen[6];
+    char msg_len[6];
 
 } ST_MY_HEADER ;
 #define CHAT_HEADER_SIZE sizeof(ST_MY_HEADER)

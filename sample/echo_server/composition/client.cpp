@@ -3,12 +3,8 @@
 #include <cstdlib>
 #include <stdio.h>
 #include <cassert>
-
 #include "ASock.hpp"
 #include "msg_defines.h"
-//#define NDEBUG
-
-std::string g_sent_msg{""}; 
 
 ///////////////////////////////////////////////////////////////////////////////
 class EchoClient 
@@ -29,8 +25,8 @@ class EchoClient
 ///////////////////////////////////////////////////////////////////////////////
 bool EchoClient::initialize_tcp_client()
 {
-    //connect timeout is 10 secs, max message length is approximately 300 bytes...
-    if(!tcp_client_.init_tcp_client("127.0.0.1", 9990, 10, 300 ) )
+    //connect timeout is 10 secs, max message length is approximately 1024 bytes...
+    if(!tcp_client_.init_tcp_client("127.0.0.1", 9990, 10, 1024 ) )
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
                   <<"] error! "<< tcp_client_.get_last_err_msg() <<"\n"; 
@@ -56,15 +52,15 @@ bool EchoClient::initialize_tcp_client()
 size_t EchoClient::on_calculate_data_len(asock::Context* context_ptr)
 {
     //user specific : calculate your complete packet length 
-    if( context_ptr->recvBuffer_.GetCumulatedLen() < (int)CHAT_HEADER_SIZE )
+    if( context_ptr->recv_buffer_.GetCumulatedLen() < (int)CHAT_HEADER_SIZE )
     {
         return asock::MORE_TO_COME ; //more to come 
     }
 
-    ST_MY_HEADER sHeader ;
-    context_ptr->recvBuffer_.PeekData(CHAT_HEADER_SIZE, (char*)&sHeader);  
-    size_t supposed_total_len = std::atoi(sHeader.szMsgLen) + CHAT_HEADER_SIZE;
-    assert(supposed_total_len<=context_ptr->recvBuffer_.GetCapacity());
+    ST_MY_HEADER header ;
+    context_ptr->recv_buffer_.PeekData(CHAT_HEADER_SIZE, (char*)&header);  
+    size_t supposed_total_len = std::atoi(header.msg_len) + CHAT_HEADER_SIZE;
+    assert(supposed_total_len<=context_ptr->recv_buffer_.GetCapacity());
     return supposed_total_len ;
 }
 
@@ -78,8 +74,7 @@ bool EchoClient:: on_recved_complete_data(asock::Context* context_ptr,
     memcpy(&packet, data_ptr+CHAT_HEADER_SIZE, len-CHAT_HEADER_SIZE);
     packet[len-CHAT_HEADER_SIZE] = '\0';
     
-    std::cout <<   "\n* server response ["<< packet <<"]\n";
-    assert( std::string(packet) == g_sent_msg);
+    std::cout << "* server response ["<< packet <<"]\n";
     return true;
 }
 
@@ -93,6 +88,7 @@ bool EchoClient:: send_to_server(const char* data, int len)
 void EchoClient::on_disconnected_from_server() 
 {
     std::cout << "* server disconnected ! \n";
+	exit(1);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -106,15 +102,15 @@ int main(int argc, char* argv[])
     {
         std::cin.clear();
         getline(std::cin, user_msg); 
-        g_sent_msg = user_msg ;
-        int nMsgLen = user_msg.length();
+        int msg_len = user_msg.length();
 
-        if(nMsgLen>0)
+        if(msg_len>0)
         {
-            ST_MY_HEADER stHeader;
-            snprintf(stHeader.szMsgLen, sizeof(stHeader.szMsgLen), "%d", nMsgLen );
+            ST_MY_HEADER header;
+            snprintf(header.msg_len, sizeof(header.msg_len), "%d", msg_len );
 
-            if(! client.send_to_server( reinterpret_cast<char*>(&stHeader), 
+            //you don't need to send twice like this..
+            if(! client.send_to_server( reinterpret_cast<char*>(&header), 
                                       sizeof(ST_MY_HEADER)) )
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
