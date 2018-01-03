@@ -1062,6 +1062,21 @@ bool  ASock::init_tcp_client(const char* server_ip,
             return false;
         }
 #endif
+
+#ifdef __APPLE__
+        if(!control_kq(&context_, EVFILT_READ, EV_ADD ))
+        {
+            return;
+        }
+        struct timespec ts;
+        ts.tv_sec  =1;
+        ts.tv_nsec =0;
+#elif __linux__
+        if(!control_ep( &context_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
+        {
+            return;
+        }
+#endif
         std::thread client_thread(&ASock::client_thread_routine, this);
         client_thread.detach();
     }
@@ -1072,22 +1087,6 @@ bool  ASock::init_tcp_client(const char* server_ip,
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::client_thread_routine()
 {
-
-#ifdef __APPLE__
-    if(!control_kq(&context_, EVFILT_READ, EV_ADD ))
-    {
-        return;
-    }
-    struct timespec ts;
-    ts.tv_sec  =1;
-    ts.tv_nsec =0;
-#elif __linux__
-    if(!control_ep( &context_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
-    {
-        return;
-    }
-#endif
-
     is_client_thread_running_ = true;
 
     while(is_connected_)
