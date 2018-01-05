@@ -1066,15 +1066,12 @@ bool  ASock::init_tcp_client(const char* server_ip,
 #ifdef __APPLE__
         if(!control_kq(&context_, EVFILT_READ, EV_ADD ))
         {
-            return;
+            return false;
         }
-        struct timespec ts;
-        ts.tv_sec  =1;
-        ts.tv_nsec =0;
 #elif __linux__
         if(!control_ep( &context_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
         {
-            return;
+            return false;
         }
 #endif
         std::thread client_thread(&ASock::client_thread_routine, this);
@@ -1092,6 +1089,9 @@ void ASock::client_thread_routine()
     while(is_connected_)
     {
 #ifdef __APPLE__
+        struct timespec ts;
+        ts.tv_sec  =1;
+        ts.tv_nsec =0;
         int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, 1, &ts); 
 #elif __linux__
         int event_cnt = epoll_wait(ep_fd_, ep_events_, 1, 1000 );
