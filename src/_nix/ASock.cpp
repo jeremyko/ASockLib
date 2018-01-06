@@ -83,6 +83,10 @@ ASock::~ASock()
 #if defined __APPLE__ || defined __linux__ 
         delete listen_context_ptr_ ;
 #endif
+        if ( sock_usage_ == SOCK_USAGE_IPC_SERVER  ) 
+        {
+            unlink(server_ipc_socket_path_.c_str());
+        }
     }
 }
 
@@ -174,20 +178,13 @@ bool ASock::set_cb_on_client_disconnected(std::function<void(Context*)> cb)
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::set_buffer_capacity(int max_data_len)
 {
-    if(max_data_len<0)
+    if(max_data_len<=0)
     {
-        err_msg_ = "length is negative";
+        err_msg_ = " length is invalid";
         return false;
     }
 
-    if(max_data_len==0) 
-    {
-        recv_buffer_capcity_ = asock::DEFAULT_CAPACITY ;
-    }
-    else
-    {
-        recv_buffer_capcity_ = max_data_len; 
-    }
+    recv_buffer_capcity_ = max_data_len; 
 
     complete_packet_data_ = new (std::nothrow) char [recv_buffer_capcity_] ;
     if(complete_packet_data_ == NULL)
@@ -316,15 +313,14 @@ bool ASock::recv_data(Context* context_ptr)
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len) 
 {
+    //std::cout << "debug (" << __FUNCTION__ << "/"<< __LINE__ << ")\n"; 
     std::lock_guard<std::mutex> lock(context_ptr->send_lock_);
-
     char* data_position_ptr = const_cast<char*>(data_ptr) ;   
     int total_sent = 0;           
 
     //if sent is pending, just push to queue. 
     if(context_ptr->is_sent_pending_)
     {
-        //std::cout << "is_sent_pending_ is true\n";//debug
         PENDING_SENT pending_sent;
         pending_sent.pending_sent_data = new char [len]; 
         pending_sent.pending_sent_len  = len;
@@ -373,7 +369,6 @@ bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len)
                     return false;
                 }
                 context_ptr->is_sent_pending_ = true;
-                //std::cout << "sent is pending\n";//debug
                 return true;
 
             }
@@ -431,8 +426,8 @@ bool ASock::control_ep(Context* context_ptr , uint32_t events, int op)
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::init_tcp_server(const char* bind_ip, 
                             int         bind_port, 
-                            int         max_client, 
-                            int         max_data_len)
+                            int         max_data_len /*=DEFAULT_PACKET_SIZE*/,
+                            int         max_client /*=DEFAULT_MAX_CLIENT*/)
 {
     sock_usage_ = SOCK_USAGE_TCP_SERVER  ;
 
@@ -443,8 +438,33 @@ bool ASock::init_tcp_server(const char* bind_ip,
     {
         return false;
     }
+    if(!set_buffer_capacity(max_data_len))
+    {
+        return false;
+    }
 
-    return set_buffer_capacity(max_data_len);
+    return run_server();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool  ASock::init_ipc_server (const char* sock_path, 
+                              int         max_data_len /*=DEFAULT_PACKET_SIZE*/,
+                              int         max_client /*=DEFAULT_MAX_CLIENT*/)
+{
+    sock_usage_ = SOCK_USAGE_IPC_SERVER  ;
+    server_ipc_socket_path_ = sock_path;
+
+    max_client_limit_ = max_client ; 
+    if(max_client_limit_<0)
+    {
+        return false;
+    }
+    if(!set_buffer_capacity(max_data_len))
+    {
+        return false;
+    }
+
+    return run_server();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -460,7 +480,15 @@ bool ASock::run_server()
         return false;
     }
 
-    listen_socket_ = socket(AF_INET,SOCK_STREAM,0) ;
+    if ( sock_usage_ == SOCK_USAGE_IPC_SERVER ) 
+    {
+        listen_socket_ = socket(AF_UNIX,SOCK_STREAM,0) ;
+    }
+    else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER ) 
+    {
+        listen_socket_ = socket(AF_INET,SOCK_STREAM,0) ;
+    }
+
     if( listen_socket_ < 0 )
     {
         err_msg_ = "init error [" + std::string(strerror(errno)) + "]";
@@ -487,13 +515,29 @@ bool ASock::run_server()
         return false;
     }
 
-    SOCKADDR_IN    server_addr  ;
-    memset((void *)&server_addr,0x00,sizeof(server_addr)) ;
-    server_addr.sin_family      = AF_INET ;
-    server_addr.sin_addr.s_addr = inet_addr(server_ip_.c_str()) ;
-    server_addr.sin_port = htons(server_port_);
+    //-------------------------------------------------
+    if ( sock_usage_ == SOCK_USAGE_IPC_SERVER ) 
+    {
+        SOCKADDR_UN ipc_server_addr ;
+        memset((void *)&ipc_server_addr,0x00,sizeof(ipc_server_addr)) ;
+        ipc_server_addr.sun_family = AF_UNIX;
+        snprintf(ipc_server_addr.sun_path, sizeof(ipc_server_addr.sun_path),
+                "%s",server_ipc_socket_path_.c_str()); 
 
-    result = bind(listen_socket_,(SOCKADDR*)&server_addr,sizeof(server_addr)) ;
+        result = bind(listen_socket_,(SOCKADDR*)&ipc_server_addr, sizeof(ipc_server_addr)) ;
+    }
+    else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER ) 
+    {
+        SOCKADDR_IN    tcp_server_addr  ;
+        memset((void *)&tcp_server_addr,0x00,sizeof(tcp_server_addr)) ;
+        tcp_server_addr.sin_family      = AF_INET ;
+        tcp_server_addr.sin_addr.s_addr = inet_addr(server_ip_.c_str()) ;
+        tcp_server_addr.sin_port = htons(server_port_);
+
+        result = bind(listen_socket_,(SOCKADDR*)&tcp_server_addr,sizeof(tcp_server_addr)) ;
+    }
+    //-------------------------------------------------
+    
     if ( result < 0 )
     {
         err_msg_ = "bind error ["  + std::string(strerror(errno)) + "]";
@@ -615,7 +659,6 @@ void ASock::clear_client_cache()
         while(!context_ptr->pending_send_deque_.empty() ) 
         {
             PENDING_SENT pending_sent= context_ptr->pending_send_deque_.front();
-            //std::cout <<"***delete pending_sent_data\n";//debug
             delete [] pending_sent.pending_sent_data;
             context_ptr->pending_send_deque_.pop_front();
         }
@@ -629,9 +672,21 @@ bool ASock::accept_new_client()
 {
     while(true)
     {
-        SOCKLEN_T socklen=0;
-        SOCKADDR_IN     client_addr  ;
-        int client_fd = accept(listen_socket_,(SOCKADDR*)&client_addr,&socklen ) ;
+        int client_fd = -1;
+
+        if ( sock_usage_ == SOCK_USAGE_IPC_SERVER ) 
+        {
+            SOCKADDR_UN client_addr ; 
+            SOCKLEN_T client_addr_size = sizeof(client_addr);
+            client_fd = accept(listen_socket_,(SOCKADDR*)&client_addr,&client_addr_size ) ;
+        }
+        else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER ) 
+        {
+            SOCKADDR_IN client_addr  ;
+            SOCKLEN_T client_addr_size =sizeof(client_addr);
+            client_fd = accept(listen_socket_,(SOCKADDR*)&client_addr,&client_addr_size ) ;
+        }
+
 
         if (client_fd == -1)
         {
@@ -822,7 +877,6 @@ bool ASock::send_pending_data(Context* context_ptr)
                 if(context_ptr->pending_send_deque_.empty())
                 {
                     //sent all data
-                    //std::cout << "sent all : set is_sent_pending_ false\n";
                     context_ptr->is_sent_pending_ = false; 
 #ifdef __APPLE__
                     if(!control_kq(context_ptr, EVFILT_WRITE, EV_DELETE ) ||
@@ -879,7 +933,6 @@ bool ASock::send_pending_data(Context* context_ptr)
             else if ( errno != EINTR )
             {
                 err_msg_ = "send error ["  + std::string(strerror(errno)) + "]";
-                //std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] "<< GetLastErrMsg() <<"\n"; 
                 if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || 
                      sock_usage_ == SOCK_USAGE_IPC_CLIENT ) 
                 {
@@ -906,7 +959,6 @@ bool ASock::send_pending_data(Context* context_ptr)
 void  ASock::terminate_client(Context* context_ptr)
 {
     client_cnt_--;
-    //std::cout<< "terminate_client :" << client_cnt_ <<"\n";//debug
 #ifdef __APPLE__
     control_kq(context_ptr, EVFILT_READ, EV_DELETE );
 #elif __linux__
@@ -933,11 +985,10 @@ void  ASock::terminate_client(Context* context_ptr)
 bool  ASock::init_tcp_client(const char* server_ip, 
                              int         server_port, 
                              int         connect_timeout_secs, 
-                             int         max_data_len )
+                             int         max_data_len /*DEFAULT_PACKET_SIZE*/ )
 {
     sock_usage_ = SOCK_USAGE_TCP_CLIENT  ;
-
-    disconnect(); 
+    connect_timeout_secs_ = connect_timeout_secs;
 
     if(!set_buffer_capacity(max_data_len) )
     {
@@ -945,10 +996,42 @@ bool  ASock::init_tcp_client(const char* server_ip,
     }
 
     context_.socket_ = socket(AF_INET,SOCK_STREAM,0) ;
+    memset((void *)&tcp_server_addr_,0x00,sizeof(tcp_server_addr_)) ;
+    tcp_server_addr_.sin_family      = AF_INET ;
+    tcp_server_addr_.sin_addr.s_addr = inet_addr( server_ip ) ;
+    tcp_server_addr_.sin_port = htons( server_port );
 
+    return connect_to_server();  
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::init_ipc_client(const char* sock_path,  
+                            int         connect_timeout_secs,
+                            int         max_data_len)
+{
+    sock_usage_ = SOCK_USAGE_IPC_CLIENT  ;
+    connect_timeout_secs_ = connect_timeout_secs;
+
+    if(!set_buffer_capacity(max_data_len) )
+    {
+        return false;
+    }
+    server_ipc_socket_path_ = sock_path ;
+
+    context_.socket_ = socket(AF_UNIX,SOCK_STREAM,0) ;
+    memset((void *)&ipc_conn_addr_,0x00,sizeof(ipc_conn_addr_)) ;
+    ipc_conn_addr_.sun_family = AF_UNIX;
+    snprintf(ipc_conn_addr_.sun_path, sizeof(ipc_conn_addr_.sun_path), "%s",sock_path); 
+
+    return connect_to_server();  
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::connect_to_server()
+{
     if( context_.socket_ < 0 )
     {
-        err_msg_ = "init error [" + std::string(strerror(errno)) ;
+        err_msg_ = "error : server socket is invalid" ;
         return false;
     }   
 
@@ -972,17 +1055,21 @@ bool  ASock::init_tcp_client(const char* server_ip,
         context_.recv_buffer_.ReSet(); 
     }
 
-    SOCKADDR_IN       server_addr ;
-    memset((void *)&server_addr,0x00,sizeof(server_addr)) ;
-    server_addr.sin_family      = AF_INET ;
-    server_addr.sin_addr.s_addr = inet_addr( server_ip ) ;
-    server_addr.sin_port = htons( server_port );
-
     struct timeval timeoutVal;
-    timeoutVal.tv_sec  = connect_timeout_secs ;  
+    timeoutVal.tv_sec  = connect_timeout_secs_ ;  
     timeoutVal.tv_usec = 0;
+    int result;
 
-    int result = connect(context_.socket_,(SOCKADDR *)&server_addr, (SOCKLEN_T )sizeof(SOCKADDR_IN)) ;
+    //-------------------------------------------------
+    if ( sock_usage_ == SOCK_USAGE_IPC_CLIENT ) 
+    {
+        result = connect(context_.socket_,(SOCKADDR*)&ipc_conn_addr_, (SOCKLEN_T)sizeof(SOCKADDR_UN)) ; 
+    }
+    else if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT ) 
+    {
+        result = connect(context_.socket_,(SOCKADDR*)&tcp_server_addr_,(SOCKLEN_T)sizeof(SOCKADDR_IN)) ;
+    }
+    //-------------------------------------------------
 
     if ( result < 0)
     {
@@ -996,7 +1083,7 @@ bool  ASock::init_tcp_client(const char* server_ip,
     if (result == 0)
     {
         is_connected_ = true;
-        return true;
+        return run_client_thread();
     }
 
     fd_set   rset, wset;
@@ -1018,15 +1105,15 @@ bool  ASock::init_tcp_client(const char* server_ip,
 
     if (FD_ISSET(context_.socket_, &rset) || FD_ISSET(context_.socket_, &wset)) 
     {
-        int  nSocketError = 0;
-        socklen_t  len = sizeof(nSocketError);
-        if (getsockopt(context_.socket_, SOL_SOCKET, SO_ERROR, &nSocketError, &len) < 0)
+        int  socket_error = 0;
+        socklen_t  len = sizeof(socket_error);
+        if (getsockopt(context_.socket_, SOL_SOCKET, SO_ERROR, &socket_error, &len) < 0)
         {
             err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
             return false;
         }
 
-        if (nSocketError) 
+        if (socket_error) 
         {
             err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
             return false;
@@ -1041,6 +1128,12 @@ bool  ASock::init_tcp_client(const char* server_ip,
 
     is_connected_ = true;
 
+    return run_client_thread();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::run_client_thread()
+{
     if(!is_client_thread_running_ )
     {
 #ifdef __APPLE__
@@ -1066,15 +1159,12 @@ bool  ASock::init_tcp_client(const char* server_ip,
 #ifdef __APPLE__
         if(!control_kq(&context_, EVFILT_READ, EV_ADD ))
         {
-            return;
+            return false;
         }
-        struct timespec ts;
-        ts.tv_sec  =1;
-        ts.tv_nsec =0;
 #elif __linux__
         if(!control_ep( &context_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
         {
-            return;
+            return false;
         }
 #endif
         std::thread client_thread(&ASock::client_thread_routine, this);
@@ -1092,6 +1182,9 @@ void ASock::client_thread_routine()
     while(is_connected_)
     {
 #ifdef __APPLE__
+        struct timespec ts;
+        ts.tv_sec  =1;
+        ts.tv_nsec =0;
         int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, 1, &ts); 
 #elif __linux__
         int event_cnt = epoll_wait(ep_fd_, ep_events_, 1, 1000 );
