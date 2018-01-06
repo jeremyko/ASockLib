@@ -2,13 +2,11 @@
 #include <cassert>
 
 #include "ASock.hpp"
-#include "msg_defines.h"
+#include "../../msg_defines.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 class EchoServer : public ASock
 {
-    public:
-
     private:
         size_t  on_calculate_data_len(asock::Context* context_ptr);
         bool    on_recved_complete_data(asock::Context* context_ptr, 
@@ -47,6 +45,7 @@ bool    EchoServer::on_recved_complete_data(asock::Context* context_ptr,
     char packet[asock::DEFAULT_PACKET_SIZE];
     memcpy(&packet, data_ptr+CHAT_HEADER_SIZE, len-CHAT_HEADER_SIZE);
     packet[len-CHAT_HEADER_SIZE] = '\0';
+    std::cout << "recved [" << packet << "]\n"; 
     
     // this is echo server
     if(! send_data(context_ptr, data_ptr, len) )
@@ -76,9 +75,7 @@ int main(int argc, char* argv[])
     //max client is 100000, 
     //max message length is approximately 1024 bytes...
     EchoServer echoserver; 
-    echoserver.init_tcp_server("127.0.0.1", 9990, 100000, 1024);
-
-    if(!echoserver.run_server())
+    if(!echoserver.init_tcp_server("127.0.0.1", 9990, 1024 /*,default=100000*/))
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
                   <<"] error! "<< echoserver.get_last_err_msg() <<"\n"; 

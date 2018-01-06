@@ -1,7 +1,4 @@
-
-add_library (ASockLib 
-            ASock.cpp 
-            )
+add_library (ASockLib ASock.cpp )
 
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 

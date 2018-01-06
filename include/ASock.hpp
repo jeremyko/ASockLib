@@ -60,15 +60,16 @@ SOFTWARE.
 #include "CumBuffer.h"
 
 typedef struct  sockaddr_in SOCKADDR_IN ;
+typedef struct  sockaddr_un SOCKADDR_UN ;
 typedef struct  sockaddr    SOCKADDR ;
 typedef         socklen_t   SOCKLEN_T ;
-
 
 ///////////////////////////////////////////////////////////////////////////////
 namespace asock
 {
     const int       DEFAULT_PACKET_SIZE =1024;
     const int       DEFAULT_CAPACITY    =1024;
+    const int       DEFAULT_MAX_CLIENT  =10000;
     const size_t    MORE_TO_COME        = -1;
     typedef struct _PENDING_SENT_
     {
@@ -91,9 +92,9 @@ namespace asock
     {
         SOCK_USAGE_UNKNOWN = 0 ,
         SOCK_USAGE_TCP_SERVER ,
-        SOCK_USAGE_IPC_SERVER , //TODO
+        SOCK_USAGE_IPC_SERVER , 
         SOCK_USAGE_TCP_CLIENT ,
-        SOCK_USAGE_IPC_CLIENT   //TODO
+        SOCK_USAGE_IPC_CLIENT   
 
     } ENUM_SOCK_USAGE ;
 } 
@@ -143,10 +144,19 @@ class ASock
 
         //choose usage, inheritance or composition.
         //1.for inheritance : Implement these virtual functions.
-        virtual size_t  on_calculate_data_len(Context* context_ptr){return -1;}; 
+        virtual size_t  on_calculate_data_len(Context* context_ptr)
+        {
+            std::cerr << "ERROR! on_calculate_data_len not implemented!\n";
+            return -1;
+        };
+
         virtual bool    on_recved_complete_data(Context* context_ptr, 
                                                 char*    data_ptr, 
-                                                int      len){return false;}; 
+                                                int      len)
+        {
+            std::cerr << "ERROR! on_recved_complete_data not implemented!\n";
+            return false;
+        }; 
 
         //2.for composition : Assign yours to these callbacks 
     public:
@@ -163,8 +173,13 @@ class ASock
         bool   init_tcp_client(const char* server_ip, 
                                int         server_port, 
                                int         connect_timeout_secs=10, 
-                               int         max_data_len = 0 );
-        //bool  init_ipc_client(const char* sock_path); //TODO
+                               int         max_data_len = asock::DEFAULT_PACKET_SIZE );
+
+        bool   init_ipc_client(const char* sock_path, 
+                               int         connect_timeout_secs=10,
+                               int         max_data_len=asock::DEFAULT_PACKET_SIZE); 
+
+        bool   connect_to_server();  
         bool   send_to_server (const char* data, int len) ; 
         void   disconnect() ;
         int    get_socket () { return  context_.socket_ ; }
@@ -175,8 +190,12 @@ class ASock
         bool     is_buffer_init_ {false};
         bool     is_connected_ {false};
         Context  context_;
+        SOCKADDR_UN ipc_conn_addr_   ;
+        SOCKADDR_IN tcp_server_addr_ ;
+        int connect_timeout_secs_    ;
 
     private :
+        bool run_client_thread();
         void client_thread_routine();
         void invoke_server_disconnected_handler();
 
@@ -195,11 +214,12 @@ class ASock
     public :
         bool  init_tcp_server (const char* bind_ip, 
                                int         bind_port, 
-                               int         max_client, 
-                               int         max_data_len=0);
-        //bool init_ipc_server(const char* sock_path, 
-        //                     int         max_client, 
-        //                     int         max_data_len=0); //TODO
+                               int         max_data_len=asock::DEFAULT_PACKET_SIZE,
+                               int         max_client=asock::DEFAULT_MAX_CLIENT);
+
+        bool  init_ipc_server (const char* sock_path, 
+                               int         max_data_len=asock::DEFAULT_PACKET_SIZE,
+                               int         max_client=asock::DEFAULT_MAX_CLIENT );
         bool  run_server();
         bool  is_server_running(){return is_server_running_;};
         void  stop_server();
@@ -207,7 +227,8 @@ class ASock
         int   get_count_of_clients(){ return client_cnt_ ; }
 
     private :
-        std::string       server_ip_   {""};
+        std::string       server_ip_   ;
+        std::string       server_ipc_socket_path_ ;
         int               server_port_ {-1};
         std::atomic<int>  client_cnt_ {0}; 
         std::atomic<bool> is_need_server_run_ {false};
