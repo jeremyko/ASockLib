@@ -2,12 +2,12 @@
 
 ### What ###
 
-a simple, easy to use c++ TCP server, client library using epoll, kqueue and [CumBuffer](https://github.com/jeremyko/CumBuffer).
+a simple, easy to use asynchronous c++ tcp / domain socket server/client library using epoll, kqueue and [CumBuffer](https://github.com/jeremyko/CumBuffer).
 
 
 ### Usage ###
 
-#### echo server ####
+#### tcp echo server ####
 
 ```{.cpp}
 //see sample directory. this is an inheritance usage. 
@@ -45,9 +45,7 @@ int main(int argc, char* argv[])
 {
     //max client is 100000, max message length is approximately 300 bytes...
     EchoServer echoserver; 
-    echoserver.init_tcp_server("127.0.0.1", 9990, 100000, 300);
-
-    if(!echoserver.run_server())
+    if(!echoserver.init_tcp_server("127.0.0.1", 9990, 100000, 300))
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
                   <<"] error! "<< echoserver.get_last_err_msg() <<"\n"; 
@@ -64,7 +62,7 @@ int main(int argc, char* argv[])
 
 ```
 
-#### echo client ####
+#### tcp echo client ####
 
 ```{.cpp}
 
