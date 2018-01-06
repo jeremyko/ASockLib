@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cassert>
+#include <csignal>
 
 #include "ASock.hpp"
 #include "../../msg_defines.h"
@@ -7,6 +8,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 class EchoServer : public ASock
 {
+    public:
+		EchoServer(){this_instance_ = this; }
+        void    set_sighandler();
     private:
         size_t  on_calculate_data_len(asock::Context* context_ptr);
         bool    on_recved_complete_data(asock::Context* context_ptr, 
@@ -14,7 +18,10 @@ class EchoServer : public ASock
                                         int             len ) ;
         void    on_client_connected(asock::Context* context_ptr) ; 
         void    on_client_disconnected(asock::Context* context_ptr) ; 
+        static void sigint_handler(int signo);
+        static  EchoServer* this_instance_ ;
 };
+EchoServer* EchoServer::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
 size_t EchoServer::on_calculate_data_len(asock::Context* context_ptr)
@@ -70,6 +77,26 @@ void EchoServer::on_client_disconnected(asock::Context* context_ptr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+void EchoServer::set_sighandler()
+{
+    std::signal(SIGINT,EchoServer::sigint_handler);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void EchoServer::sigint_handler(int signo)
+{
+    sigset_t sigset, oldset;
+    sigfillset(&sigset);
+    if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0)
+    {
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< strerror(errno) <<"\n"; 
+    }
+    
+    std::cout << "Stop Server! \n";
+    this_instance_->stop_server();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
     if(argc !=2)
@@ -80,6 +107,7 @@ int main(int argc, char* argv[])
     //max client is 100000, 
     //max message length is approximately 1024 bytes...
     EchoServer echoserver; 
+    echoserver.set_sighandler(); 
     if(!echoserver.init_ipc_server(argv[1]))
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 

@@ -1,6 +1,6 @@
 #include <iostream>
 #include <cassert>
-#include <csignal>//TEST
+#include <csignal>
 
 #include "ASock.hpp"
 #include "../../msg_defines.h"
