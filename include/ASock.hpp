@@ -72,7 +72,7 @@ namespace asock
     const size_t    MORE_TO_COME        = -1;
     typedef struct _PENDING_SENT_
     {
-		char*	pending_sent_data ; 
+        char*   pending_sent_data ; 
         int     pending_sent_len  ;
     } PENDING_SENT ;
 
@@ -83,8 +83,8 @@ namespace asock
         std::mutex      send_lock_ ; 
         bool            is_packet_len_calculated_ {false};
         size_t          complete_packet_len_ {0} ;
-		std::deque<PENDING_SENT> pending_send_deque_ ; 
-		bool            is_sent_pending_ {false}; 
+        std::deque<PENDING_SENT> pending_send_deque_ ; 
+        bool            is_sent_pending_ {false}; 
         SOCKADDR_IN     udp_remote_addr_ ; //for udp
     } Context ;
 
@@ -257,13 +257,13 @@ class ASock
 #endif
 
     private :
-        void		server_thread_routine();
-        void		server_thread_udp_routine();
-        void		terminate_client(Context* context_ptr);
-        void		push_client_context_to_cache(Context* context_ptr);
-        void		clear_client_cache();
-		bool		accept_new_client();
-        Context*	pop_client_context_from_cache();
+        void        server_thread_routine();
+        void        server_thread_udp_routine();
+        void        terminate_client(Context* context_ptr);
+        void        push_client_context_to_cache(Context* context_ptr);
+        void        clear_client_cache();
+        bool        accept_new_client();
+        Context*    pop_client_context_from_cache();
 
         //for composition : Assign yours to these callbacks 
     public :

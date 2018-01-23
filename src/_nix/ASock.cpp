@@ -473,7 +473,7 @@ bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len)
             if ( errno == EWOULDBLOCK || errno == EAGAIN )
             {
                 if ( sock_usage_ != SOCK_USAGE_UDP_SERVER &&
-                     sock_usage_ != SOCK_USAGE_UDP_CLIENT ) //UDP 해당없음!
+                     sock_usage_ != SOCK_USAGE_UDP_CLIENT ) //UDP : no pending send
                 {
                     if(retry_cnt >= 3)
                     {
@@ -505,22 +505,14 @@ bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len)
                 }//no udp
                 else
                 {
-                    //XXX UDP is blocking ...
-                    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                    //UDP send error ...
                     err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
-                    std::cerr << err_msg_ << "\n";
-                    continue;
+                    return false;
                 }
             }
             else if ( errno != EINTR )
             {
                 err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
-                return false;
-            }
-            else
-            {
-                err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
-                std::cerr << err_msg_ << "\n";
                 return false;
             }
         }
@@ -1010,15 +1002,6 @@ void ASock:: server_thread_udp_routine()
 
         for (int i = 0; i < event_cnt; i++)
         {
-            //XXX context 는 결국 listen_context_ptr_ 임!!!! 
-            /*
-#ifdef __APPLE__
-            Context* context_ptr = (Context*)kq_events_ptr_[i].udata;
-#elif __linux__
-            Context* context_ptr = (Context*)ep_events_[i].data.ptr ;
-#endif
-            */
-
 #ifdef __APPLE__
             if (kq_events_ptr_[i].flags & EV_EOF)
 #elif __linux__
@@ -1041,21 +1024,7 @@ void ASock:: server_thread_udp_routine()
                     break;
                 }
             }
-            /* no pending process for UDP
-#ifdef __APPLE__
-            else if (EVFILT_WRITE == kq_events_ptr_[i].filter )
-#elif __linux__
-            else if (ep_events_[i].events & EPOLLOUT) 
-#endif
-            {
-                //# send #----------
-                //if(!send_pending_data(context_ptr))
-                if(!send_pending_data(listen_context_ptr_)) //XXX client context ???필요한가???? 여러 클라이언트??
-                {
-                    return; //error!
-                }
-            } 
-            */
+            /// no pending process for UDP
         } 
     }//while
 
