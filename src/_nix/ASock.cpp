@@ -23,6 +23,7 @@ SOFTWARE.
  *****************************************************************************/
 
 #include "ASock.hpp"
+#include <chrono>
 
 using namespace asock ;
 
@@ -35,7 +36,9 @@ ASock::~ASock()
         complete_packet_data_ = NULL;
     }
 
-    if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || sock_usage_ == SOCK_USAGE_IPC_CLIENT ) 
+    if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || 
+         sock_usage_ == SOCK_USAGE_UDP_CLIENT ||   
+         sock_usage_ == SOCK_USAGE_IPC_CLIENT ) 
     {
 #ifdef __APPLE__
         if(kq_events_ptr_)
@@ -50,7 +53,9 @@ ASock::~ASock()
 #endif
         disconnect();
     }
-    else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || sock_usage_ == SOCK_USAGE_IPC_SERVER  ) 
+    else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
+              sock_usage_ == SOCK_USAGE_UDP_SERVER ||  
+              sock_usage_ == SOCK_USAGE_IPC_SERVER  ) 
     {
 #ifdef __APPLE__
         if ( kq_events_ptr_ )
@@ -184,9 +189,9 @@ bool ASock::set_buffer_capacity(int max_data_len)
         return false;
     }
 
-    recv_buffer_capcity_ = max_data_len; 
+    max_data_len_ = max_data_len ; 
 
-    complete_packet_data_ = new (std::nothrow) char [recv_buffer_capcity_] ;
+    complete_packet_data_ = new (std::nothrow) char [max_data_len_] ;
     if(complete_packet_data_ == NULL)
     {
         err_msg_ = "memory alloc failed!";
@@ -212,6 +217,97 @@ bool   ASock::set_socket_non_blocking(int sock_fd)
     {
         err_msg_ = "fcntl O_NONBLOCK error [" + std::string(strerror(errno))+ "]";
         return  false;
+    }
+
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::set_sockopt_snd_rcv_buf_for_udp(int socket)
+{
+    int opt_cur ; 
+    int opt_val=max_data_len_ ; 
+    int opt_len = sizeof(opt_cur) ;
+    if (getsockopt(socket,SOL_SOCKET,SO_SNDBUF,&opt_cur, (SOCKLEN_T *) &opt_len)==-1) 
+    {
+        err_msg_ = "gsetsockopt SO_SNDBUF error ["  + std::string(strerror(errno)) + "]";
+        return false;
+    }
+
+    //std::cout << "curr SO_SNDBUF = " << opt_cur << "\n";
+    if(max_data_len_ > opt_cur )
+    {
+        if (setsockopt(socket,SOL_SOCKET,SO_SNDBUF,(char*)&opt_val, sizeof(opt_val))==-1) 
+        {
+            err_msg_ = "setsockopt SO_SNDBUF error ["  + std::string(strerror(errno)) + "]";
+            return false;
+        }
+        std::cout << "set SO_SNDBUF = " << opt_val << "\n";
+    }
+
+    //--------------
+    if (getsockopt(socket,SOL_SOCKET,SO_RCVBUF,&opt_cur, (SOCKLEN_T *)&opt_len)==-1) 
+    {
+        err_msg_ = "setsockopt SO_RCVBUF error ["  + std::string(strerror(errno)) + "]";
+        return false;
+    }
+    //std::cout << "curr SO_RCVBUF = " << opt_cur << "\n";
+
+    if(max_data_len_ > opt_cur )
+    {
+        if (setsockopt(socket,SOL_SOCKET,SO_RCVBUF,(char*)&opt_val, sizeof(opt_val))==-1) 
+        {
+            err_msg_ = "setsockopt SO_RCVBUF error ["  + std::string(strerror(errno)) + "]";
+            return false;
+        }
+        std::cout << "set SO_RCVBUF = " << opt_val << "\n";
+    }
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::recvfrom_data(Context* context_ptr) //XXX context 가 지금 서버 context 임!!
+{
+    if(max_data_len_ > context_ptr->recv_buffer_.GetLinearFreeSpace() )
+    {
+        err_msg_ = "no linear free space left " + std::to_string( context_ptr->recv_buffer_.GetLinearFreeSpace()) ;
+        return false; 
+    }
+
+    SOCKLEN_T addrlen = sizeof(context_ptr->udp_remote_addr_);
+    int recved_len = recvfrom(context_ptr->socket_, //--> is listen_socket_
+                              context_ptr->recv_buffer_.GetLinearAppendPtr(), 
+                              max_data_len_ , 
+                              0,
+                              (struct sockaddr *)&context_ptr->udp_remote_addr_, 
+                              &addrlen ); 
+    if( recved_len > 0)
+    {
+        context_ptr->recv_buffer_.IncreaseData(recved_len);
+
+        //udp got complete packet 
+        if(cumbuffer_defines::OP_RSLT_OK!= 
+           context_ptr->recv_buffer_.GetData(recved_len, complete_packet_data_ ))
+        {
+            //error !
+            err_msg_ = context_ptr->recv_buffer_.GetErrMsg();
+            std::cerr << err_msg_ << "\n";
+            context_ptr->is_packet_len_calculated_ = false;
+            return false; 
+        }
+        //XXX UDP 이므로 받는 버퍼를 초기화해서, linear free space를 초기화 상태로!! XXX 
+        context_ptr->recv_buffer_.ReSet(); //this is udp. all data has arrived!
+
+        if(cb_on_recved_complete_packet_!=nullptr)
+        {
+            //invoke user specific callback
+            cb_on_recved_complete_packet_ (context_ptr, complete_packet_data_ , recved_len ); 
+        }
+        else
+        {
+            //invoke user specific implementation
+            on_recved_complete_data(context_ptr,complete_packet_data_ , recved_len ); 
+        }
     }
 
     return true;
@@ -309,17 +405,15 @@ bool ASock::recv_data(Context* context_ptr)
     return true ;
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len) 
 {
-    //std::cout << "debug (" << __FUNCTION__ << "/"<< __LINE__ << ")\n"; 
     std::lock_guard<std::mutex> lock(context_ptr->send_lock_);
     char* data_position_ptr = const_cast<char*>(data_ptr) ;   
     int total_sent = 0;           
 
     //if sent is pending, just push to queue. 
-    if(context_ptr->is_sent_pending_)
+    if(context_ptr->is_sent_pending_) //tcp, domain socket only
     {
         PENDING_SENT pending_sent;
         pending_sent.pending_sent_data = new char [len]; 
@@ -340,9 +434,35 @@ bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len)
         return true;
     }
 
+    int retry_cnt =0;
     while( total_sent < len ) 
     {
-        int sent_len = send(context_ptr->socket_, data_position_ptr, len-total_sent, 0);
+        int sent_len =0;
+        if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) 
+        {
+            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
+            sent_len = sendto(context_ptr->socket_,  
+                              data_position_ptr, 
+                              len-total_sent , 
+                              0, 
+                              (struct sockaddr*)& context_ptr->udp_remote_addr_,   
+                              sizeof(context_ptr->udp_remote_addr_)) ;
+        }
+        else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) 
+        {
+            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
+            sent_len = sendto(context_ptr->socket_,  
+                              data_position_ptr, 
+                              len-total_sent , 
+                              0, 
+                              0, //XXX client : already set! (via connect)  
+                              sizeof(context_ptr->udp_remote_addr_)) ;
+        }
+        else
+        {
+            sent_len = send(context_ptr->socket_, data_position_ptr, len-total_sent, 0);
+        }
+
         if(sent_len > 0)
         {
             total_sent += sent_len ;  
@@ -352,33 +472,59 @@ bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len)
         {
             if ( errno == EWOULDBLOCK || errno == EAGAIN )
             {
-                //send later
-                PENDING_SENT pending_sent;
-                pending_sent.pending_sent_data = new char [len-total_sent]; 
-                pending_sent.pending_sent_len  = len-total_sent;
-                memcpy(pending_sent.pending_sent_data, data_position_ptr, len-total_sent);
-                context_ptr->pending_send_deque_.push_back(pending_sent);
-#ifdef __APPLE__
-                if(!control_kq(context_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
-#elif __linux__
-                if(!control_ep (context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
-#endif
+                if ( sock_usage_ != SOCK_USAGE_UDP_SERVER &&
+                     sock_usage_ != SOCK_USAGE_UDP_CLIENT ) //UDP 해당없음!
                 {
-                    delete [] pending_sent.pending_sent_data;
-                    context_ptr->pending_send_deque_.pop_back();
-                    return false;
+                    if(retry_cnt >= 3)
+                    {
+                        //send later
+                        PENDING_SENT pending_sent;
+                        pending_sent.pending_sent_data = new char [len-total_sent]; 
+                        pending_sent.pending_sent_len  = len-total_sent;
+                        memcpy(pending_sent.pending_sent_data, data_position_ptr, len-total_sent);
+                        context_ptr->pending_send_deque_.push_back(pending_sent);
+#ifdef __APPLE__
+                        if(!control_kq(context_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
+#elif __linux__
+                        if(!control_ep (context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
+#endif
+                        {
+                            delete [] pending_sent.pending_sent_data;
+                            context_ptr->pending_send_deque_.pop_back();
+                            return false;
+                        }
+                        context_ptr->is_sent_pending_ = true;
+                        return true;
+                    }
+                    else
+                    {
+                        retry_cnt++;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                        continue;
+                    }
+                }//no udp
+                else
+                {
+                    //XXX UDP is blocking ...
+                    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                    err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
+                    std::cerr << err_msg_ << "\n";
+                    continue;
                 }
-                context_ptr->is_sent_pending_ = true;
-                return true;
-
             }
             else if ( errno != EINTR )
             {
                 err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
                 return false;
             }
+            else
+            {
+                err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
+                std::cerr << err_msg_ << "\n";
+                return false;
+            }
         }
-    }
+    }//while
 
     return true;
 }
@@ -447,6 +593,29 @@ bool ASock::init_tcp_server(const char* bind_ip,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+bool ASock::init_udp_server(const char* bind_ip, 
+                            int         bind_port, 
+                            int         max_data_len /*=DEFAULT_PACKET_SIZE*/,
+                            int         max_client /*=DEFAULT_MAX_CLIENT*/)
+{
+    sock_usage_ = SOCK_USAGE_UDP_SERVER  ;
+
+    server_ip_ = bind_ip ; 
+    server_port_ = bind_port ; 
+    max_client_limit_ = max_client ; 
+    if(max_client_limit_<0)
+    {
+        return false;
+    }
+    if(!set_buffer_capacity(max_data_len))
+    {
+        return false;
+    }
+
+    return run_server();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 bool  ASock::init_ipc_server (const char* sock_path, 
                               int         max_data_len /*=DEFAULT_PACKET_SIZE*/,
                               int         max_client /*=DEFAULT_MAX_CLIENT*/)
@@ -488,6 +657,10 @@ bool ASock::run_server()
     {
         listen_socket_ = socket(AF_INET,SOCK_STREAM,0) ;
     }
+    else if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) 
+    {
+        listen_socket_ = socket(AF_INET,SOCK_DGRAM,0) ;
+    }
 
     if( listen_socket_ < 0 )
     {
@@ -515,6 +688,14 @@ bool ASock::run_server()
         return false;
     }
 
+    if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) 
+    {
+        if(!set_sockopt_snd_rcv_buf_for_udp(listen_socket_))
+        {
+            return false;
+        }
+    }
+
     //-------------------------------------------------
     if ( sock_usage_ == SOCK_USAGE_IPC_SERVER ) 
     {
@@ -526,16 +707,18 @@ bool ASock::run_server()
 
         result = bind(listen_socket_,(SOCKADDR*)&ipc_server_addr, sizeof(ipc_server_addr)) ;
     }
-    else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER ) 
+    else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
+              sock_usage_ == SOCK_USAGE_UDP_SERVER ) 
     {
-        SOCKADDR_IN    tcp_server_addr  ;
-        memset((void *)&tcp_server_addr,0x00,sizeof(tcp_server_addr)) ;
-        tcp_server_addr.sin_family      = AF_INET ;
-        tcp_server_addr.sin_addr.s_addr = inet_addr(server_ip_.c_str()) ;
-        tcp_server_addr.sin_port = htons(server_port_);
+        SOCKADDR_IN    server_addr  ;
+        memset((void *)&server_addr,0x00,sizeof(server_addr)) ;
+        server_addr.sin_family      = AF_INET ;
+        server_addr.sin_addr.s_addr = inet_addr(server_ip_.c_str()) ;
+        server_addr.sin_port = htons(server_port_);
 
-        result = bind(listen_socket_,(SOCKADDR*)&tcp_server_addr,sizeof(tcp_server_addr)) ;
+        result = bind(listen_socket_,(SOCKADDR*)&server_addr,sizeof(server_addr)) ;
     }
+
     //-------------------------------------------------
     
     if ( result < 0 )
@@ -544,11 +727,15 @@ bool ASock::run_server()
         return false ;
     }
 
-    result = listen(listen_socket_,SOMAXCONN) ;
-    if ( result < 0 )
+    if ( sock_usage_ == SOCK_USAGE_IPC_SERVER || 
+         sock_usage_ == SOCK_USAGE_TCP_SERVER )
     {
-        err_msg_ = "listrn error [" + std::string(strerror(errno)) + "]";
-        return false ;
+        result = listen(listen_socket_,SOMAXCONN) ;
+        if ( result < 0 )
+        {
+            err_msg_ = "listen error [" + std::string(strerror(errno)) + "]";
+            return false ;
+        }
     }
 
     struct sigaction act;
@@ -596,8 +783,26 @@ bool ASock::run_server()
     //start server thread
     is_need_server_run_ = true;
     is_server_running_  = true;
-    std::thread server_thread(&ASock::server_thread_routine, this);
-    server_thread.detach();
+
+#ifdef __APPLE__
+    kq_events_ptr_ = new struct kevent[max_client_limit_];
+    memset(kq_events_ptr_, 0x00, sizeof(struct kevent) * max_client_limit_);
+#elif __linux__
+    ep_events_ = new struct epoll_event[max_client_limit_];
+    memset(ep_events_, 0x00, sizeof(struct epoll_event) * max_client_limit_);
+#endif
+
+    if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) 
+    {
+        //UDP is special~~~ XXX 
+        std::thread server_thread(&ASock::server_thread_udp_routine, this);
+        server_thread.detach();
+    }
+    else
+    {
+        std::thread server_thread(&ASock::server_thread_routine, this);
+        server_thread.detach();
+    }
 
     return true;
 }
@@ -611,15 +816,22 @@ void ASock::stop_server()
 ///////////////////////////////////////////////////////////////////////////////
 Context* ASock::pop_client_context_from_cache()
 {
+    Context* context_ptr = nullptr;
     if (!queue_client_cache_.empty())
     {
-        Context* context_ptr = queue_client_cache_.front();
+        context_ptr = queue_client_cache_.front();
         queue_client_cache_.pop();
 
         return context_ptr;
     }
 
-    return nullptr;
+    context_ptr = new (std::nothrow) Context();
+    if(!context_ptr)
+    {
+        err_msg_ = "Context alloc failed !";
+        return nullptr;
+    }
+    return context_ptr ;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -687,7 +899,6 @@ bool ASock::accept_new_client()
             client_fd = accept(listen_socket_,(SOCKADDR*)&client_addr,&client_addr_size ) ;
         }
 
-
         if (client_fd == -1)
         {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -706,29 +917,26 @@ bool ASock::accept_new_client()
                 return false;
             }
         }
+
         ++client_cnt_;
         set_socket_non_blocking(client_fd);
 
         Context* client_context_ptr = pop_client_context_from_cache();
         if(client_context_ptr==nullptr)
         {
-            client_context_ptr = new (std::nothrow) Context();
-            if(!client_context_ptr)
-            {
-                err_msg_ = "Context alloc failed !";
-                is_server_running_ = false;
-                return false;
-            }
-
-            if ( cumbuffer_defines::OP_RSLT_OK != 
-                 client_context_ptr->recv_buffer_.Init(recv_buffer_capcity_) )
-            {
-                err_msg_  = "cumBuffer Init error : " + 
-                             client_context_ptr->recv_buffer_.GetErrMsg();
-                is_server_running_ = false;
-                return false;
-            }
+            is_server_running_ = false;
+            return false;
         }
+
+        if ( cumbuffer_defines::OP_RSLT_OK != 
+             client_context_ptr->recv_buffer_.Init(max_data_len_) )
+        {
+            err_msg_  = "cumBuffer Init error : " + 
+                client_context_ptr->recv_buffer_.GetErrMsg();
+            is_server_running_ = false;
+            return false;
+        }
+        
         client_context_ptr->socket_ = client_fd;
 
         std::pair<CLIENT_UNORDERMAP_ITER_T, bool> client_map_rslt;
@@ -762,17 +970,105 @@ bool ASock::accept_new_client()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ASock:: server_thread_routine()
+void ASock:: server_thread_udp_routine()
 {
 #ifdef __APPLE__
-    kq_events_ptr_ = new struct kevent[max_client_limit_];
-    memset(kq_events_ptr_, 0x00, sizeof(struct kevent) * max_client_limit_);
     struct timespec ts;
     ts.tv_sec  =1;
     ts.tv_nsec =0;
+#endif
+
+    if (cumbuffer_defines::OP_RSLT_OK != 
+        listen_context_ptr_->recv_buffer_.Init(max_data_len_) )
+    {
+        err_msg_  = "cumBuffer Init error : " + 
+            listen_context_ptr_->recv_buffer_.GetErrMsg();
+        is_server_running_ = false;
+        return ;
+    }
+    //std::cout << "DEBUG : GetTotalFreeSpace: " << "" <<listen_context_ptr_->recv_buffer_.GetTotalFreeSpace() <<"\n";
+
+    while(is_need_server_run_)
+    {
+#ifdef __APPLE__
+        int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, max_client_limit_, &ts); 
+        if (event_cnt < 0)
+        {
+            err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";
+            is_server_running_ = false;
+            return;
+        }
 #elif __linux__
-    ep_events_ = new struct epoll_event[max_client_limit_];
-    memset(ep_events_, 0x00, sizeof(struct epoll_event) * max_client_limit_);
+        int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 1000 );
+        if (event_cnt < 0)
+        {
+            err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
+            is_server_running_ = false;
+            return;
+        }
+#endif
+
+        for (int i = 0; i < event_cnt; i++)
+        {
+            //XXX context 는 결국 listen_context_ptr_ 임!!!! 
+            /*
+#ifdef __APPLE__
+            Context* context_ptr = (Context*)kq_events_ptr_[i].udata;
+#elif __linux__
+            Context* context_ptr = (Context*)ep_events_[i].data.ptr ;
+#endif
+            */
+
+#ifdef __APPLE__
+            if (kq_events_ptr_[i].flags & EV_EOF)
+#elif __linux__
+            if (ep_events_[i].events & EPOLLRDHUP || ep_events_[i].events & EPOLLERR) 
+#endif
+            {
+                err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
+                std::cerr << err_msg_ << "\n";
+                //udp 인 경우에 감지 안됨!!! 
+            }
+#ifdef __APPLE__
+            else if (EVFILT_READ == kq_events_ptr_[i].filter)
+#elif __linux__
+            else if (ep_events_[i].events & EPOLLIN) 
+#endif
+            {
+                //# recv #----------
+                if(! recvfrom_data(listen_context_ptr_))
+                {
+                    break;
+                }
+            }
+            /* no pending process for UDP
+#ifdef __APPLE__
+            else if (EVFILT_WRITE == kq_events_ptr_[i].filter )
+#elif __linux__
+            else if (ep_events_[i].events & EPOLLOUT) 
+#endif
+            {
+                //# send #----------
+                //if(!send_pending_data(context_ptr))
+                if(!send_pending_data(listen_context_ptr_)) //XXX client context ???필요한가???? 여러 클라이언트??
+                {
+                    return; //error!
+                }
+            } 
+            */
+        } 
+    }//while
+
+    is_server_running_ = false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ASock:: server_thread_routine()
+{
+#ifdef __APPLE__
+    struct timespec ts;
+    ts.tv_sec  =1;
+    ts.tv_nsec =0;
 #endif
 
     while(is_need_server_run_)
@@ -794,6 +1090,7 @@ void ASock:: server_thread_routine()
             return;
         }
 #endif
+
         for (int i = 0; i < event_cnt; i++)
         {
 #ifdef __APPLE__
@@ -805,15 +1102,16 @@ void ASock:: server_thread_routine()
                 //# accept #----------
                 if(!accept_new_client())
                 {
+                    std::cerr <<"accept error:" << err_msg_ << "\n";
                     return;
                 }
             }
             else
             {
 #ifdef __APPLE__
-                Context* client_context_ptr = (Context*)kq_events_ptr_[i].udata;
+                Context* context_ptr = (Context*)kq_events_ptr_[i].udata;
 #elif __linux__
-                Context* client_context_ptr = (Context*)ep_events_[i].data.ptr ;
+                Context* context_ptr = (Context*)ep_events_[i].data.ptr ;
 #endif
 
 #ifdef __APPLE__
@@ -823,7 +1121,7 @@ void ASock:: server_thread_routine()
 #endif
                 {
                     //# close #----------
-                    terminate_client(client_context_ptr); 
+                    terminate_client(context_ptr); 
                 }
 #ifdef __APPLE__
                 else if (EVFILT_READ == kq_events_ptr_[i].filter)
@@ -832,9 +1130,9 @@ void ASock:: server_thread_routine()
 #endif
                 {
                     //# recv #----------
-                    if(! recv_data(client_context_ptr) ) 
+                    if(! recv_data(context_ptr) ) 
                     {
-                        terminate_client(client_context_ptr); 
+                        terminate_client(context_ptr); 
                     }
                 }
 #ifdef __APPLE__
@@ -844,7 +1142,7 @@ void ASock:: server_thread_routine()
 #endif
                 {
                     //# send #----------
-                    if(!send_pending_data(client_context_ptr))
+                    if(!send_pending_data(context_ptr))
                     {
                         return; //error!
                     }
@@ -858,6 +1156,9 @@ void ASock:: server_thread_routine()
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::send_pending_data(Context* context_ptr)
 {
+    //TCP, domain socket only!
+    //std::cout <<"["<< __func__ <<"-"<<__LINE__  <<"\n"; //debug
+
     std::lock_guard<std::mutex> guard(context_ptr->send_lock_);
     while(!context_ptr->pending_send_deque_.empty()) 
     {
@@ -1005,6 +1306,26 @@ bool  ASock::init_tcp_client(const char* server_ip,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+bool  ASock::init_udp_client(const char* server_ip, 
+                             int         server_port, 
+                             int         max_data_len /*DEFAULT_PACKET_SIZE*/ )
+{
+    sock_usage_ = SOCK_USAGE_UDP_CLIENT  ;
+
+    if(!set_buffer_capacity(max_data_len) )
+    {
+        return false;
+    }
+
+    context_.socket_ = socket(AF_INET,SOCK_DGRAM,0) ;
+    memset((void *)&udp_server_addr_,0x00,sizeof(udp_server_addr_)) ;
+    udp_server_addr_.sin_family      = AF_INET ;
+    udp_server_addr_.sin_addr.s_addr = inet_addr( server_ip ) ;
+    udp_server_addr_.sin_port = htons( server_port );
+
+    return connect_to_server();  
+}
+///////////////////////////////////////////////////////////////////////////////
 bool ASock::init_ipc_client(const char* sock_path,  
                             int         connect_timeout_secs,
                             int         max_data_len)
@@ -1042,7 +1363,7 @@ bool ASock::connect_to_server()
     
     if(!is_buffer_init_ )
     {
-        if  ( cumbuffer_defines::OP_RSLT_OK != context_.recv_buffer_.Init(recv_buffer_capcity_) )
+        if  ( cumbuffer_defines::OP_RSLT_OK != context_.recv_buffer_.Init(max_data_len_) )
         {
             err_msg_ = "cumBuffer Init error :" + context_.recv_buffer_.GetErrMsg();
             return false;
@@ -1058,7 +1379,7 @@ bool ASock::connect_to_server()
     struct timeval timeoutVal;
     timeoutVal.tv_sec  = connect_timeout_secs_ ;  
     timeoutVal.tv_usec = 0;
-    int result;
+    int result = -1;
 
     //-------------------------------------------------
     if ( sock_usage_ == SOCK_USAGE_IPC_CLIENT ) 
@@ -1068,6 +1389,19 @@ bool ASock::connect_to_server()
     else if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT ) 
     {
         result = connect(context_.socket_,(SOCKADDR*)&tcp_server_addr_,(SOCKLEN_T)sizeof(SOCKADDR_IN)) ;
+    }
+    else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) 
+    {
+        if(!set_sockopt_snd_rcv_buf_for_udp(context_.socket_))
+        {
+            return false;
+        }
+        result = connect(context_.socket_,(SOCKADDR*)&udp_server_addr_,(SOCKLEN_T)sizeof(SOCKADDR_IN)) ;
+    }
+    else
+    {
+        err_msg_ = "invalid socket usage" ;
+        return false;
     }
     //-------------------------------------------------
 
@@ -1106,7 +1440,7 @@ bool ASock::connect_to_server()
     if (FD_ISSET(context_.socket_, &rset) || FD_ISSET(context_.socket_, &wset)) 
     {
         int  socket_error = 0;
-        socklen_t  len = sizeof(socket_error);
+        SOCKLEN_T  len = sizeof(socket_error);
         if (getsockopt(context_.socket_, SOL_SOCKET, SO_ERROR, &socket_error, &len) < 0)
         {
             err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
@@ -1217,11 +1551,23 @@ void ASock::client_thread_routine()
 #endif
         {
             //############## recv ############################
-            if(! recv_data(&context_) ) 
+            if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) 
             {
-                close( context_.socket_);
-                invoke_server_disconnected_handler();
-                break;
+                if(! recvfrom_data(&context_) ) 
+                {
+                    close( context_.socket_);
+                    invoke_server_disconnected_handler();
+                    break;
+                }
+            }
+            else
+            {
+                if(! recv_data(&context_) ) 
+                {
+                    close( context_.socket_);
+                    invoke_server_disconnected_handler();
+                    break;
+                }
             }
         }
 #ifdef __APPLE__

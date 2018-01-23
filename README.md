@@ -2,7 +2,7 @@
 
 ### What ###
 
-a simple, easy to use asynchronous c++ tcp / domain socket server/client library using epoll, kqueue and [CumBuffer](https://github.com/jeremyko/CumBuffer).
+a simple, easy to use c++ tcp / udp / domain socket server/client library using epoll, kqueue and [CumBuffer](https://github.com/jeremyko/CumBuffer).
 
 
 ### Usage ###
@@ -10,8 +10,8 @@ a simple, easy to use asynchronous c++ tcp / domain socket server/client library
 #### tcp echo server ####
 
 ```{.cpp}
-//see sample directory. this is an inheritance usage. 
-//but you can also find an composition usage.
+//see sample directory. this is an tcp inheritance usage. 
+//you can find composition usage and udp, domain socket example too.
 
 class EchoServer : public ASock
 {
@@ -133,6 +133,6 @@ int main(int argc, char* argv[])
     
     cd build/
     
-    cmake -DCMAKE_BUILD_TYPE=RELEASE ../
+    cmake ../
     
     make

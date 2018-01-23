@@ -49,7 +49,6 @@ SOFTWARE.
 #endif
 //======================
 
-#include <string>
 #include <atomic>
 #include <thread>
 #include <queue>
@@ -86,15 +85,18 @@ namespace asock
         size_t          complete_packet_len_ {0} ;
 		std::deque<PENDING_SENT> pending_send_deque_ ; 
 		bool            is_sent_pending_ {false}; 
+        SOCKADDR_IN     udp_remote_addr_ ; //for udp
     } Context ;
 
     typedef enum _ENUM_SOCK_USAGE_
     {
         SOCK_USAGE_UNKNOWN = 0 ,
         SOCK_USAGE_TCP_SERVER ,
+        SOCK_USAGE_UDP_SERVER ,
         SOCK_USAGE_IPC_SERVER , 
         SOCK_USAGE_TCP_CLIENT ,
-        SOCK_USAGE_IPC_CLIENT   
+        SOCK_USAGE_UDP_CLIENT ,
+        SOCK_USAGE_IPC_CLIENT ,
 
     } ENUM_SOCK_USAGE ;
 } 
@@ -118,7 +120,7 @@ class ASock
 
     protected :
         char*      complete_packet_data_ {nullptr}; 
-        int        recv_buffer_capcity_ {-1};
+        int        max_data_len_ {-1};
         int        send_buffer_capcity_ {asock::DEFAULT_CAPACITY};
 
 #ifdef __APPLE__
@@ -133,6 +135,7 @@ class ASock
 
     protected :
         bool   recv_data(Context* context_ptr);
+        bool   recvfrom_data(Context* context_ptr) ; //udp
 #ifdef __APPLE__
         bool   control_kq(Context* context_ptr , uint32_t events, uint32_t fflags);
 #elif __linux__
@@ -140,6 +143,7 @@ class ASock
 #endif
 
     private:
+        bool set_sockopt_snd_rcv_buf_for_udp(int socket);
         bool send_pending_data(Context* context_ptr);
 
         //choose usage, inheritance or composition.
@@ -175,6 +179,10 @@ class ASock
                                int         connect_timeout_secs=10, 
                                int         max_data_len = asock::DEFAULT_PACKET_SIZE );
 
+        bool   init_udp_client(const char* server_ip, 
+                               int         server_port, 
+                               int         max_data_len = asock::DEFAULT_PACKET_SIZE );
+
         bool   init_ipc_client(const char* sock_path, 
                                int         connect_timeout_secs=10,
                                int         max_data_len=asock::DEFAULT_PACKET_SIZE); 
@@ -192,6 +200,7 @@ class ASock
         Context  context_;
         SOCKADDR_UN ipc_conn_addr_   ;
         SOCKADDR_IN tcp_server_addr_ ;
+        SOCKADDR_IN udp_server_addr_ ;
         int connect_timeout_secs_    ;
 
     private :
@@ -213,6 +222,11 @@ class ASock
     //---------------------------------------------------------    
     public :
         bool  init_tcp_server (const char* bind_ip, 
+                               int         bind_port, 
+                               int         max_data_len=asock::DEFAULT_PACKET_SIZE,
+                               int         max_client=asock::DEFAULT_MAX_CLIENT);
+
+        bool  init_udp_server (const char* bind_ip, 
                                int         bind_port, 
                                int         max_data_len=asock::DEFAULT_PACKET_SIZE,
                                int         max_client=asock::DEFAULT_MAX_CLIENT);
@@ -244,6 +258,7 @@ class ASock
 
     private :
         void		server_thread_routine();
+        void		server_thread_udp_routine();
         void		terminate_client(Context* context_ptr);
         void		push_client_context_to_cache(Context* context_ptr);
         void		clear_client_cache();

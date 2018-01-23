@@ -10,10 +10,10 @@ class EchoServer
 {
     public:
 		EchoServer(){this_instance_ = this; }
+        static void sigint_handler(int signo);
         bool    initialize_tcp_server();
         bool    is_server_running(){return tcp_server_.is_server_running();};
         std::string  get_last_err_msg(){return  tcp_server_.get_last_err_msg() ; }
-        void    set_sighandler();
 
     private:
         ASock tcp_server_ ; //composite usage
@@ -25,7 +25,6 @@ class EchoServer
                                         int             len ) ;
         void    on_client_connected(asock::Context* context_ptr) ; 
         void    on_client_disconnected(asock::Context* context_ptr) ; 
-        static void sigint_handler(int signo);
 };
 
 EchoServer* EchoServer::this_instance_ = nullptr;
@@ -110,12 +109,6 @@ void EchoServer::on_client_disconnected(asock::Context* context_ptr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void EchoServer::set_sighandler()
-{
-    std::signal(SIGINT,EchoServer::sigint_handler);
-}
-
-///////////////////////////////////////////////////////////////////////////////
 void EchoServer::sigint_handler(int signo)
 {
     sigset_t sigset, oldset;
@@ -132,8 +125,8 @@ void EchoServer::sigint_handler(int signo)
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
+    std::signal(SIGINT,EchoServer::sigint_handler);
     EchoServer echoserver; 
-    echoserver.set_sighandler(); 
     echoserver.initialize_tcp_server();
 
     while( echoserver.is_server_running() )

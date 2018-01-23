@@ -44,7 +44,7 @@ bool EchoClient::initialize_ipc_client(const char* ipc_sock_path)
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
                   <<"] error! "<< ipc_client_.get_last_err_msg() <<"\n"; 
-        return -1;
+        return false;
     }
     return true;
 }
@@ -122,13 +122,13 @@ int main(int argc, char* argv[])
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
                           << client.get_last_err_msg() <<"\n"; 
-                return -1;
+                return 1;
             }
             if(! client.send_to_server(user_msg.c_str(), msg_len) )
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
                           << client.get_last_err_msg() <<"\n"; 
-                return -1;
+                return 1;
             }
         }
     }

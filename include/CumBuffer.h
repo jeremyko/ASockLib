@@ -31,7 +31,7 @@
 #include <stdint.h>
 #include <cstdlib>
 
-//#define CUMBUFFER_DEBUG
+//#define CUMBUFFER_DEBUG 
 
 namespace cumbuffer_defines
 {

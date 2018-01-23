@@ -10,10 +10,10 @@ class EchoServer
 {
     public:
 		EchoServer(){this_instance_ = this; }
+        static void sigint_handler(int signo);
         bool    initialize_ipc_server(const char* ipc_sock_path);
         bool    is_server_running(){return ipc_server_.is_server_running();};
         std::string  get_last_err_msg(){return  ipc_server_.get_last_err_msg() ; }
-        void    set_sighandler();
 
     private:
         ASock ipc_server_ ; //composite usage
@@ -25,7 +25,6 @@ class EchoServer
                                         int             len ) ;
         void    on_client_connected(asock::Context* context_ptr) ; 
         void    on_client_disconnected(asock::Context* context_ptr) ; 
-        static void sigint_handler(int signo);
 };
 
 EchoServer* EchoServer::this_instance_ = nullptr;
@@ -111,12 +110,6 @@ void EchoServer::on_client_disconnected(asock::Context* context_ptr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void EchoServer::set_sighandler()
-{
-    std::signal(SIGINT,EchoServer::sigint_handler);
-}
-
-///////////////////////////////////////////////////////////////////////////////
 void EchoServer::sigint_handler(int signo)
 {
     sigset_t sigset, oldset;
@@ -138,8 +131,8 @@ int main(int argc, char* argv[])
         std::cout << "usage : " << argv[0] << " ipc_socket_full_path \n\n";
         return 1;
     }
+    std::signal(SIGINT,EchoServer::sigint_handler);
     EchoServer echoserver; 
-    echoserver.set_sighandler(); 
     echoserver.initialize_ipc_server(argv[1]);
 
     while( echoserver.is_server_running() )

@@ -10,7 +10,8 @@ class EchoServer : public ASock
 {
     public:
 		EchoServer(){this_instance_ = this; }
-        void    set_sighandler();
+        static void sigint_handler(int signo);
+
     private:
         size_t  on_calculate_data_len(asock::Context* context_ptr);
         bool    on_recved_complete_data(asock::Context* context_ptr, 
@@ -18,9 +19,9 @@ class EchoServer : public ASock
                                         int             len ) ;
         void    on_client_connected(asock::Context* context_ptr) ; 
         void    on_client_disconnected(asock::Context* context_ptr) ; 
-        static void sigint_handler(int signo);
         static  EchoServer* this_instance_ ;
 };
+
 EchoServer* EchoServer::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -77,12 +78,6 @@ void EchoServer::on_client_disconnected(asock::Context* context_ptr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void EchoServer::set_sighandler()
-{
-    std::signal(SIGINT,EchoServer::sigint_handler);
-}
-
-///////////////////////////////////////////////////////////////////////////////
 void EchoServer::sigint_handler(int signo)
 {
     sigset_t sigset, oldset;
@@ -104,10 +99,11 @@ int main(int argc, char* argv[])
         std::cout << "usage : " << argv[0] << " ipc_socket_full_path \n\n";
         return 1;
     }
+    std::signal(SIGINT,EchoServer::sigint_handler);
+
     //max client is 100000, 
     //max message length is approximately 1024 bytes...
     EchoServer echoserver; 
-    echoserver.set_sighandler(); 
     if(!echoserver.init_ipc_server(argv[1]))
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 

@@ -42,7 +42,7 @@ bool EchoClient::initialize_tcp_client()
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
                   <<"] error! "<< tcp_client_.get_last_err_msg() <<"\n"; 
-        return -1;
+        return false;
     }
     return true;
 }
@@ -114,13 +114,13 @@ int main(int argc, char* argv[])
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
                           << client.get_last_err_msg() <<"\n"; 
-                return -1;
+                return 1;
             }
             if(! client.send_to_server(user_msg.c_str(), user_msg.length()) )
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
                           << client.get_last_err_msg() <<"\n"; 
-                return -1;
+                return 1;
             }
         }
     }

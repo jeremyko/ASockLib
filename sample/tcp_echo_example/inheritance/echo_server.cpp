@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cassert>
+#include <csignal>
 
 #include "ASock.hpp"
 #include "../../msg_defines.h"
@@ -7,7 +8,11 @@
 ///////////////////////////////////////////////////////////////////////////////
 class EchoServer : public ASock
 {
+    public:
+		EchoServer(){this_instance_ = this; }
+        static void sigint_handler(int signo);
     private:
+        static  EchoServer* this_instance_ ;
         size_t  on_calculate_data_len(asock::Context* context_ptr);
         bool    on_recved_complete_data(asock::Context* context_ptr, 
                                         char*           data_ptr, 
@@ -15,6 +20,8 @@ class EchoServer : public ASock
         void    on_client_connected(asock::Context* context_ptr) ; 
         void    on_client_disconnected(asock::Context* context_ptr) ; 
 };
+
+EchoServer* EchoServer::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
 size_t EchoServer::on_calculate_data_len(asock::Context* context_ptr)
@@ -70,8 +77,23 @@ void EchoServer::on_client_disconnected(asock::Context* context_ptr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+void EchoServer::sigint_handler(int signo)
+{
+    sigset_t sigset, oldset;
+    sigfillset(&sigset);
+    if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0)
+    {
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< strerror(errno) <<"\n"; 
+    }
+    
+    std::cout << "Stop Server! \n";
+    this_instance_->stop_server();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
+    std::signal(SIGINT,EchoServer::sigint_handler);
     //max client is 100000, 
     //max message length is approximately 1024 bytes...
     EchoServer echoserver; 
@@ -79,7 +101,7 @@ int main(int argc, char* argv[])
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
                   <<"] error! "<< echoserver.get_last_err_msg() <<"\n"; 
-        return -1;
+        return 1;
     }
 
     while( echoserver.is_server_running() )
