@@ -31,16 +31,16 @@ size_t EchoServer::on_calculate_data_len(asock::Context* context_ptr)
     //user specific : 
     //calculate your complete packet length here using buffer data.
     //---------------------------------------------------
-    if(context_ptr->recv_buffer_.GetCumulatedLen() < (int)CHAT_HEADER_SIZE )
+    if(context_ptr->recv_buffer.GetCumulatedLen() < (int)CHAT_HEADER_SIZE )
     {
         return asock::MORE_TO_COME ; //more to come 
     }
 
     ST_MY_HEADER header ;
-    context_ptr->recv_buffer_.PeekData(CHAT_HEADER_SIZE, (char*)&header); 
+    context_ptr->recv_buffer.PeekData(CHAT_HEADER_SIZE, (char*)&header); 
 
     size_t supposed_total_len = std::atoi(header.msg_len) + CHAT_HEADER_SIZE;
-    assert(supposed_total_len<=context_ptr->recv_buffer_.GetCapacity());
+    assert(supposed_total_len<=context_ptr->recv_buffer.GetCapacity());
     return supposed_total_len ;
 }
 
@@ -68,13 +68,13 @@ bool    EchoServer::on_recved_complete_data(asock::Context* context_ptr,
 ///////////////////////////////////////////////////////////////////////////////
 void EchoServer::on_client_connected(asock::Context* context_ptr) 
 {
-    std::cout << "client connected : socket fd ["<< context_ptr->socket_ <<"]\n";
+    std::cout << "client connected : socket fd ["<< context_ptr->socket <<"]\n";
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void EchoServer::on_client_disconnected(asock::Context* context_ptr) 
 {
-    std::cout << "client disconnected : socket fd ["<< context_ptr->socket_ <<"]\n";
+    std::cout << "client disconnected : socket fd ["<< context_ptr->socket <<"]\n";
 }
 
 ///////////////////////////////////////////////////////////////////////////////

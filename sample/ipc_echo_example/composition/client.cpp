@@ -53,15 +53,15 @@ bool EchoClient::initialize_ipc_client(const char* ipc_sock_path)
 size_t EchoClient::on_calculate_data_len(asock::Context* context_ptr)
 {
     //user specific : calculate your complete packet length 
-    if( context_ptr->recv_buffer_.GetCumulatedLen() < (int)CHAT_HEADER_SIZE )
+    if( context_ptr->recv_buffer.GetCumulatedLen() < (int)CHAT_HEADER_SIZE )
     {
         return asock::MORE_TO_COME ; //more to come 
     }
 
     ST_MY_HEADER header ;
-    context_ptr->recv_buffer_.PeekData(CHAT_HEADER_SIZE, (char*)&header);  
+    context_ptr->recv_buffer.PeekData(CHAT_HEADER_SIZE, (char*)&header);  
     size_t supposed_total_len = std::atoi(header.msg_len) + CHAT_HEADER_SIZE;
-    assert(supposed_total_len<=context_ptr->recv_buffer_.GetCapacity());
+    assert(supposed_total_len<=context_ptr->recv_buffer.GetCapacity());
     return supposed_total_len ;
 }
 

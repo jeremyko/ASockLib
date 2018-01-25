@@ -52,7 +52,6 @@ bool UdpEchoClient:: on_recved_complete_data(Context* context_ptr,
     
     std::cout << "* server response ["<< packet <<"]\n";
 
-    assert( std::to_string(getpid()).compare(packet) ==0 );
     return true;
 }
 

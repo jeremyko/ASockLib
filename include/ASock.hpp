@@ -70,22 +70,24 @@ namespace asock
     const int       DEFAULT_CAPACITY    =1024;
     const int       DEFAULT_MAX_CLIENT  =10000;
     const size_t    MORE_TO_COME        = -1;
+
     typedef struct _PENDING_SENT_
     {
-        char*   pending_sent_data ; 
-        int     pending_sent_len  ;
+        char*       pending_sent_data ; 
+        int         pending_sent_len  ;
+        SOCKADDR_IN udp_remote_addr   ; //for udp only. TODO
     } PENDING_SENT ;
 
     typedef struct _Context_
     {
-        CumBuffer       recv_buffer_;
-        int             socket_{-1};
-        std::mutex      send_lock_ ; 
-        bool            is_packet_len_calculated_ {false};
+        CumBuffer       recv_buffer;
+        int             socket{-1};
+        std::mutex      send_lock ; 
+        bool            is_packet_len_calculated {false};
         size_t          complete_packet_len_ {0} ;
         std::deque<PENDING_SENT> pending_send_deque_ ; 
-        bool            is_sent_pending_ {false}; 
-        SOCKADDR_IN     udp_remote_addr_ ; //for udp
+        bool            is_sent_pending {false}; 
+        SOCKADDR_IN     udp_remote_addr ; //for udp
     } Context ;
 
     typedef enum _ENUM_SOCK_USAGE_
@@ -190,7 +192,7 @@ class ASock
         bool   connect_to_server();  
         bool   send_to_server (const char* data, int len) ; 
         void   disconnect() ;
-        int    get_socket () { return  context_.socket_ ; }
+        int    get_socket () { return  context_.socket ; }
         bool   is_connected() { return is_connected_;}
 
     private :
