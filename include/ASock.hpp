@@ -75,7 +75,7 @@ namespace asock
     {
         char*       pending_sent_data ; 
         int         pending_sent_len  ;
-        SOCKADDR_IN udp_remote_addr   ; //for udp only. TODO
+        SOCKADDR_IN udp_remote_addr   ; //for udp pending sent 
     } PENDING_SENT ;
 
     typedef struct _Context_

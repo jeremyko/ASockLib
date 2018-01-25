@@ -413,12 +413,19 @@ bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len)
     int total_sent = 0;           
 
     //if sent is pending, just push to queue. 
-    if(context_ptr->is_sent_pending) //tcp, domain socket only
+    if(context_ptr->is_sent_pending) //tcp, domain socket only  
     {
         PENDING_SENT pending_sent;
         pending_sent.pending_sent_data = new char [len]; 
         pending_sent.pending_sent_len  = len;
         memcpy(pending_sent.pending_sent_data, data_ptr, len);
+        if(sock_usage_ == SOCK_USAGE_UDP_SERVER )
+        {
+            //udp(server) 인 경우엔, 데이터와 client remote addr 정보를 함께 queue에 저장
+            memcpy( &pending_sent.udp_remote_addr, 
+                    &context_ptr->udp_remote_addr, 
+                    sizeof(pending_sent.udp_remote_addr));
+        }
         context_ptr->pending_send_deque_.push_back(pending_sent);
 
 #ifdef __APPLE__
@@ -472,44 +479,40 @@ bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len)
         {
             if ( errno == EWOULDBLOCK || errno == EAGAIN )
             {
-                if ( sock_usage_ != SOCK_USAGE_UDP_SERVER &&
-                     sock_usage_ != SOCK_USAGE_UDP_CLIENT ) //UDP : no pending send
+                if(retry_cnt >= 3)
                 {
-                    //TODO : udp 인 경우엔, 데이터와 remote addr 정보를 함께 queue에 저장한다 TODO
-                    //서버socket write 이벤트 발생시 client 주소로 전송한다?
-                    if(retry_cnt >= 3)
+                    //send later
+                    PENDING_SENT pending_sent;
+                    pending_sent.pending_sent_data = new char [len-total_sent]; 
+                    pending_sent.pending_sent_len  = len-total_sent;
+                    memcpy(pending_sent.pending_sent_data, data_position_ptr, len-total_sent);
+                    if ( sock_usage_ == SOCK_USAGE_UDP_SERVER )
                     {
-                        //send later
-                        PENDING_SENT pending_sent;
-                        pending_sent.pending_sent_data = new char [len-total_sent]; 
-                        pending_sent.pending_sent_len  = len-total_sent;
-                        memcpy(pending_sent.pending_sent_data, data_position_ptr, len-total_sent);
-                        context_ptr->pending_send_deque_.push_back(pending_sent);
+                        //udp(server) 인 경우엔, 데이터와 client remote addr 정보를 함께 queue에 저장
+                        memcpy( &pending_sent.udp_remote_addr, 
+                                &context_ptr->udp_remote_addr, 
+                                sizeof(pending_sent.udp_remote_addr));
+                    }
+
+                    context_ptr->pending_send_deque_.push_back(pending_sent);
 #ifdef __APPLE__
-                        if(!control_kq(context_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
+                    if(!control_kq(context_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
 #elif __linux__
-                        if(!control_ep (context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
+                    if(!control_ep (context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
 #endif
-                        {
-                            delete [] pending_sent.pending_sent_data;
-                            context_ptr->pending_send_deque_.pop_back();
-                            return false;
-                        }
-                        context_ptr->is_sent_pending = true;
-                        return true;
-                    }
-                    else
                     {
-                        retry_cnt++;
-                        std::this_thread::sleep_for(std::chrono::milliseconds(3));
-                        continue;
+                        delete [] pending_sent.pending_sent_data;
+                        context_ptr->pending_send_deque_.pop_back();
+                        return false;
                     }
-                }//no udp
+                    context_ptr->is_sent_pending = true;
+                    return true;
+                }
                 else
                 {
-                    //UDP send error ...
-                    err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
-                    return false;
+                    retry_cnt++;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                    continue;
                 }
             }
             else if ( errno != EINTR )
@@ -972,11 +975,10 @@ void ASock:: server_thread_udp_routine()
     ts.tv_nsec =0;
 #endif
 
-    if (cumbuffer_defines::OP_RSLT_OK != 
-        listen_context_ptr_->recv_buffer.Init(max_data_len_) )
+    if (cumbuffer_defines::OP_RSLT_OK != listen_context_ptr_->recv_buffer.Init(max_data_len_) )
     {
         err_msg_  = "cumBuffer Init error : " + 
-            listen_context_ptr_->recv_buffer.GetErrMsg();
+                    listen_context_ptr_->recv_buffer.GetErrMsg();
         is_server_running_ = false;
         return ;
     }
@@ -1004,18 +1006,6 @@ void ASock:: server_thread_udp_routine()
 
         for (int i = 0; i < event_cnt; i++)
         {
-            /*
-#ifdef __APPLE__
-            if (kq_events_ptr_[i].flags & EV_EOF)
-#elif __linux__
-            if (ep_events_[i].events & EPOLLRDHUP || ep_events_[i].events & EPOLLERR) 
-#endif
-            {
-                err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
-                std::cerr << err_msg_ << "\n";
-                //udp 인 경우에 감지 안됨!!! 
-            }
-            */
 #ifdef __APPLE__
             if (EVFILT_READ == kq_events_ptr_[i].filter)
 #elif __linux__
@@ -1028,8 +1018,18 @@ void ASock:: server_thread_udp_routine()
                     break;
                 }
             }
-            /// no pending process for UDP
-            //TODO pending sent 
+#ifdef __APPLE__
+            else if (EVFILT_WRITE == kq_events_ptr_[i].filter )
+#elif __linux__
+            else if (ep_events_[i].events & EPOLLOUT) 
+#endif
+            {
+                //# send #----------
+                if(!send_pending_data(listen_context_ptr_))
+                {
+                    return; //error!
+                }
+            } 
         } 
     }//while
 
@@ -1130,19 +1130,41 @@ void ASock:: server_thread_routine()
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::send_pending_data(Context* context_ptr)
 {
-    //TCP, domain socket only!
-    //std::cout <<"["<< __func__ <<"-"<<__LINE__  <<"\n"; //debug
+    //std::cout <<"["<< __func__ <<"-"<<__LINE__  <<"\n"; //debug 
 
     std::lock_guard<std::mutex> guard(context_ptr->send_lock);
     while(!context_ptr->pending_send_deque_.empty()) 
     {
         PENDING_SENT pending_sent = context_ptr->pending_send_deque_.front();
 
-        //TODO : udp 인 경우엔, 데이터와 remote addr 정보를 함께 queue에 저장한다 TODO
-        //서버socket write 이벤트 발생시 client 주소로 전송한다?
-        int sent_len = send(context_ptr->socket, 
+        int sent_len = 0;
+        if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) 
+        {
+            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
+            sent_len = sendto(context_ptr->socket,  
+                              pending_sent.pending_sent_data, 
+                              pending_sent.pending_sent_len, 
+                              0, 
+                              (struct sockaddr*)& pending_sent.udp_remote_addr,   
+                              sizeof(pending_sent.udp_remote_addr)) ;
+        }
+        else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) 
+        {
+            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
+            sent_len = sendto(context_ptr->socket,  
+                              pending_sent.pending_sent_data, 
+                              pending_sent.pending_sent_len, 
+                              0, 
+                              0, //XXX client : already set! (via connect)  
+                              sizeof(pending_sent.udp_remote_addr)) ;
+        }
+        else
+        {
+            sent_len = send(context_ptr->socket, 
                             pending_sent.pending_sent_data, 
-                            pending_sent.pending_sent_len, 0) ;
+                            pending_sent.pending_sent_len, 
+                            0) ;
+        }
 
         if( sent_len > 0 )
         {
@@ -1182,7 +1204,7 @@ bool ASock::send_pending_data(Context* context_ptr)
             }
             else
             {
-                //partial sent ---> 남은 부분을 다시 제일 처음으로
+                //TCP : partial sent ---> 남은 부분을 다시 제일 처음으로
                 PENDING_SENT partial_pending_sent;
                 int alloc_len = pending_sent.pending_sent_len - sent_len;
                 partial_pending_sent.pending_sent_data = new char [alloc_len]; 

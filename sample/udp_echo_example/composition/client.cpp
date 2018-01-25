@@ -73,7 +73,7 @@ int main(int argc, char* argv[])
         std::cin.clear();
         getline(std::cin, user_msg);
         int msg_len = user_msg.length();
-
+        
         if(msg_len>0)
         {
             ST_MY_HEADER header;
