@@ -122,7 +122,7 @@ class ASock
 
     protected :
         char*      complete_packet_data_ {nullptr}; 
-        int        max_data_len_ {-1};
+        size_t     max_data_len_ {0};
         int        send_buffer_capcity_ {asock::DEFAULT_CAPACITY};
 
 #ifdef __APPLE__
