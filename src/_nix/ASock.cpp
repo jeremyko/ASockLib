@@ -225,7 +225,7 @@ bool   ASock::set_socket_non_blocking(int sock_fd)
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::set_sockopt_snd_rcv_buf_for_udp(int socket)
 {
-    int opt_cur ; 
+    size_t opt_cur ; 
     int opt_val=max_data_len_ ; 
     int opt_len = sizeof(opt_cur) ;
     if (getsockopt(socket,SOL_SOCKET,SO_SNDBUF,&opt_cur, (SOCKLEN_T *) &opt_len)==-1) 
