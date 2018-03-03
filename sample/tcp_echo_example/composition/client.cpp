@@ -109,6 +109,8 @@ int main(int argc, char* argv[])
             snprintf(header.msg_len, sizeof(header.msg_len), "%d", msg_len );
 
             //you don't need to send twice like this..
+            //but your whole data length should be less than 1024 bytes 
+            //as you invoke init_tcp_client with max. 1024 bytes.
             if(! client.send_to_server( reinterpret_cast<char*>(&header), 
                                       sizeof(ST_MY_HEADER)) )
             {

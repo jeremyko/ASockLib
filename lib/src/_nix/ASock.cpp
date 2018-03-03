@@ -316,8 +316,8 @@ bool ASock::recvfrom_data(Context* context_ptr) //XXX context 가 지금 서버 
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::recv_data(Context* context_ptr) 
 {
-    int want_recv_len = asock::DEFAULT_PACKET_SIZE ;
-    if(asock::DEFAULT_PACKET_SIZE > context_ptr->recv_buffer.GetLinearFreeSpace() )
+    int want_recv_len = max_data_len_ ;
+    if(max_data_len_ > context_ptr->recv_buffer.GetLinearFreeSpace() )
     {
         want_recv_len = context_ptr->recv_buffer.GetLinearFreeSpace() ; 
     }
