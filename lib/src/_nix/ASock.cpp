@@ -441,7 +441,6 @@ bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len)
         return true;
     }
 
-    int retry_cnt =0;
     while( total_sent < len ) 
     {
         int sent_len =0;
@@ -479,41 +478,32 @@ bool ASock::send_data (Context* context_ptr, const char* data_ptr, int len)
         {
             if ( errno == EWOULDBLOCK || errno == EAGAIN )
             {
-                if(retry_cnt >= 3)
+                //send later
+                PENDING_SENT pending_sent;
+                pending_sent.pending_sent_data = new char [len-total_sent]; 
+                pending_sent.pending_sent_len  = len-total_sent;
+                memcpy(pending_sent.pending_sent_data, data_position_ptr, len-total_sent);
+                if ( sock_usage_ == SOCK_USAGE_UDP_SERVER )
                 {
-                    //send later
-                    PENDING_SENT pending_sent;
-                    pending_sent.pending_sent_data = new char [len-total_sent]; 
-                    pending_sent.pending_sent_len  = len-total_sent;
-                    memcpy(pending_sent.pending_sent_data, data_position_ptr, len-total_sent);
-                    if ( sock_usage_ == SOCK_USAGE_UDP_SERVER )
-                    {
-                        //udp(server) 인 경우엔, 데이터와 client remote addr 정보를 함께 queue에 저장
-                        memcpy( &pending_sent.udp_remote_addr, 
-                                &context_ptr->udp_remote_addr, 
-                                sizeof(pending_sent.udp_remote_addr));
-                    }
+                    //udp(server) 인 경우엔, 데이터와 client remote addr 정보를 함께 queue에 저장
+                    memcpy( &pending_sent.udp_remote_addr, 
+                            &context_ptr->udp_remote_addr, 
+                            sizeof(pending_sent.udp_remote_addr));
+                }
 
-                    context_ptr->pending_send_deque_.push_back(pending_sent);
+                context_ptr->pending_send_deque_.push_back(pending_sent);
 #ifdef __APPLE__
-                    if(!control_kq(context_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
+                if(!control_kq(context_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
 #elif __linux__
-                    if(!control_ep (context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
+                if(!control_ep (context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
 #endif
-                    {
-                        delete [] pending_sent.pending_sent_data;
-                        context_ptr->pending_send_deque_.pop_back();
-                        return false;
-                    }
-                    context_ptr->is_sent_pending = true;
-                    return true;
-                }
-                else
                 {
-                    retry_cnt++;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(3));
-                    continue;
+                    delete [] pending_sent.pending_sent_data;
+                    context_ptr->pending_send_deque_.pop_back();
+                    return false;
                 }
+                context_ptr->is_sent_pending = true;
+                return true;
             }
             else if ( errno != EINTR )
             {
