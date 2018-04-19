@@ -1346,6 +1346,7 @@ bool ASock::connect_to_server()
 
     if(!set_socket_non_blocking (context_.socket))
     {
+        close(context_.socket);
         return  false;
     }
     
@@ -1354,6 +1355,7 @@ bool ASock::connect_to_server()
         if  ( cumbuffer_defines::OP_RSLT_OK != context_.recv_buffer.Init(max_data_len_) )
         {
             err_msg_ = "cumBuffer Init error :" + context_.recv_buffer.GetErrMsg();
+            close(context_.socket);
             return false;
         }
         is_buffer_init_ = true;
@@ -1382,6 +1384,7 @@ bool ASock::connect_to_server()
     {
         if(!set_sockopt_snd_rcv_buf_for_udp(context_.socket))
         {
+            close(context_.socket);
             return false;
         }
         result = connect(context_.socket,(SOCKADDR*)&udp_server_addr_,(SOCKLEN_T)sizeof(SOCKADDR_IN)) ;
@@ -1389,6 +1392,7 @@ bool ASock::connect_to_server()
     else
     {
         err_msg_ = "invalid socket usage" ;
+        close(context_.socket);
         return false;
     }
     //-------------------------------------------------
@@ -1398,6 +1402,7 @@ bool ASock::connect_to_server()
         if (errno != EINPROGRESS)
         {
             err_msg_ = "connect error [" + std::string(strerror(errno))+ "]";
+            close(context_.socket);
             return false;
         }
     }
@@ -1417,11 +1422,13 @@ bool ASock::connect_to_server()
     if (result == 0 )
     {
         err_msg_ = "connect timeout";
+        close(context_.socket);
         return false;
     }
     else if (result< 0)
     {
         err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
+        close(context_.socket);
         return false;
     }
 
@@ -1432,12 +1439,14 @@ bool ASock::connect_to_server()
         if (getsockopt(context_.socket, SOL_SOCKET, SO_ERROR, &socketerror, &len) < 0)
         {
             err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
+            close(context_.socket);
             return false;
         }
 
         if (socketerror) 
         {
             err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
+            close(context_.socket);
             return false;
         }
     } 
@@ -1445,6 +1454,7 @@ bool ASock::connect_to_server()
     {
         err_msg_ = "connect error : fd not set ";
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< err_msg_ <<"\n"; 
+        close(context_.socket);
         return false;
     }
 
@@ -1465,6 +1475,7 @@ bool ASock::run_client_thread()
         if (kq_fd_ == -1)
         {
             err_msg_ = "kqueue error ["  + std::string(strerror(errno)) + "]";
+            close(context_.socket);
             return false;
         }
 #elif __linux__
@@ -1474,6 +1485,7 @@ bool ASock::run_client_thread()
         if ( ep_fd_== -1)
         {
             err_msg_ = "epoll create error ["  + std::string(strerror(errno)) + "]";
+            close(context_.socket);
             return false;
         }
 #endif
@@ -1481,11 +1493,13 @@ bool ASock::run_client_thread()
 #ifdef __APPLE__
         if(!control_kq(&context_, EVFILT_READ, EV_ADD ))
         {
+            close(context_.socket);
             return false;
         }
 #elif __linux__
         if(!control_ep( &context_, EPOLLIN | EPOLLERR , EPOLL_CTL_ADD ))
         {
+            close(context_.socket);
             return false;
         }
 #endif
