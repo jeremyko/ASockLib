@@ -9,7 +9,7 @@ a simple, easy to use c++ tcp / udp / domain socket server/client library using 
 
 #### tcp echo server ####
 
-```{.cpp}
+```cpp
 //see sample directory. this is an tcp inheritance usage. 
 //you can find composition usage and udp, domain socket example too.
 
@@ -64,7 +64,7 @@ int main(int argc, char* argv[])
 
 #### tcp echo client ####
 
-```{.cpp}
+```cpp
 
 #include "ASock.hpp"
 class EchoClient : public ASock
