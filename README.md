@@ -127,12 +127,9 @@ int main(int argc, char* argv[])
 
 #### compile ####
 
-    cd project_folder
-    
-    mkdir build
-    
-    cd build/
-    
-    cmake ../
-    
+    git clone https://github.com/jeremyko/ASockLib.git
+    cd ASockLib
+    git submodule init
+    git submodule update
+    mkdir build; cd build;  cmake ..
     make
