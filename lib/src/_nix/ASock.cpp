@@ -181,7 +181,7 @@ bool ASock::set_cb_on_client_disconnected(std::function<void(Context*)> cb)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::set_buffer_capacity(int max_data_len)
+bool ASock::SetBufferCapacity(int max_data_len)
 {
     if(max_data_len<=0)
     {
@@ -202,7 +202,7 @@ bool ASock::set_buffer_capacity(int max_data_len)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool   ASock::set_socket_non_blocking(int sock_fd)
+bool   ASock::SetSocketNonBlocking(int sock_fd)
 {
     int oldflags  ;
 
@@ -571,7 +571,7 @@ bool ASock::init_tcp_server(const char* bind_ip,
     {
         return false;
     }
-    if(!set_buffer_capacity(max_data_len))
+    if(!SetBufferCapacity(max_data_len))
     {
         return false;
     }
@@ -594,7 +594,7 @@ bool ASock::init_udp_server(const char* bind_ip,
     {
         return false;
     }
-    if(!set_buffer_capacity(max_data_len))
+    if(!SetBufferCapacity(max_data_len))
     {
         return false;
     }
@@ -615,7 +615,7 @@ bool  ASock::init_ipc_server (const char* sock_path,
     {
         return false;
     }
-    if(!set_buffer_capacity(max_data_len))
+    if(!SetBufferCapacity(max_data_len))
     {
         return false;
     }
@@ -655,7 +655,7 @@ bool ASock::run_server()
         return false;
     }   
 
-    if(!set_socket_non_blocking (listen_socket_))
+    if(!SetSocketNonBlocking (listen_socket_))
     {
         return  false;
     }
@@ -906,7 +906,7 @@ bool ASock::accept_new_client()
         }
 
         ++client_cnt_;
-        set_socket_non_blocking(client_fd);
+        SetSocketNonBlocking(client_fd);
 
         Context* client_context_ptr = pop_client_context_from_cache();
         if(client_context_ptr==nullptr)
@@ -1279,7 +1279,7 @@ bool  ASock::init_tcp_client(const char* server_ip,
     sock_usage_ = SOCK_USAGE_TCP_CLIENT  ;
     connect_timeout_secs_ = connect_timeout_secs;
 
-    if(!set_buffer_capacity(max_data_len) )
+    if(!SetBufferCapacity(max_data_len) )
     {
         return false;
     }
@@ -1300,7 +1300,7 @@ bool  ASock::init_udp_client(const char* server_ip,
 {
     sock_usage_ = SOCK_USAGE_UDP_CLIENT  ;
 
-    if(!set_buffer_capacity(max_data_len) )
+    if(!SetBufferCapacity(max_data_len) )
     {
         return false;
     }
@@ -1321,7 +1321,7 @@ bool ASock::init_ipc_client(const char* sock_path,
     sock_usage_ = SOCK_USAGE_IPC_CLIENT  ;
     connect_timeout_secs_ = connect_timeout_secs;
 
-    if(!set_buffer_capacity(max_data_len) )
+    if(!SetBufferCapacity(max_data_len) )
     {
         return false;
     }
@@ -1344,7 +1344,7 @@ bool ASock::connect_to_server()
         return false;
     }   
 
-    if(!set_socket_non_blocking (context_.socket))
+    if(!SetSocketNonBlockingset_socket_non_blocking (context_.socket))
     {
         close(context_.socket);
         return  false;

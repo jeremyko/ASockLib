@@ -25,6 +25,7 @@ SOFTWARE.
 #ifndef __ASOCK_HPP__
 #define __ASOCK_HPP__
 
+#if defined __APPLE__ || defined __linux__ 
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -35,6 +36,7 @@ SOFTWARE.
 #include <sys/un.h>
 #include <signal.h>
 #include <sys/time.h>
+#endif
 
 //======================
 #ifdef __APPLE__
@@ -42,10 +44,27 @@ SOFTWARE.
 #include <sys/select.h>
 #include <sys/types.h>
 #include <sys/event.h>
+typedef struct  sockaddr_un SOCKADDR_UN ;
+typedef         socklen_t   SOCKLEN_T ;
+#endif
+
 //======================
-#elif __linux__
+#if __linux__
 //======================
 #include <sys/epoll.h>
+typedef struct  sockaddr_un SOCKADDR_UN ;
+typedef         socklen_t   SOCKLEN_T ;
+#endif
+
+//======================
+#if WIN32
+//======================
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <stdio.h>
+#pragma comment(lib, "Ws2_32.lib")
+typedef         int   SOCKLEN_T ;
 #endif
 //======================
 
@@ -59,9 +78,7 @@ SOFTWARE.
 #include "CumBuffer.h"
 
 typedef struct  sockaddr_in SOCKADDR_IN ;
-typedef struct  sockaddr_un SOCKADDR_UN ;
 typedef struct  sockaddr    SOCKADDR ;
-typedef         socklen_t   SOCKLEN_T ;
 
 ///////////////////////////////////////////////////////////////////////////////
 namespace asock
@@ -78,6 +95,62 @@ namespace asock
         SOCKADDR_IN udp_remote_addr   ; //for udp pending sent 
     } PENDING_SENT ;
 
+#ifdef WIN32
+	typedef		SOCKET SOCKET_T;
+#endif
+#if defined __APPLE__ || defined __linux__ 
+	typedef		int    SOCKET_T;
+#endif
+
+#ifdef WIN32
+	enum class EnumIOType 
+	{
+        IO_ACCEPT,
+		IO_SEND,
+		IO_RECV
+	};
+
+	typedef struct _Context_ 
+	{
+		OVERLAPPED			overlapped;
+		WSABUF				wsaBuf;
+		char                buffer[DEFAULT_CAPACITY];
+		CumBuffer			recvBuffer;
+		//CumBuffer			sendBuffer;
+		asock::SOCKET_T     socket; //XXX rename
+		std::mutex			clientSendLock; 
+        bool                bPacketLenCalculated{ false };
+		int					nOverlappedPendingCount;
+		EnumIOType			nIoType;
+	} Context, *PContext;
+
+
+	/*
+	typedef struct _PER_HANDLE_DATA_ //TODO
+	{
+		asock::SOCKET_T  socket_;
+		SOCKADDR_STORAGE sockAddr;
+	} PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
+
+	typedef struct _PER_IO_DATA_
+	{
+		OVERLAPPED overlapped;
+		CumBuffer       recvBuffer_;
+		//CumBuffer       sendBuffer_;
+		//CHAR       buffer[BUFSIZE];
+		WSABUF     wsaBuf;
+	} PER_IO_DATA, *LPPER_IO_DATA;
+
+	typedef struct __WSABUF
+	{
+		u_long    len;
+		char FAR  *buf;
+	} WSABUF, *LPWABUF;
+
+	*/
+#endif
+
+#if defined __APPLE__ || defined __linux__ 
     typedef struct _Context_
     {
         CumBuffer       recv_buffer;
@@ -89,6 +162,7 @@ namespace asock
         bool            is_sent_pending {false}; 
         SOCKADDR_IN     udp_remote_addr ; //for udp
     } Context ;
+#endif
 
     typedef enum _ENUM_SOCK_USAGE_
     {
@@ -112,18 +186,34 @@ using CLIENT_UNORDERMAP_ITER_T = std::unordered_map<int, Context*>::iterator ;
 class ASock
 {
     public :
-        ASock()=default;
+        ASock();
         virtual ~ASock()  ;
 
-        bool        set_buffer_capacity(int max_data_len);
-        std::string get_last_err_msg(){return err_msg_; }
-        bool        set_socket_non_blocking(int sock_fd);
-        bool        send_data(Context* context_ptr, const char* data_ptr, int len); 
+        //XXX 함수명을 카멜표기로 TODO  
+        //XXX 변수명은 소문자 TODO
+        bool        SetBufferCapacity(int max_data_len);
+        std::string GetLastErrMsg(){return err_msg_; }
+#if defined __APPLE__ || defined __linux__ 
+        bool    SetSocketNonBlocking(int sock_fd);
+        bool    send_data(Context* context_ptr, const char* data_ptr, int len); 
+#endif
+        std::string GetLastErrMsg() {
+            return err_msg_; 
+        }
 
     protected :
         char*      complete_packet_data_ {nullptr}; 
-        size_t     max_data_len_ {0};
+        size_t     recv_buffer_capcity_{0};
+        //size_t     max_data_len_ {0};
         int        send_buffer_capcity_ {asock::DEFAULT_CAPACITY};
+
+#ifdef WIN32
+		bool	InitWinsock();
+		void	BuildErrMsgString(int nErrNo);
+        bool    SetNonBlocking(int sock_fd);
+        bool    Send(Context* pClientContext, const char* pData, int nLen);
+        bool    Recv(Context* pContext); //XXX 이부분이 불필요?? 
+#endif
 
 #ifdef __APPLE__
         struct     kevent* kq_events_ptr_ {nullptr};
@@ -131,17 +221,24 @@ class ASock
 #elif __linux__
         struct     epoll_event* ep_events_{nullptr};
         int        ep_fd_ {-1};
+#elif WIN32
+		HANDLE          hCompletionPort_;
 #endif
         std::string   err_msg_ ;
         ENUM_SOCK_USAGE sock_usage_ {asock::SOCK_USAGE_UNKNOWN};
 
     protected :
+#if defined __APPLE__ || defined __linux__ 
         bool   recv_data(Context* context_ptr);
         bool   recvfrom_data(Context* context_ptr) ; //udp
+#endif
 #ifdef __APPLE__
-        bool   control_kq(Context* context_ptr , uint32_t events, uint32_t fflags);
+        bool  control_kq(Context* context_ptr,uint32_t events,uint32_t fflags);
 #elif __linux__
-        bool   control_ep(Context* context_ptr , uint32_t events, int op);
+        bool  control_ep(Context* context_ptr , uint32_t events, int op);
+#elif WIN32
+        bool   IssueRecv(Context* pClientContext);
+        //TODO
 #endif
 
     private:
@@ -167,10 +264,10 @@ class ASock
         //2.for composition : Assign yours to these callbacks 
     public:
         bool set_cb_on_calculate_packet_len(std::function<size_t(Context*)> cb)  ;
-        bool set_cb_on_recved_complete_packet(std::function<bool(Context*, char*, int)> cb) ;
+        bool set_cb_on_recved_complete_packet(std::function<bool(Context*,char*,int)> cb) ;
     private:
-        std::function<size_t(Context*)>           cb_on_calculate_data_len_ {nullptr} ;
-        std::function<bool(Context*, char*, int)> cb_on_recved_complete_packet_{nullptr};
+        std::function<size_t(Context*)>   cb_on_calculate_data_len_ {nullptr} ;
+        std::function<bool(Context*,char*,int)>cb_on_recved_complete_packet_{nullptr};
 
     //---------------------------------------------------------    
     // CLIENT Usage
@@ -179,15 +276,15 @@ class ASock
         bool   init_tcp_client(const char* server_ip, 
                                int         server_port, 
                                int         connect_timeout_secs=10, 
-                               int         max_data_len = asock::DEFAULT_PACKET_SIZE );
+                               int  max_data_len = asock::DEFAULT_PACKET_SIZE);
 
         bool   init_udp_client(const char* server_ip, 
                                int         server_port, 
-                               int         max_data_len = asock::DEFAULT_PACKET_SIZE );
+                               int  max_data_len = asock::DEFAULT_PACKET_SIZE);
 
         bool   init_ipc_client(const char* sock_path, 
                                int         connect_timeout_secs=10,
-                               int         max_data_len=asock::DEFAULT_PACKET_SIZE); 
+                               int  max_data_len=asock::DEFAULT_PACKET_SIZE); 
 
         bool   connect_to_server();  
         bool   send_to_server (const char* data, int len) ; 
@@ -200,7 +297,9 @@ class ASock
         bool     is_buffer_init_ {false};
         bool     is_connected_ {false};
         Context  context_;
+#if defined __APPLE__ || defined __linux__ 
         SOCKADDR_UN ipc_conn_addr_   ;
+#endif
         SOCKADDR_IN tcp_server_addr_ ;
         SOCKADDR_IN udp_server_addr_ ;
         int connect_timeout_secs_    ;
@@ -225,17 +324,17 @@ class ASock
     public :
         bool  init_tcp_server (const char* bind_ip, 
                                int         bind_port, 
-                               int         max_data_len=asock::DEFAULT_PACKET_SIZE,
-                               int         max_client=asock::DEFAULT_MAX_CLIENT);
+                               int  max_data_len=asock::DEFAULT_PACKET_SIZE,
+                               int  max_client=asock::DEFAULT_MAX_CLIENT);
 
         bool  init_udp_server (const char* bind_ip, 
                                int         bind_port, 
-                               int         max_data_len=asock::DEFAULT_PACKET_SIZE,
-                               int         max_client=asock::DEFAULT_MAX_CLIENT);
+                               int  max_data_len=asock::DEFAULT_PACKET_SIZE,
+                               int  max_client=asock::DEFAULT_MAX_CLIENT);
 
         bool  init_ipc_server (const char* sock_path, 
-                               int         max_data_len=asock::DEFAULT_PACKET_SIZE,
-                               int         max_client=asock::DEFAULT_MAX_CLIENT );
+                               int  max_data_len=asock::DEFAULT_PACKET_SIZE,
+                               int  max_client=asock::DEFAULT_MAX_CLIENT );
         bool  run_server();
         bool  is_server_running(){return is_server_running_;};
         void  stop_server();
@@ -267,13 +366,18 @@ class ASock
         bool        accept_new_client();
         Context*    pop_client_context_from_cache();
 
+#ifdef WIN32
+		void		WorkerThreadRoutine(); //IOCP 
+        //bool      IssueRecv(Context* pClientContext);
+        //bool      IssueSend(Context* pClientContext);
+#endif
         //for composition : Assign yours to these callbacks 
     public :
-        bool  set_cb_on_client_connected(std::function<void(Context*)> cb)  ;
-        bool  set_cb_on_client_disconnected(std::function<void(Context*)> cb)  ;
+        bool  set_cb_on_client_connected(std::function<void(Context*)> cb) ;
+        bool  set_cb_on_client_disconnected(std::function<void(Context*)> cb);
     private :
         std::function<void(Context*)> cb_on_client_connected_ {nullptr} ;
-        std::function<void(Context*)> cb_on_client_disconnected_ {nullptr} ;
+        std::function<void(Context*)> cb_on_client_disconnected_ {nullptr};
 
         //for inheritance : Implement these virtual functions.
         virtual void    on_client_connected(Context* context_ptr) {}; 
