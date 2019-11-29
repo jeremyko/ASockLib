@@ -13,7 +13,7 @@ class UdpEchoClient
         bool initialize_udp_client();
         bool send_to_server(const char* data, int len);
         bool is_connected() { return udp_client_.is_connected();}
-        std::string  get_last_err_msg(){return  udp_client_.get_last_err_msg() ; }
+        std::string  GetLastErrMsg(){return  udp_client_.GetLastErrMsg() ; }
 
     private:
         ASock   udp_client_ ; //composite usage
@@ -35,7 +35,7 @@ bool UdpEchoClient::initialize_udp_client()
     if(!udp_client_.init_udp_client("127.0.0.1", 9990, 1024 ) )
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< udp_client_.get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< udp_client_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -87,7 +87,7 @@ int main(int argc, char* argv[])
             if(! client.send_to_server(complete_packet_data ,total_len) )
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.get_last_err_msg() <<"\n"; 
+                          << client.GetLastErrMsg() <<"\n"; 
                 delete [] complete_packet_data;
                 return 1;
             }

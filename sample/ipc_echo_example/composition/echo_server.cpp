@@ -13,7 +13,7 @@ class EchoServer
         static void sigint_handler(int signo);
         bool    initialize_ipc_server(const char* ipc_sock_path);
         bool    is_server_running(){return ipc_server_.is_server_running();};
-        std::string  get_last_err_msg(){return  ipc_server_.get_last_err_msg() ; }
+        std::string  GetLastErrMsg(){return  ipc_server_.GetLastErrMsg() ; }
 
     private:
         ASock ipc_server_ ; //composite usage
@@ -53,7 +53,7 @@ bool EchoServer::initialize_ipc_server(const char* ipc_sock_path)
     if(!ipc_server_.init_ipc_server(ipc_sock_path))
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< ipc_server_.get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< ipc_server_.GetLastErrMsg() <<"\n"; 
         return false;
     }
 
@@ -90,7 +90,7 @@ bool    EchoServer::on_recved_complete_data(asock::Context* context_ptr,
     if(! ipc_server_.send_data(context_ptr, data_ptr, len) )
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
 

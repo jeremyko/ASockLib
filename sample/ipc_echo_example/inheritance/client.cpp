@@ -69,7 +69,7 @@ int main(int argc, char* argv[])
     if(!client.init_ipc_client(argv[1], 10, 1024))
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< client.get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
         return 1;
     }
 
@@ -90,13 +90,13 @@ int main(int argc, char* argv[])
                                        sizeof(ST_MY_HEADER)) )
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.get_last_err_msg() <<"\n"; 
+                          << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
             if(! client.send_to_server(user_msg.c_str(), msg_len) )
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.get_last_err_msg() <<"\n"; 
+                          << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
         }

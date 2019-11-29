@@ -13,7 +13,7 @@ class EchoClient
         bool initialize_tcp_client();
         bool send_to_server(const char* data, int len);
         bool is_connected() { return tcp_client_.is_connected();}
-        std::string  get_last_err_msg(){return  tcp_client_.get_last_err_msg() ; }
+        std::string  GetLastErrMsg(){return  tcp_client_.GetLastErrMsg() ; }
 
     private:
         ASock   tcp_client_ ; //composite usage
@@ -41,7 +41,7 @@ bool EchoClient::initialize_tcp_client()
     if(!tcp_client_.init_tcp_client("127.0.0.1", 9990, 10, 1024 ) )
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< tcp_client_.get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< tcp_client_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -115,13 +115,13 @@ int main(int argc, char* argv[])
                                       sizeof(ST_MY_HEADER)) )
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.get_last_err_msg() <<"\n"; 
+                          << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
             if(! client.send_to_server(user_msg.c_str(), user_msg.length()) )
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.get_last_err_msg() <<"\n"; 
+                          << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
         }

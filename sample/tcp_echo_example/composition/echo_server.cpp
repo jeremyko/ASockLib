@@ -13,7 +13,7 @@ class EchoServer
         static void sigint_handler(int signo);
         bool    initialize_tcp_server();
         bool    is_server_running(){return tcp_server_.is_server_running();};
-        std::string  get_last_err_msg(){return  tcp_server_.get_last_err_msg() ; }
+        std::string  GetLastErrMsg(){return  tcp_server_.GetLastErrMsg() ; }
 
     private:
         ASock tcp_server_ ; //composite usage
@@ -52,7 +52,7 @@ bool EchoServer::initialize_tcp_server()
     if(!tcp_server_.init_tcp_server("127.0.0.1", 9990, 1024 /*,default=10000*/))
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< tcp_server_.get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< tcp_server_.GetLastErrMsg() <<"\n"; 
         return false;
     }
 
@@ -89,7 +89,7 @@ bool    EchoServer::on_recved_complete_data(asock::Context* context_ptr,
     if(! tcp_server_.send_data(context_ptr, data_ptr, len) )
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
 

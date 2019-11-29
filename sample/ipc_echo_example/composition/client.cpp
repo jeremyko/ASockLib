@@ -13,7 +13,7 @@ class EchoClient
         bool initialize_ipc_client(const char* ipc_sock_path);
         bool send_to_server(const char* data, int len);
         bool is_connected() { return ipc_client_.is_connected();}
-        std::string  get_last_err_msg(){return  ipc_client_.get_last_err_msg() ; }
+        std::string  GetLastErrMsg(){return  ipc_client_.GetLastErrMsg() ; }
 
     private:
         ASock   ipc_client_ ; //composite usage
@@ -43,7 +43,7 @@ bool EchoClient::initialize_ipc_client(const char* ipc_sock_path)
     if(!ipc_client_.init_ipc_client(ipc_sock_path) )
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< ipc_client_.get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< ipc_client_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -121,13 +121,13 @@ int main(int argc, char* argv[])
                                       sizeof(ST_MY_HEADER)) )
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.get_last_err_msg() <<"\n"; 
+                          << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
             if(! client.send_to_server(user_msg.c_str(), msg_len) )
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.get_last_err_msg() <<"\n"; 
+                          << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
         }

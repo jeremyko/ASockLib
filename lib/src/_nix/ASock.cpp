@@ -28,6 +28,9 @@ SOFTWARE.
 using namespace asock ;
 
 ///////////////////////////////////////////////////////////////////////////////
+ASock::ASock()
+{
+}
 ASock::~ASock()
 {
     if(complete_packet_data_!=NULL)
@@ -286,7 +289,7 @@ bool ASock::recvfrom_data(Context* context_ptr) //XXX context 가 지금 서버 
         context_ptr->recv_buffer.IncreaseData(recved_len);
 
         //udp got complete packet 
-        if(cumbuffer_defines::OP_RSLT_OK!= 
+        if(cumbuffer::OP_RSLT_OK!= 
            context_ptr->recv_buffer.GetData(recved_len, complete_packet_data_ ))
         {
             //error !
@@ -367,7 +370,7 @@ bool ASock::recv_data(Context* context_ptr)
             else
             {
                 //got complete packet 
-                if(cumbuffer_defines::OP_RSLT_OK!=
+                if(cumbuffer::OP_RSLT_OK!=
                    context_ptr->recv_buffer.GetData(context_ptr->complete_packet_len_, 
                                                      complete_packet_data_ ))
                 {
@@ -915,11 +918,11 @@ bool ASock::accept_new_client()
             return false;
         }
 
-        if ( cumbuffer_defines::OP_RSLT_OK != 
+        if ( cumbuffer::OP_RSLT_OK != 
              client_context_ptr->recv_buffer.Init(max_data_len_) )
         {
-            err_msg_  = "cumBuffer Init error : " + 
-                client_context_ptr->recv_buffer.GetErrMsg();
+            err_msg_  = std::string("cumBuffer Init error : ") + 
+                std::string(client_context_ptr->recv_buffer.GetErrMsg());
             is_server_running_ = false;
             return false;
         }
@@ -965,10 +968,10 @@ void ASock:: server_thread_udp_routine()
     ts.tv_nsec =0;
 #endif
 
-    if (cumbuffer_defines::OP_RSLT_OK != listen_context_ptr_->recv_buffer.Init(max_data_len_) )
+    if (cumbuffer::OP_RSLT_OK != listen_context_ptr_->recv_buffer.Init(max_data_len_) )
     {
         err_msg_  = "cumBuffer Init error : " + 
-                    listen_context_ptr_->recv_buffer.GetErrMsg();
+                    std::string(listen_context_ptr_->recv_buffer.GetErrMsg());
         is_server_running_ = false;
         return ;
     }
@@ -1344,7 +1347,7 @@ bool ASock::connect_to_server()
         return false;
     }   
 
-    if(!SetSocketNonBlockingset_socket_non_blocking (context_.socket))
+    if(!SetSocketNonBlocking (context_.socket))
     {
         close(context_.socket);
         return  false;
@@ -1352,9 +1355,10 @@ bool ASock::connect_to_server()
     
     if(!is_buffer_init_ )
     {
-        if  ( cumbuffer_defines::OP_RSLT_OK != context_.recv_buffer.Init(max_data_len_) )
+        if  ( cumbuffer::OP_RSLT_OK != context_.recv_buffer.Init(max_data_len_) )
         {
-            err_msg_ = "cumBuffer Init error :" + context_.recv_buffer.GetErrMsg();
+            err_msg_ =  std::string("cumBuffer Init error :") + 
+                        std::string(context_.recv_buffer.GetErrMsg());
             close(context_.socket);
             return false;
         }

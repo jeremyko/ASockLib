@@ -4,6 +4,7 @@ project (ASockLib)
 
 file(GLOB_RECURSE INCS "lib/include/*")
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/lib/include)
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/CumBuffer)
 
 SET(CMAKE_CXX_STANDARD 11) 
 
@@ -28,6 +29,10 @@ elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
     add_definitions(-Wall)
 endif()
 
+add_subdirectory (sample/ipc_echo_example/inheritance)
+add_subdirectory (sample/ipc_echo_example/composition)
 add_subdirectory (sample/tcp_echo_example/inheritance)
 add_subdirectory (sample/tcp_echo_example/composition)
+add_subdirectory (sample/udp_echo_example/inheritance)
+add_subdirectory (sample/udp_echo_example/composition)
 

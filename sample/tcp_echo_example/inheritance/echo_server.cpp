@@ -58,7 +58,7 @@ bool    EchoServer::on_recved_complete_data(asock::Context* context_ptr,
     if(! send_data(context_ptr, data_ptr, len) )
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -100,7 +100,7 @@ int main(int argc, char* argv[])
     if(!echoserver.init_tcp_server("127.0.0.1", 9990, 1024 /*,default=100000*/))
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< echoserver.get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
         return 1;
     }
 

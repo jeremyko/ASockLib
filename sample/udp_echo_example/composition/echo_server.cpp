@@ -12,7 +12,7 @@ class UdpEchoServer
 		UdpEchoServer(){this_instance_ = this; }
         bool    initialize_udp_server();
         bool    is_server_running(){return udp_server_.is_server_running();};
-        std::string  get_last_err_msg(){return  udp_server_.get_last_err_msg() ; }
+        std::string  GetLastErrMsg(){return  udp_server_.GetLastErrMsg() ; }
         static void sigint_handler(int signo);
 
     private:
@@ -38,7 +38,7 @@ bool UdpEchoServer::initialize_udp_server()
     if(!udp_server_.init_udp_server("127.0.0.1", 9990, 1024 /*,default=10000*/))
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< udp_server_.get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< udp_server_.GetLastErrMsg() <<"\n"; 
         return false;
     }
 
@@ -58,7 +58,7 @@ bool    UdpEchoServer::on_recved_complete_data(Context* context_ptr,char* data_p
     if(! udp_server_.send_data(context_ptr, data_ptr, len) ) 
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
 

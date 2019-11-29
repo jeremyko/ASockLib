@@ -197,14 +197,11 @@ class ASock
         bool    SetSocketNonBlocking(int sock_fd);
         bool    send_data(Context* context_ptr, const char* data_ptr, int len); 
 #endif
-        std::string GetLastErrMsg() {
-            return err_msg_; 
-        }
 
     protected :
         char*      complete_packet_data_ {nullptr}; 
         size_t     recv_buffer_capcity_{0};
-        //size_t     max_data_len_ {0};
+        size_t     max_data_len_ {0};
         int        send_buffer_capcity_ {asock::DEFAULT_CAPACITY};
 
 #ifdef WIN32

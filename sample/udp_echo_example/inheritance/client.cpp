@@ -34,7 +34,7 @@ int main(int argc, char* argv[])
     if(!client.init_udp_client("127.0.0.1", 9990, 1024 ) )
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< client.get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
         return 1;
     }
 
@@ -57,7 +57,7 @@ int main(int argc, char* argv[])
             if(! client.send_to_server(complete_packet_data ,sizeof(ST_MY_HEADER)+  user_msg.length()) )
             {
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.get_last_err_msg() <<"\n"; 
+                          << client.GetLastErrMsg() <<"\n"; 
                 delete [] complete_packet_data;
                 return 1;
             }

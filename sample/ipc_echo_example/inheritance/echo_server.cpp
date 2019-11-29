@@ -59,7 +59,7 @@ bool    EchoServer::on_recved_complete_data(asock::Context* context_ptr,
     if(! send_data(context_ptr, data_ptr, len) )
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -107,7 +107,7 @@ int main(int argc, char* argv[])
     if(!echoserver.init_ipc_server(argv[1]))
     {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< echoserver.get_last_err_msg() <<"\n"; 
+                  <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
         exit(1);
     }
 
