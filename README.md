@@ -2,7 +2,13 @@
 
 ### What ###
 
-a simple, easy to use c++ tcp / udp / domain socket server/client library using epoll, kqueue and [CumBuffer](https://github.com/jeremyko/CumBuffer).
+a simple, easy to use cross-platform c++ networking library.
+
+linux, os x : tcp, udp, domain socket using epoll and kqueue.
+
+windows : currently tcp supports using iocp(server) and wsapoll(client).
+
+dependency : [CumBuffer](https://github.com/jeremyko/CumBuffer).
 
 
 ### Usage ###
@@ -33,8 +39,7 @@ bool   EchoServer::OnRecvedCompleteData(asock::Context* context_ptr,
 {
     //user specific : - your whole data has arrived.
     SendData(context_ptr, data_ptr, len) ){ //this is echo server
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        ELOG("error! "<< GetLastErrMsg() ); 
         return false;
     }
     return true;
@@ -45,8 +50,7 @@ int main(int argc, char* argv[])
     //max client is 100000, max message length is approximately 300 bytes...
     EchoServer echoserver; 
     if(!echoserver.InitTcpServer("127.0.0.1", 9990, 100000, 300)) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
+        ELOG"error! "<< echoserver.GetLastErrMsg()); 
         return -1;
     }
     while( echoserver.IsServerRunning() ) {
@@ -97,15 +101,13 @@ int main(int argc, char* argv[])
     //max message length is approximately 300 bytes...
     if(!client.InitTcpClient("127.0.0.1", 9990, 10, 300 ) )
     {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
+        ELOG("error! "<< client.GetLastErrMsg()); 
         return -1;
     }
     std::string user_msg = "hello"; 
     while( client.is_connected() ) {
         if(! client.SendToServer(user_msg.c_str(), user_msg.length()) ) {
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                << client.GetLastErrMsg() <<"\n"; 
+            ELOG("error! " << client.GetLastErrMsg()); 
             return -1;
         }
         sleep(1);
@@ -122,6 +124,6 @@ int main(int argc, char* argv[])
     git submodule init
     git submodule update
     mkdir build; cd build;  cmake ..
-    make
+    make  or msbuild(visual studio)
 
 
