@@ -16,10 +16,10 @@ class UdpEchoServer
     static void sigint_handler(int signo);
 
   private:
-    ASock udp_server_ ; //composite usage
+    asock::ASock udp_server_ ; //composite usage
     static  UdpEchoServer* this_instance_ ;
   private:
-    bool    OnRecvedCompleteData(Context* context_ptr,char* data_ptr, size_t len) ;
+    bool    OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) ;
 };
 
 UdpEchoServer* UdpEchoServer::this_instance_ = nullptr;
@@ -43,7 +43,7 @@ bool UdpEchoServer::initialize_udp_server()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool UdpEchoServer::OnRecvedCompleteData(Context* context_ptr,char* data_ptr, size_t len) 
+bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) 
 {
     //user specific : your whole data has arrived. 
     char packet[asock::DEFAULT_PACKET_SIZE];

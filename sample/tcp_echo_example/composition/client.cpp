@@ -15,7 +15,7 @@ class EchoClient
     bool IsConnected() { return tcp_client_.IsConnected();}
     std::string  GetLastErrMsg(){return  tcp_client_.GetLastErrMsg() ; }
   private:
-    ASock   tcp_client_ ; //composite usage
+    asock::ASock   tcp_client_ ; //composite usage
     size_t  OnCalculateDataLen(asock::Context* context_ptr); 
     bool    OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len); 
     void    OnDisconnectedFromServer() ; 
@@ -47,13 +47,13 @@ bool EchoClient::initialize_tcp_client()
 size_t EchoClient::OnCalculateDataLen(asock::Context* context_ptr)
 {
     //user specific : calculate your complete packet length 
-    if( context_ptr->recv_buffer.GetCumulatedLen() < (int)CHAT_HEADER_SIZE ) {
+    if( context_ptr->GetBuffer()->GetCumulatedLen() < (int)CHAT_HEADER_SIZE ) {
         return asock::MORE_TO_COME ; //more to come 
     }
     ST_MY_HEADER header ;
-    context_ptr->recv_buffer.PeekData(CHAT_HEADER_SIZE, (char*)&header);  
+    context_ptr->GetBuffer()->PeekData(CHAT_HEADER_SIZE, (char*)&header);  
     size_t supposed_total_len = std::atoi(header.msg_len) + CHAT_HEADER_SIZE;
-    assert(supposed_total_len<=context_ptr->recv_buffer.GetCapacity());
+    assert(supposed_total_len<=context_ptr->GetBuffer()->GetCapacity());
     return supposed_total_len ;
 }
 
@@ -91,10 +91,10 @@ int main(int argc, char* argv[])
     while( client.IsConnected() ) {
         std::cin.clear();
         getline(std::cin, user_msg); 
-        int msg_len = user_msg.length();
+        size_t msg_len = user_msg.length();
         if(msg_len>0) {
             ST_MY_HEADER header;
-            snprintf(header.msg_len, sizeof(header.msg_len), "%d", msg_len );
+            snprintf(header.msg_len, sizeof(header.msg_len), "%zd", msg_len );
             //you don't need to send twice like this..
             //but your whole data length should be less than 1024 bytes 
             //as you invoke InitTcpClient with max. 1024 bytes.

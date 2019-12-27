@@ -6,7 +6,7 @@
 #include "../../msg_defines.h"
 
 ///////////////////////////////////////////////////////////////////////////////
-class EchoServer : public ASock
+class EchoServer : public asock::ASock
 {
   public:
     EchoServer(){this_instance_ = this; }

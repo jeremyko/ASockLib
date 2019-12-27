@@ -6,21 +6,21 @@
 #include "../../msg_defines.h"
 
 ///////////////////////////////////////////////////////////////////////////////
-class UdpEchoServer : public ASock
+class UdpEchoServer : public asock::ASock
 {
   public:
     UdpEchoServer(){this_instance_ = this; }
     static void sigint_handler(int signo);
 
   private:
-    bool    OnRecvedCompleteData(Context* context_ptr,char* data_ptr, size_t len) ;
+    bool    OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) ;
     static  UdpEchoServer* this_instance_ ;
 };
 
 UdpEchoServer* UdpEchoServer::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
-bool UdpEchoServer::OnRecvedCompleteData(Context* context_ptr,char* data_ptr, size_t len) 
+bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) 
 {
     //user specific : - your whole data has arrived.
     char packet[asock::DEFAULT_PACKET_SIZE];

@@ -6,11 +6,13 @@
 #include "../../msg_defines.h"
 
 ///////////////////////////////////////////////////////////////////////////////
-class EchoServer : public ASock
+class EchoServer : public asock::ASock
 {
   public:
     EchoServer(){this_instance_ = this; }
+#if defined __APPLE__ || defined __linux__ 
     static void sigint_handler(int signo);
+#endif
   private:
     static  EchoServer* this_instance_ ;
     size_t  OnCalculateDataLen(asock::Context* context_ptr);
@@ -70,6 +72,7 @@ void EchoServer::OnClientDisconnected(asock::Context* context_ptr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+#if defined __APPLE__ || defined __linux__ 
 void EchoServer::sigint_handler(int signo)
 {
     sigset_t sigset, oldset;
@@ -80,11 +83,14 @@ void EchoServer::sigint_handler(int signo)
     std::cout << "Stop Server! \n";
     this_instance_->StopServer();
 }
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
+#if defined __APPLE__ || defined __linux__ 
     std::signal(SIGINT,EchoServer::sigint_handler);
+#endif
     //max client is 100000, 
     //max message length is approximately 1024 bytes...
     EchoServer echoserver; 
@@ -94,7 +100,7 @@ int main(int argc, char* argv[])
         return 1;
     }
     while( echoserver.IsServerRunning() ) {
-        sleep(1);
+		std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "server exit...\n";
     return 0;

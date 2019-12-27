@@ -1,7 +1,7 @@
 /******************************************************************************
 MIT License
 
-Copyright (c) 2017 jung hyun, ko
+Copyright (c) 2019 jung hyun, ko
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -21,2666 +21,1218 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
  *****************************************************************************/
-//TODO
+
+///////////////////////////////////////////////////////////////////////////////
+//for windows, ipcp(server), wsapoll(client) is used.
+//there is no concurrent send/recv per a socket.
+///////////////////////////////////////////////////////////////////////////////
+//TODO per_io_ctx ==> 동적 할당된 메모리
+//TODO SOCK_USAGE_UDP_SERVER 
+//TODO SOCK_USAGE_UDP_CLIENT 
+//TODO SOCK_USAGE_IPC_SERVER 
+//TODO SOCK_USAGE_IPC_CLIENT 
+//TODO bool use_zero_byte_receive_ 
+//TODO one header file only ? if possible..
 #include "ASock.hpp"
-#include <chrono>
 
 using namespace asock;
-
 ///////////////////////////////////////////////////////////////////////////////
+ASock::ASock()
+{
+    is_connected_ = false;
+}
+
 ASock::~ASock()
 {
-    if (complete_packet_data_ != NULL)
-    {
-        delete[] complete_packet_data_;
-        complete_packet_data_ = NULL;
-    }
-
     if (sock_usage_ == SOCK_USAGE_TCP_CLIENT ||
         sock_usage_ == SOCK_USAGE_UDP_CLIENT ||
-        sock_usage_ == SOCK_USAGE_IPC_CLIENT)
-    {
-#ifdef __APPLE__
-        if (kq_events_ptr_)
-        {
-            delete kq_events_ptr_;
-        }
-#elif __linux__
-        if (ep_events_)
-        {
-            delete ep_events_;
-        }
-#endif
+        sock_usage_ == SOCK_USAGE_IPC_CLIENT) {
         Disconnect();
-    }
-    else if (sock_usage_ == SOCK_USAGE_TCP_SERVER ||
-        sock_usage_ == SOCK_USAGE_UDP_SERVER ||
-        sock_usage_ == SOCK_USAGE_IPC_SERVER)
-    {
-#ifdef __APPLE__
-        if (kq_events_ptr_)
-        {
-            delete[] kq_events_ptr_;
-        }
-#elif __linux__
-        if (ep_events_)
-        {
-            delete[] ep_events_;
-        }
-#endif
-
-        CLIENT_UNORDERMAP_ITER_T it_del = client_map_.begin();
-        while (it_del != client_map_.end())
-        {
-            delete it_del->second;
-            it_del = client_map_.erase(it_del);
-        }
-
+    } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER ||
+				sock_usage_ == SOCK_USAGE_UDP_SERVER ||
+				sock_usage_ == SOCK_USAGE_IPC_SERVER) {
         ClearClientCache();
+    }
+	WSACleanup();
+}
 
-#ifdef __APPLE__
-        ControlKq(listen_context_ptr_, EVFILT_READ, EV_DELETE);
-#elif __linux__
-        ControlEpoll(listen_context_ptr_, EPOLLIN | EPOLLERR | EPOLLRDHUP,
-            EPOLL_CTL_DEL); //just in case
+
+///////////////////////////////////////////////////////////////////////////////
+//server use
+bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len) 
+{
+	//XXX  recv에서 연결 종료 판단되었을 수 있음!!!
+	std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock);  //XXX need
+	if (ctx_ptr->socket == INVALID_SOCKET) {
+		DBG_ELOG("invalid socket, failed.");
+		return false;
+	}
+	if (!ctx_ptr->is_connected) {
+		DBG_ELOG("diconnected socket, failed.");
+		return false;
+	}
+	//ex)multi thread 가 동일한 소켓에 대해 각각 보내는 경우...
+	//buffer 가 각각 필요함(전송 여부 비동기 통지, 중첩)
+	PER_IO_DATA* per_send_ctx = new (std::nothrow) asock::PER_IO_DATA;
+	if (per_send_ctx == nullptr) {
+		DBG_ELOG("mem alloc failed");
+		shutdown(ctx_ptr->socket, SD_BOTH);
+		if (0 != closesocket(ctx_ptr->socket)) {
+			DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
+                    << WSAGetLastError());
+		}
+		ctx_ptr->socket = INVALID_SOCKET; //XXX
+		exit(1);
+	}
+	SecureZeroMemory((PVOID)&per_send_ctx->overlapped, sizeof(WSAOVERLAPPED));
+	DWORD dw_flags = 0;
+	DWORD dw_send_bytes = 0;
+	memcpy(per_send_ctx->send_buffer, data_ptr, len); //XXX
+	per_send_ctx->wsabuf.buf = per_send_ctx->send_buffer;
+	per_send_ctx->wsabuf.len = (ULONG)len;
+	per_send_ctx->io_type = EnumIOType::IO_SEND;
+	per_send_ctx->total_send_len = len;
+	per_send_ctx->sent_len = 0;
+	int result = 0;
+
+	result = WSASend(ctx_ptr->socket, &(per_send_ctx->wsabuf),
+					1, &dw_send_bytes, dw_flags,
+					&(per_send_ctx->overlapped), NULL);
+	if (result == 0) {
+		//no error occurs and the send operation has completed immediately
+		DBG_LOG("!!! WSASend returns 0 !!! ");
+	} else if (result == SOCKET_ERROR) {
+		if (WSA_IO_PENDING == WSAGetLastError()) {
+			//DBG_LOG("!!! WSASend returns --> WSA_IO_PENDING");
+		} else {
+			int last_err = WSAGetLastError();
+			BuildErrMsgString(last_err);
+			DBG_ELOG("WSASend error : " << err_msg_ <<"recv posted="
+				<< ctx_ptr->recv_issued_cnt );
+			delete per_send_ctx; //TEST XXX 
+			shutdown(ctx_ptr->socket, SD_BOTH);
+			if (0 != closesocket(ctx_ptr->socket)) {
+				DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
+                        << last_err);
+			}
+			ctx_ptr->socket = INVALID_SOCKET; 
+			return false;
+		}
+	}
+	ctx_ptr->posted_send_cnt++;
+	ctx_ptr->ref_cnt++;
+	//LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
+	DBG_LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt=" << ctx_ptr->ref_cnt);
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//for client use
+void ASock:: Disconnect()
+{
+	DBG_LOG("Disconnect");
+    is_connected_ = false;
+    if(context_.socket != INVALID_SOCKET ) {
+		shutdown(context_.socket, SD_BOTH);
+        closesocket(context_.socket);
+    }
+	context_.socket = INVALID_SOCKET;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//for client use
+void ASock:: WaitForClientLoopExit()
+{
+	//wait thread exit
+	if (client_thread_.joinable()) {
+		client_thread_.join();
+	}
+}
+///////////////////////////////////////////////////////////////////////////////
+//XXX server, client use this
+bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transferred )
+{
+	if (ctx_ptr->socket == INVALID_SOCKET) {
+		DBG_ELOG("sock=" << ctx_ptr->sock_id_copy << ",invalid socket, failed.");
+		return false;
+	}
+	//std::cout << "sock="<<ctx_ptr->socket <<", bytes_transferred = " << bytes_transferred <<"\n";
+	ctx_ptr->GetBuffer()->IncreaseData(bytes_transferred);
+	DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy<<",GetCumulatedLen = " 
+		<< ctx_ptr->GetBuffer()->GetCumulatedLen()
+		<< ",ref_cnt=" << ctx_ptr->ref_cnt
+        << ",bytes_transferred=" << bytes_transferred );
+#ifdef DEBUG_PRINT
+	ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
 #endif
-
-#if defined __APPLE__ || defined __linux__ 
-        delete listen_context_ptr_;
-        if (sock_usage_ == SOCK_USAGE_IPC_SERVER)
-        {
-            unlink(server_ipc_socket_path_.c_str());
-        }
+    //DBG_LOG("GetCumulatedLen = " << ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen());
+	while (ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()) {
+		//XXX .. for client !!! =========== START TODO --> make better !
+		if (ctx_ptr->socket == INVALID_SOCKET) {
+			DBG_ELOG("sock=" << ctx_ptr->sock_id_copy << ",invalid socket, failed.");
+			return false;
+		}
+		//XXX .. for client !!! =========== END
+		DBG_LOG("worker="<<worker_index<<",sock=" << ctx_ptr->sock_id_copy 
+			<< ",GetCumulatedLen = " 
+			<< ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()
+			<< ",ref_cnt=" << ctx_ptr->ref_cnt
+            << ",bytes_transferred=" << bytes_transferred);
+		//invoke user specific implementation
+		if (!ctx_ptr->per_recv_io_ctx->is_packet_len_calculated){ 
+			//only when calculation is necessary
+			if (cb_on_calculate_data_len_ != nullptr) {
+				//invoke user specific callback
+				ctx_ptr->per_recv_io_ctx->complete_recv_len = 
+                    cb_on_calculate_data_len_(ctx_ptr);
+			} else {
+				//invoke user specific implementation
+				ctx_ptr->per_recv_io_ctx->complete_recv_len = 
+                    OnCalculateDataLen(ctx_ptr);
+			}
+			DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy<<", whole length =" 
+				<< ctx_ptr->per_recv_io_ctx->complete_recv_len);
+			if (ctx_ptr->per_recv_io_ctx->complete_recv_len == 6) {
+				//DEBUG only!!
+				DBG_ELOG("whole length is 6 ?????? ");
+				typedef struct _ST_MY_CHAT_HEADER_ {
+					char msg_len[6];
+				} ST_MY_HEADER;
+				ST_MY_HEADER header;
+				const size_t  CHAT_HEADER_SIZE = sizeof(ST_MY_HEADER);
+				ctx_ptr->GetBuffer()->PeekData(CHAT_HEADER_SIZE, (char*)&header);
+				DBG_LOG("header ="<<header.msg_len);
+			}
+			ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = true;
+		}
+		if (ctx_ptr->per_recv_io_ctx->complete_recv_len == asock::MORE_TO_COME) {
+			ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
+			DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy<<": more to come" );
+			DBG_LOG("sock=" << ctx_ptr->sock_id_copy << ", cumbuffer debug=");
+#ifdef DEBUG_PRINT
+			ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
 #endif
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetCbOnCalculatePacketLen(std::function<size_t(Context*)> cb)
-{
-    //for composition usage 
-    if (cb != nullptr)
-    {
-        cb_on_calculate_data_len_ = cb;
-    }
-    else
-    {
-        err_msg_ = "callback is null";
-        return false;
-    }
-
+			return true; //need to recv more
+		} else if (ctx_ptr->per_recv_io_ctx->complete_recv_len > 
+                   ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()) {
+			DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy
+                <<",GetCumulatedLen = " 
+				<< ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()
+				<<": more to come" );
+			DBG_LOG("sock=" << ctx_ptr->sock_id_copy << ", cumbuffer debug=");
+#ifdef DEBUG_PRINT
+			ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
+#endif
+			return true; //need to recv more
+		} else {
+			//got complete packet 
+			size_t alloc_len = ctx_ptr->per_recv_io_ctx->complete_recv_len;
+			DBG_LOG("alloc len=" << alloc_len);
+            char* complete_packet_data = new (std::nothrow) char [alloc_len] ; //XXX 
+            if(complete_packet_data == nullptr) {
+				DBG_ELOG("mem alloc failed");
+                exit(1);
+            }
+			if (cumbuffer::OP_RSLT_OK !=
+				ctx_ptr->per_recv_io_ctx->cum_buffer.GetData (
+                    ctx_ptr->per_recv_io_ctx->complete_recv_len, complete_packet_data)) {
+				//error !
+				{
+					std::lock_guard<std::mutex> lock(err_msg_lock_);
+					err_msg_ = ctx_ptr->per_recv_io_ctx->cum_buffer.GetErrMsg();
+				}
+				ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
+                delete[] complete_packet_data; //XXX
+				DBG_ELOG("error! ");
+                //exit(1);
+				return false;
+			}
+            DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy
+				<< ",ref_cnt=" << ctx_ptr->ref_cnt
+				<< ":got complete data [" << complete_packet_data <<"]"  ); 
+			if (cb_on_recved_complete_packet_ != nullptr) {
+				//invoke user specific callback
+				cb_on_recved_complete_packet_(ctx_ptr, complete_packet_data, 
+                                    ctx_ptr->per_recv_io_ctx->complete_recv_len);
+			} else {
+				//invoke user specific implementation
+				OnRecvedCompleteData(ctx_ptr, complete_packet_data, 
+                                    ctx_ptr->per_recv_io_ctx->complete_recv_len);
+			}
+            delete[] complete_packet_data; //XXX
+			ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
+		}
+	} //while
     return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetCbOnRecvedCompletePacket(std::function<bool(Context*, char*, int)> cb)
+bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
 {
-    //for composition usage 
-    if (cb != nullptr)
-    {
-        cb_on_recved_complete_packet_ = cb;
-    }
-    else
-    {
-        err_msg_ = "callback is null";
-        return false;
-    }
-
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool  ASock::SetCbOnDisconnectedFromServer(std::function<void()> cb)
-{
-    //for composition usage 
-    if (cb != nullptr)
-    {
-        cb_on_disconnected_from_server_ = cb;
-    }
-    else
-    {
-        err_msg_ = "callback is null";
-        return false;
-    }
-
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetCbOnClientConnected(std::function<void(Context*)> cb)
-{
-    //for composition usage 
-    if (cb != nullptr)
-    {
-        cb_on_client_connected_ = cb;
-    }
-    else
-    {
-        err_msg_ = "callback is null";
-        return false;
-    }
-
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetCbOnClientDisconnected(std::function<void(Context*)> cb)
-{
-    //for composition usage 
-    if (cb != nullptr)
-    {
-        cb_on_client_disconnected_ = cb;
-    }
-    else
-    {
-        err_msg_ = "callback is null";
-        return false;
-    }
-
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetBufferCapacity(int max_data_len)
-{
-    if (max_data_len <= 0)
-    {
-        err_msg_ = " length is invalid";
-        return false;
-    }
-
-    max_data_len_ = max_data_len;
-
-    complete_packet_data_ = new (std::nothrow) char[max_data_len_];
-    if (complete_packet_data_ == NULL)
-    {
-        err_msg_ = "memory alloc failed!";
-        return false;
-    }
-
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool   ASock::SetSocketNonBlocking(int sock_fd)
-{
-    int oldflags;
-
-    if ((oldflags = fcntl(sock_fd, F_GETFL, 0)) < 0)
-    {
-        err_msg_ = "fcntl F_GETFL error [" + std::string(strerror(errno)) + "]";
-        return  false;
-    }
-
-    int ret = fcntl(sock_fd, F_SETFL, oldflags | O_NONBLOCK);
-    if (ret < 0)
-    {
-        err_msg_ = "fcntl O_NONBLOCK error [" + std::string(strerror(errno)) + "]";
-        return  false;
-    }
-
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetSockoptSndRcvBufUdp(int socket)
-{
-    size_t opt_cur;
-    int opt_val = max_data_len_;
-    int opt_len = sizeof(opt_cur);
-    if (getsockopt(socket, SOL_SOCKET, SO_SNDBUF, &opt_cur, (SOCKLEN_T *)&opt_len) == -1)
-    {
-        err_msg_ = "gsetsockopt SO_SNDBUF error [" + std::string(strerror(errno)) + "]";
-        return false;
-    }
-
-    //std::cout << "curr SO_SNDBUF = " << opt_cur << "\n";
-    if (max_data_len_ > opt_cur)
-    {
-        if (setsockopt(socket, SOL_SOCKET, SO_SNDBUF, (char*)&opt_val, sizeof(opt_val)) == -1)
-        {
-            err_msg_ = "setsockopt SO_SNDBUF error [" + std::string(strerror(errno)) + "]";
+	if (ctx_ptr->socket == INVALID_SOCKET) {
+		DBG_ELOG("sock=" << ctx_ptr->sock_id_copy << ",invalid socket, failed.");
+		return false;
+	}
+	if (ctx_ptr->recv_issued_cnt > 0) {
+		//XXX 아직 recv issued 된것에 대해 처리가 안된 상태라면 skip!!
+		//이 처리 없으면 cumbuffer 의 남은 용량에 맞게 want recv len 조정
+		//동기화가 안됨! client 가 계속 전송하는 경우에, recv issue 반복되고, 
+        //iocp 는 멀티쓰레드 pool 로 처리되므로..
+		DBG_LOG("worker=" << worker_index << ",sock=" << ctx_ptr->sock_id_copy
+			<< ", recv issued cnt=" << ctx_ptr->recv_issued_cnt
+			<< " --> SKIP !");
+		return true;
+	}
+	//XXX cumbuffer 에 Append 가능할 만큼만 수신하게 해줘야함!!
+	//TODO 0 byte 수신을 고려?? 
+	size_t want_recv_len = max_data_len_;
+	//-------------------------------------
+	if (max_data_len_ > ctx_ptr->GetBuffer()->GetLinearFreeSpace()) { 
+		want_recv_len = ctx_ptr->GetBuffer()->GetLinearFreeSpace();
+	}
+	if (want_recv_len == 0) {
+		std::lock_guard<std::mutex> lock(err_msg_lock_);
+		err_msg_ = "no linear free space left ";
+		DBG_ELOG(err_msg_);
+		return false;
+	}
+	/*
+	DBG_LOG("worker="<<worker_index<<",sock=" << ctx_ptr->sock_id_copy 
+		<< ", recv issued cnt=" << ctx_ptr->recv_issued_cnt
+		<< ", *** want_recv_len =" << want_recv_len);
+		*/
+    DWORD dw_flags = 0;
+    DWORD dw_recv_bytes = 0;
+    SecureZeroMemory((PVOID)& ctx_ptr->per_recv_io_ctx->overlapped, sizeof(WSAOVERLAPPED));
+    //XXX cumbuffer 에 가능한 만큼만 ...
+    ctx_ptr->per_recv_io_ctx->wsabuf.buf = ctx_ptr->GetBuffer()->GetLinearAppendPtr();
+    ctx_ptr->per_recv_io_ctx->wsabuf.len = (ULONG)want_recv_len ;
+    ctx_ptr->per_recv_io_ctx->io_type = EnumIOType::IO_RECV;
+	int result = WSARecv(   ctx_ptr->socket, 
+                            &(ctx_ptr->per_recv_io_ctx->wsabuf), 
+                            1, 
+						    & dw_recv_bytes, 
+                            & dw_flags, 
+                            &(ctx_ptr->per_recv_io_ctx->overlapped), 
+                            NULL);
+	if (SOCKET_ERROR == result) {
+        if (WSAGetLastError() != WSA_IO_PENDING) {
+            BuildErrMsgString(WSAGetLastError());
+			ELOG("sock=" << ctx_ptr->sock_id_copy << ", " <<err_msg_);
             return false;
         }
-        std::cout << "set SO_SNDBUF = " << opt_val << "\n";
     }
-
-    //--------------
-    if (getsockopt(socket, SOL_SOCKET, SO_RCVBUF, &opt_cur, (SOCKLEN_T *)&opt_len) == -1)
-    {
-        err_msg_ = "setsockopt SO_RCVBUF error [" + std::string(strerror(errno)) + "]";
-        return false;
-    }
-    //std::cout << "curr SO_RCVBUF = " << opt_cur << "\n";
-
-    if (max_data_len_ > opt_cur)
-    {
-        if (setsockopt(socket, SOL_SOCKET, SO_RCVBUF, (char*)&opt_val, sizeof(opt_val)) == -1)
-        {
-            err_msg_ = "setsockopt SO_RCVBUF error [" + std::string(strerror(errno)) + "]";
-            return false;
-        }
-        std::cout << "set SO_RCVBUF = " << opt_val << "\n";
-    }
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::RecvfromData(Context* context_ptr) //XXX context 가 지금 서버 context 임!!
-{
-    if (max_data_len_ > context_ptr->recv_buffer.GetLinearFreeSpace())
-    {
-        err_msg_ = "no linear free space left " + std::to_string(context_ptr->recv_buffer.GetLinearFreeSpace());
-        return false;
-    }
-
-    SOCKLEN_T addrlen = sizeof(context_ptr->udp_remote_addr);
-    int recved_len = recvfrom(context_ptr->socket, //--> is listen_socket_
-        context_ptr->recv_buffer.GetLinearAppendPtr(),
-        max_data_len_,
-        0,
-        (struct sockaddr *)&context_ptr->udp_remote_addr,
-        &addrlen);
-    if (recved_len > 0)
-    {
-        context_ptr->recv_buffer.IncreaseData(recved_len);
-
-        //udp got complete packet 
-        if (cumbuffer_defines::OP_RSLT_OK !=
-            context_ptr->recv_buffer.GetData(recved_len, complete_packet_data_))
-        {
-            //error !
-            err_msg_ = context_ptr->recv_buffer.GetErrMsg();
-            std::cerr << err_msg_ << "\n";
-            context_ptr->is_packet_len_calculated = false;
-            return false;
-        }
-        //XXX UDP 이므로 받는 버퍼를 초기화해서, linear free space를 초기화 상태로!! XXX 
-        context_ptr->recv_buffer.ReSet(); //this is udp. all data has arrived!
-
-        if (cb_on_recved_complete_packet_ != nullptr)
-        {
-            //invoke user specific callback
-            cb_on_recved_complete_packet_(context_ptr, complete_packet_data_, recved_len);
-        }
-        else
-        {
-            //invoke user specific implementation
-            OnRecvedCompleteData(context_ptr, complete_packet_data_, recved_len);
-        }
-    }
-
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::RecvData(Context* context_ptr)
-{
-    int want_recv_len = max_data_len_;
-    if (max_data_len_ > context_ptr->recv_buffer.GetLinearFreeSpace())
-    {
-        want_recv_len = context_ptr->recv_buffer.GetLinearFreeSpace();
-    }
-
-    if (want_recv_len == 0)
-    {
-        err_msg_ = "no linear free space left ";
-        return false;
-    }
-
-    int recved_len = recv(context_ptr->socket,
-        context_ptr->recv_buffer.GetLinearAppendPtr(),
-        want_recv_len, 0);
-
-    if (recved_len > 0)
-    {
-        context_ptr->recv_buffer.IncreaseData(recved_len);
-
-        while (context_ptr->recv_buffer.GetCumulatedLen())
-        {
-            //invoke user specific implementation
-            if (!context_ptr->is_packet_len_calculated)
-            {
-                //only when calculation is necessary
-                if (cb_on_calculate_data_len_ != nullptr)
-                {
-                    //invoke user specific callback
-                    context_ptr->complete_packet_len_ = cb_on_calculate_data_len_(context_ptr);
-                }
-                else
-                {
-                    //invoke user specific implementation
-                    context_ptr->complete_packet_len_ = OnCalculateDataLen(context_ptr);
-                }
-                context_ptr->is_packet_len_calculated = true;
-            }
-
-            if (context_ptr->complete_packet_len_ == asock::MORE_TO_COME)
-            {
-                context_ptr->is_packet_len_calculated = false;
-                return true; //need to recv more
-            }
-            else if (context_ptr->complete_packet_len_ > context_ptr->recv_buffer.GetCumulatedLen())
-            {
-                return true; //need to recv more
-            }
-            else
-            {
-                //got complete packet 
-                if (cumbuffer_defines::OP_RSLT_OK !=
-                    context_ptr->recv_buffer.GetData(context_ptr->complete_packet_len_,
-                        complete_packet_data_))
-                {
-                    //error !
-                    err_msg_ = context_ptr->recv_buffer.GetErrMsg();
-                    context_ptr->is_packet_len_calculated = false;
-                    return false;
-                }
-
-                if (cb_on_recved_complete_packet_ != nullptr)
-                {
-                    //invoke user specific callback
-                    cb_on_recved_complete_packet_(context_ptr,
-                        complete_packet_data_,
-                        context_ptr->complete_packet_len_);
-                }
-                else
-                {
-                    //invoke user specific implementation
-                    OnRecvedCompleteData(context_ptr,
-                        complete_packet_data_,
-                        context_ptr->complete_packet_len_);
-                }
-
-                context_ptr->is_packet_len_calculated = false;
-            }
-        } //while
-    }
-    else if (recved_len == 0)
-    {
-        err_msg_ = "recv 0, client disconnected , fd:" + std::to_string(context_ptr->socket);
-        return false;
-    }
-
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SendData(Context* context_ptr, const char* data_ptr, int len)
-{
-    std::lock_guard<std::mutex> lock(context_ptr->send_lock);
-    char* data_position_ptr = const_cast<char*>(data_ptr);
-    int total_sent = 0;
-
-    //if sent is pending, just push to queue. 
-    if (context_ptr->is_sent_pending) //tcp, domain socket only  
-    {
-        PENDING_SENT pending_sent;
-        pending_sent.pending_sent_data = new char[len];
-        pending_sent.pending_sent_len = len;
-        memcpy(pending_sent.pending_sent_data, data_ptr, len);
-        if (sock_usage_ == SOCK_USAGE_UDP_SERVER)
-        {
-            //udp(server) 인 경우엔, 데이터와 client remote addr 정보를 함께 queue에 저장
-            memcpy(&pending_sent.udp_remote_addr,
-                &context_ptr->udp_remote_addr,
-                sizeof(pending_sent.udp_remote_addr));
-        }
-        context_ptr->pending_send_deque_.push_back(pending_sent);
-
-#ifdef __APPLE__
-        if (!ControlKq(context_ptr, EVFILT_WRITE, EV_ADD | EV_ENABLE))
-#elif __linux__
-        if (!ControlEpoll(context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD))
+	ctx_ptr->ref_cnt++;
+	ctx_ptr->recv_issued_cnt++;
+	//LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
+	DBG_LOG("worker="<<worker_index<<",sock=" << ctx_ptr->sock_id_copy 
+		<< ", want recv len=" <<want_recv_len
+		<< ", post recv , ref_cnt =" << ctx_ptr->ref_cnt);
+#ifdef DEBUG_PRINT
+	ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
 #endif
-        {
-            delete[] pending_sent.pending_sent_data;
-            context_ptr->pending_send_deque_.pop_back();
-            return false;
-        }
-        return true;
-    }
-
-    while (total_sent < len)
-    {
-        int sent_len = 0;
-        if (sock_usage_ == SOCK_USAGE_UDP_SERVER)
-        {
-            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
-            sent_len = sendto(context_ptr->socket,
-                data_position_ptr,
-                len - total_sent,
-                0,
-                (struct sockaddr*)& context_ptr->udp_remote_addr,
-                sizeof(context_ptr->udp_remote_addr));
-        }
-        else if (sock_usage_ == SOCK_USAGE_UDP_CLIENT)
-        {
-            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
-            sent_len = sendto(context_ptr->socket,
-                data_position_ptr,
-                len - total_sent,
-                0,
-                0, //XXX client : already set! (via connect)  
-                sizeof(context_ptr->udp_remote_addr));
-        }
-        else
-        {
-            sent_len = send(context_ptr->socket, data_position_ptr, len - total_sent, 0);
-        }
-
-        if (sent_len > 0)
-        {
-            total_sent += sent_len;
-            data_position_ptr += sent_len;
-        }
-        else if (sent_len < 0)
-        {
-            if (errno == EWOULDBLOCK || errno == EAGAIN)
-            {
-                //send later
-                PENDING_SENT pending_sent;
-                pending_sent.pending_sent_data = new char[len - total_sent];
-                pending_sent.pending_sent_len = len - total_sent;
-                memcpy(pending_sent.pending_sent_data, data_position_ptr, len - total_sent);
-                if (sock_usage_ == SOCK_USAGE_UDP_SERVER)
-                {
-                    //udp(server) 인 경우엔, 데이터와 client remote addr 정보를 함께 queue에 저장
-                    memcpy(&pending_sent.udp_remote_addr,
-                        &context_ptr->udp_remote_addr,
-                        sizeof(pending_sent.udp_remote_addr));
-                }
-
-                context_ptr->pending_send_deque_.push_back(pending_sent);
-#ifdef __APPLE__
-                if (!ControlKq(context_ptr, EVFILT_WRITE, EV_ADD | EV_ENABLE))
-#elif __linux__
-                if (!ControlEpoll(context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD))
-#endif
-                {
-                    delete[] pending_sent.pending_sent_data;
-                    context_ptr->pending_send_deque_.pop_back();
-                    return false;
-                }
-                context_ptr->is_sent_pending = true;
-                return true;
-            }
-            else if (errno != EINTR)
-            {
-                err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
-                return false;
-            }
-        }
-    }//while
-
     return true;
 }
-
-#ifdef __APPLE__
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::ControlKq(Context* context_ptr, uint32_t events, uint32_t fflags)
-{
-    struct  kevent kq_event;
-    memset(&kq_event, 0, sizeof(struct kevent));
-    EV_SET(&kq_event, context_ptr->socket, events, fflags, 0, 0, context_ptr);
-    //udata = context_ptr
-
-    int result = kevent(kq_fd_, &kq_event, 1, NULL, 0, NULL);
-    if (result == -1)
-    {
-        err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
-        return false;
-    }
-    return true;
-    //man:Re-adding an existing event will modify the parameters of the
-    //    original event, and not result in a duplicate entry.
-}
-#elif __linux__
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::ControlEpoll(Context* context_ptr, uint32_t events, int op)
-{
-    struct  epoll_event ev_client {};
-    ev_client.data.fd = context_ptr->socket;
-    ev_client.events = events;
-    ev_client.data.ptr = context_ptr;
-
-    if (epoll_ctl(ep_fd_, op, context_ptr->socket, &ev_client) < 0)
-    {
-        err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
-        return false;
-    }
-    return true;
-}
-#endif
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // SERVER
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::InitTcpServer(const char* bind_ip,
-    int         bind_port,
-    int         max_data_len /*=DEFAULT_PACKET_SIZE*/,
-    int         max_client /*=DEFAULT_MAX_CLIENT*/)
+bool ASock::InitTcpServer(	const char* bind_ip, int bind_port, 
+							size_t  max_data_len , size_t  max_client )
 {
     sock_usage_ = SOCK_USAGE_TCP_SERVER;
-
     server_ip_ = bind_ip;
     server_port_ = bind_port;
     max_client_limit_ = max_client;
-    if (max_client_limit_ < 0)
-    {
+    if (max_client_limit_ < 0) {
         return false;
     }
-    if (!SetBufferCapacity(max_data_len))
-    {
+    if (!SetBufferCapacity(max_data_len)) {
         return false;
     }
-
-    return RunServer();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::InitUdpServer(const char* bind_ip,
-    int         bind_port,
-    int         max_data_len /*=DEFAULT_PACKET_SIZE*/,
-    int         max_client /*=DEFAULT_MAX_CLIENT*/)
-{
-    sock_usage_ = SOCK_USAGE_UDP_SERVER;
-
-    server_ip_ = bind_ip;
-    server_port_ = bind_port;
-    max_client_limit_ = max_client;
-    if (max_client_limit_ < 0)
-    {
-        return false;
-    }
-    if (!SetBufferCapacity(max_data_len))
-    {
-        return false;
-    }
-
-    return RunServer();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool  ASock::InitIpcServer(const char* sock_path,
-    int         max_data_len /*=DEFAULT_PACKET_SIZE*/,
-    int         max_client /*=DEFAULT_MAX_CLIENT*/)
-{
-    sock_usage_ = SOCK_USAGE_IPC_SERVER;
-    server_ipc_socket_path_ = sock_path;
-
-    max_client_limit_ = max_client;
-    if (max_client_limit_ < 0)
-    {
-        return false;
-    }
-    if (!SetBufferCapacity(max_data_len))
-    {
-        return false;
-    }
-
     return RunServer();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::RunServer()
 {
-#ifdef __APPLE__
-    if (kq_events_ptr_)
-#elif __linux__
-    if (ep_events_)
-#endif
-    {
+    DBG_LOG( "Run Server..."); 
+    if(is_server_running_ ) { 
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "error [server is already running]";
+        ELOG("error! " << err_msg_); 
         return false;
     }
-
-    if (sock_usage_ == SOCK_USAGE_IPC_SERVER)
-    {
-        listen_socket_ = socket(AF_UNIX, SOCK_STREAM, 0);
-    }
-    else if (sock_usage_ == SOCK_USAGE_TCP_SERVER)
-    {
-        listen_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-    }
-    else if (sock_usage_ == SOCK_USAGE_UDP_SERVER)
-    {
-        listen_socket_ = socket(AF_INET, SOCK_DGRAM, 0);
-    }
-
-    if (listen_socket_ < 0)
-    {
-        err_msg_ = "init error [" + std::string(strerror(errno)) + "]";
-        return false;
-    }
-
-    if (!SetSocketNonBlocking(listen_socket_))
-    {
+	if(!InitWinsock()) {
+		return false;
+	}
+	handle_completion_port_ = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
+    if(max_data_len_ <0) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
+        err_msg_ = "init error [packet length is negative]";
+		DBG_ELOG(err_msg_);
         return  false;
     }
-
-    int opt_on = 1;
-    int result = -1;
-
-    if (setsockopt(listen_socket_, SOL_SOCKET, SO_REUSEADDR, &opt_on, sizeof(opt_on)) == -1)
-    {
-        err_msg_ = "setsockopt SO_REUSEADDR error [" + std::string(strerror(errno)) + "]";
-        return false;
-    }
-
-    if (setsockopt(listen_socket_, SOL_SOCKET, SO_KEEPALIVE, &opt_on, sizeof(opt_on)) == -1)
-    {
-        err_msg_ = "setsockopt SO_KEEPALIVE error [" + std::string(strerror(errno)) + "]";
-        return false;
-    }
-
-    if (sock_usage_ == SOCK_USAGE_UDP_SERVER)
-    {
-        if (!SetSockoptSndRcvBufUdp(listen_socket_))
-        {
-            return false;
-        }
-    }
-
-    //-------------------------------------------------
-    if (sock_usage_ == SOCK_USAGE_IPC_SERVER)
-    {
-        SOCKADDR_UN ipc_server_addr;
-        memset((void *)&ipc_server_addr, 0x00, sizeof(ipc_server_addr));
-        ipc_server_addr.sun_family = AF_UNIX;
-        snprintf(ipc_server_addr.sun_path, sizeof(ipc_server_addr.sun_path),
-            "%s", server_ipc_socket_path_.c_str());
-
-        result = bind(listen_socket_, (SOCKADDR*)&ipc_server_addr, sizeof(ipc_server_addr));
-    }
-    else if (sock_usage_ == SOCK_USAGE_TCP_SERVER ||
-        sock_usage_ == SOCK_USAGE_UDP_SERVER)
-    {
-        SOCKADDR_IN    server_addr;
-        memset((void *)&server_addr, 0x00, sizeof(server_addr));
-        server_addr.sin_family = AF_INET;
-        server_addr.sin_addr.s_addr = inet_addr(server_ip_.c_str());
-        server_addr.sin_port = htons(server_port_);
-
-        result = bind(listen_socket_, (SOCKADDR*)&server_addr, sizeof(server_addr));
-    }
-
-    //-------------------------------------------------
-
-    if (result < 0)
-    {
-        err_msg_ = "bind error [" + std::string(strerror(errno)) + "]";
-        return false;
-    }
-
-    if (sock_usage_ == SOCK_USAGE_IPC_SERVER ||
-        sock_usage_ == SOCK_USAGE_TCP_SERVER)
-    {
-        result = listen(listen_socket_, SOMAXCONN);
-        if (result < 0)
-        {
-            err_msg_ = "listen error [" + std::string(strerror(errno)) + "]";
-            return false;
-        }
-    }
-
-    struct sigaction act;
-    act.sa_handler = SIG_IGN;
-    sigemptyset(&act.sa_mask);
-    act.sa_flags = 0;
-    sigaction(SIGPIPE, &act, NULL);
-
-#if defined __APPLE__ || defined __linux__ 
-    listen_context_ptr_ = new (std::nothrow) Context();
-    if (!listen_context_ptr_)
-    {
-        err_msg_ = "Context alloc failed !";
-        return false;
-    }
-
-    listen_context_ptr_->socket = listen_socket_;
-#endif
-
-#ifdef __APPLE__
-    kq_fd_ = kqueue();
-    if (kq_fd_ == -1)
-    {
-        err_msg_ = "kqueue error [" + std::string(strerror(errno)) + "]";
-        return false;
-    }
-    if (!ControlKq(listen_context_ptr_, EVFILT_READ, EV_ADD))
-    {
-        return false;
-    }
-#elif __linux__
-    ep_fd_ = epoll_create1(0);
-    if (ep_fd_ == -1)
-    {
-        err_msg_ = "epoll create error [" + std::string(strerror(errno)) + "]";
-        return false;
-    }
-
-    if (!ControlEpoll(listen_context_ptr_, EPOLLIN | EPOLLERR, EPOLL_CTL_ADD))
-    {
-        return false;
-    }
-#endif
-
-    //start server thread
-    is_need_server_run_ = true;
-    is_server_running_ = true;
-
-#ifdef __APPLE__
-    kq_events_ptr_ = new struct kevent[max_client_limit_];
-    memset(kq_events_ptr_, 0x00, sizeof(struct kevent) * max_client_limit_);
-#elif __linux__
-    ep_events_ = new struct epoll_event[max_client_limit_];
-    memset(ep_events_, 0x00, sizeof(struct epoll_event) * max_client_limit_);
-#endif
-
-    if (sock_usage_ == SOCK_USAGE_UDP_SERVER)
-    {
-        //UDP is special~~~ XXX 
-        std::thread server_thread(&ASock::ServerThreadUdpRoutine, this);
-        server_thread.detach();
-    }
-    else
-    {
-        std::thread server_thread(&ASock::ServerThreadRoutine, this);
-        server_thread.detach();
-    }
-
+	//--------------------------
+	StartWorkerThreads();
+	//--------------------------
+	if (!StartAcceptThread()) {
+		return false;
+	}
     return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ASock::StopServer()
+void ASock::StartWorkerThreads()
 {
-    is_need_server_run_ = false;
+	SYSTEM_INFO system_info;
+	GetSystemInfo(&system_info);
+	int max_worker_cnt = system_info.dwNumberOfProcessors * 2;
+	DBG_LOG("(server) worker cnt = " << max_worker_cnt);
+	for (size_t i = 0; i < max_worker_cnt; i++) {
+		std::thread worker_thread(&ASock::WorkerThreadRoutine, this, i); 
+		worker_thread.detach();
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-Context* ASock::PopClientContextFromCache()
+bool ASock::StartAcceptThread()
 {
-    Context* context_ptr = nullptr;
-    if (!queue_client_cache_.empty())
-    {
-        context_ptr = queue_client_cache_.front();
-        queue_client_cache_.pop();
-
-        return context_ptr;
-    }
-
-    context_ptr = new (std::nothrow) Context();
-    if (!context_ptr)
-    {
-        err_msg_ = "Context alloc failed !";
-        return nullptr;
-    }
-    return context_ptr;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ASock::PushClientContextToCache(Context* context_ptr)
-{
-    CLIENT_UNORDERMAP_ITER_T it_found;
-    it_found = client_map_.find(context_ptr->socket);
-    if (it_found != client_map_.end())
-    {
-        client_map_.erase(it_found);
-    }
-
-    //reset
-    context_ptr->recv_buffer.ReSet();
-    context_ptr->socket = -1;
-    context_ptr->is_packet_len_calculated = false;
-    context_ptr->is_sent_pending = false;
-    context_ptr->complete_packet_len_ = 0;
-
-    while (!context_ptr->pending_send_deque_.empty())
-    {
-        PENDING_SENT pending_sent = context_ptr->pending_send_deque_.front();
-        delete[] pending_sent.pending_sent_data;
-        context_ptr->pending_send_deque_.pop_front();
-    }
-
-    queue_client_cache_.push(context_ptr);
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-void ASock::ClearClientCache()
-{
-    while (!queue_client_cache_.empty())
-    {
-        Context* context_ptr = queue_client_cache_.front();
-        while (!context_ptr->pending_send_deque_.empty())
-        {
-            PENDING_SENT pending_sent = context_ptr->pending_send_deque_.front();
-            delete[] pending_sent.pending_sent_data;
-            context_ptr->pending_send_deque_.pop_front();
-        }
-        delete context_ptr;
-        queue_client_cache_.pop();
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::AcceptNewClient()
-{
-    while (true)
-    {
-        int client_fd = -1;
-
-        if (sock_usage_ == SOCK_USAGE_IPC_SERVER)
-        {
-            SOCKADDR_UN client_addr;
-            SOCKLEN_T client_addr_size = sizeof(client_addr);
-            client_fd = accept(listen_socket_, (SOCKADDR*)&client_addr, &client_addr_size);
-        }
-        else if (sock_usage_ == SOCK_USAGE_TCP_SERVER)
-        {
-            SOCKADDR_IN client_addr;
-            SOCKLEN_T client_addr_size = sizeof(client_addr);
-            client_fd = accept(listen_socket_, (SOCKADDR*)&client_addr, &client_addr_size);
-        }
-
-        if (client_fd == -1)
-        {
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
-            {
-                //all accept done...
-                break;
-            }
-            else if (errno == ECONNABORTED)
-            {
-                break;
-            }
-            else
-            {
-                err_msg_ = "accept error [" + std::string(strerror(errno)) + "]";
-                is_server_running_ = false;
-                return false;
-            }
-        }
-
-        ++client_cnt_;
-        SetSocketNonBlocking(client_fd);
-
-        Context* client_context_ptr = PopClientContextFromCache();
-        if (client_context_ptr == nullptr)
-        {
-            is_server_running_ = false;
-            return false;
-        }
-
-        if (cumbuffer_defines::OP_RSLT_OK !=
-            client_context_ptr->recv_buffer.Init(max_data_len_))
-        {
-            err_msg_ = "cumBuffer Init error : " +
-                client_context_ptr->recv_buffer.GetErrMsg();
-            is_server_running_ = false;
-            return false;
-        }
-
-        client_context_ptr->socket = client_fd;
-
-        std::pair<CLIENT_UNORDERMAP_ITER_T, bool> client_map_rslt;
-        client_map_rslt = client_map_.insert(std::pair<int, Context*>(client_fd, client_context_ptr));
-        if (!client_map_rslt.second)
-        {
-            err_msg_ = "client_map_ insert error [" +
-                std::to_string(client_fd) + " already exist]";
-            return false;
-        }
-
-        if (cb_on_client_connected_ != nullptr)
-        {
-            cb_on_client_connected_(client_context_ptr);
-        }
-        else
-        {
-            OnClientConnected(client_context_ptr);
-        }
-#ifdef __APPLE__
-        if (!ControlKq(client_context_ptr, EVFILT_READ, EV_ADD))
-#elif __linux__
-        if (!ControlEpoll(client_context_ptr, EPOLLIN | EPOLLRDHUP, EPOLL_CTL_ADD))
-#endif
-        {
-            is_server_running_ = false;
-            return false;
-        }
-    }//while : accept
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ASock::ServerThreadUdpRoutine()
-{
-#ifdef __APPLE__
-    struct timespec ts;
-    ts.tv_sec = 1;
-    ts.tv_nsec = 0;
-#endif
-
-    if (cumbuffer_defines::OP_RSLT_OK != listen_context_ptr_->recv_buffer.Init(max_data_len_))
-    {
-        err_msg_ = "cumBuffer Init error : " +
-            listen_context_ptr_->recv_buffer.GetErrMsg();
-        is_server_running_ = false;
-        return;
-    }
-    //std::cout << "DEBUG : GetTotalFreeSpace: " << "" <<listen_context_ptr_->recv_buffer.GetTotalFreeSpace() <<"\n";
-
-    while (is_need_server_run_)
-    {
-#ifdef __APPLE__
-        int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, max_client_limit_, &ts);
-        if (event_cnt < 0)
-        {
-            err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
-            is_server_running_ = false;
-            return;
-        }
-#elif __linux__
-        int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 1000);
-        if (event_cnt < 0)
-        {
-            err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
-            is_server_running_ = false;
-            return;
-        }
-#endif
-
-        for (int i = 0; i < event_cnt; i++)
-        {
-#ifdef __APPLE__
-            if (EVFILT_READ == kq_events_ptr_[i].filter)
-#elif __linux__
-            if (ep_events_[i].events & EPOLLIN)
-#endif
-            {
-                //# recv #----------
-                if (!RecvfromData(listen_context_ptr_))
-                {
-                    break;
-                }
-            }
-#ifdef __APPLE__
-            else if (EVFILT_WRITE == kq_events_ptr_[i].filter)
-#elif __linux__
-            else if (ep_events_[i].events & EPOLLOUT)
-#endif
-            {
-                //# send #----------
-                if (!SendPendingData(listen_context_ptr_))
-                {
-                    return; //error!
-                }
-            }
-        }
-    }//while
-
-    is_server_running_ = false;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ASock::ServerThreadRoutine()
-{
-#ifdef __APPLE__
-    struct timespec ts;
-    ts.tv_sec = 1;
-    ts.tv_nsec = 0;
-#endif
-
-    while (is_need_server_run_)
-    {
-#ifdef __APPLE__
-        int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, max_client_limit_, &ts);
-        if (event_cnt < 0)
-        {
-            err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
-            is_server_running_ = false;
-            return;
-        }
-#elif __linux__
-        int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 1000);
-        if (event_cnt < 0)
-        {
-            err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
-            is_server_running_ = false;
-            return;
-        }
-#endif
-
-        for (int i = 0; i < event_cnt; i++)
-        {
-#ifdef __APPLE__
-            if (kq_events_ptr_[i].ident == listen_socket_)
-#elif __linux__
-            if (((Context*)ep_events_[i].data.ptr)->socket == listen_socket_)
-#endif
-            {
-                //# accept #----------
-                if (!AcceptNewClient())
-                {
-                    std::cerr << "accept error:" << err_msg_ << "\n";
-                    return;
-                }
-            }
-            else
-            {
-#ifdef __APPLE__
-                Context* context_ptr = (Context*)kq_events_ptr_[i].udata;
-#elif __linux__
-                Context* context_ptr = (Context*)ep_events_[i].data.ptr;
-#endif
-
-#ifdef __APPLE__
-                if (kq_events_ptr_[i].flags & EV_EOF)
-#elif __linux__
-                if (ep_events_[i].events & EPOLLRDHUP || ep_events_[i].events & EPOLLERR)
-#endif
-                {
-                    //# close #----------
-                    TerminateClient(context_ptr);
-                }
-#ifdef __APPLE__
-                else if (EVFILT_READ == kq_events_ptr_[i].filter)
-#elif __linux__
-                else if (ep_events_[i].events & EPOLLIN)
-#endif
-                {
-                    //# recv #----------
-                    if (!RecvData(context_ptr))
-                    {
-                        TerminateClient(context_ptr);
-                    }
-                }
-#ifdef __APPLE__
-                else if (EVFILT_WRITE == kq_events_ptr_[i].filter)
-#elif __linux__
-                else if (ep_events_[i].events & EPOLLOUT)
-#endif
-                {
-                    //# send #----------
-                    if (!SendPendingData(context_ptr))
-                    {
-                        return; //error!
-                    }
-                }
-            }
-        }
-    } //while
-    is_server_running_ = false;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SendPendingData(Context* context_ptr)
-{
-    //std::cout <<"["<< __func__ <<"-"<<__LINE__  <<"\n"; //debug 
-
-    std::lock_guard<std::mutex> guard(context_ptr->send_lock);
-    while (!context_ptr->pending_send_deque_.empty())
-    {
-        PENDING_SENT pending_sent = context_ptr->pending_send_deque_.front();
-
-        int sent_len = 0;
-        if (sock_usage_ == SOCK_USAGE_UDP_SERVER)
-        {
-            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
-            sent_len = sendto(context_ptr->socket,
-                pending_sent.pending_sent_data,
-                pending_sent.pending_sent_len,
-                0,
-                (struct sockaddr*)& pending_sent.udp_remote_addr,
-                sizeof(pending_sent.udp_remote_addr));
-        }
-        else if (sock_usage_ == SOCK_USAGE_UDP_CLIENT)
-        {
-            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
-            sent_len = sendto(context_ptr->socket,
-                pending_sent.pending_sent_data,
-                pending_sent.pending_sent_len,
-                0,
-                0, //XXX client : already set! (via connect)  
-                sizeof(pending_sent.udp_remote_addr));
-        }
-        else
-        {
-            sent_len = send(context_ptr->socket,
-                pending_sent.pending_sent_data,
-                pending_sent.pending_sent_len,
-                0);
-        }
-
-        if (sent_len > 0)
-        {
-            if (sent_len == pending_sent.pending_sent_len)
-            {
-                delete[] pending_sent.pending_sent_data;
-                context_ptr->pending_send_deque_.pop_front();
-
-                if (context_ptr->pending_send_deque_.empty())
-                {
-                    //sent all data
-                    context_ptr->is_sent_pending = false;
-#ifdef __APPLE__
-                    if (!ControlKq(context_ptr, EVFILT_WRITE, EV_DELETE) ||
-                        !ControlKq(context_ptr, EVFILT_READ, EV_ADD))
-#elif __linux__
-                    if (!ControlEpoll(context_ptr, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD))
-#endif
-                    {
-                        //error!!!
-                        if (sock_usage_ == SOCK_USAGE_TCP_CLIENT ||
-                            sock_usage_ == SOCK_USAGE_IPC_CLIENT)
-                        {
-                            close(context_ptr->socket);
-                            InvokeServerDisconnectedHandler();
-                            is_client_thread_running_ = false;
-                        }
-                        else if (sock_usage_ == SOCK_USAGE_TCP_SERVER ||
-                            sock_usage_ == SOCK_USAGE_IPC_SERVER)
-                        {
-                            is_server_running_ = false;
-                        }
-                        return false;
-                    }
-                    break;
-                }
-            }
-            else
-            {
-                //TCP : partial sent ---> 남은 부분을 다시 제일 처음으로
-                PENDING_SENT partial_pending_sent;
-                int alloc_len = pending_sent.pending_sent_len - sent_len;
-                partial_pending_sent.pending_sent_data = new char[alloc_len];
-                partial_pending_sent.pending_sent_len = alloc_len;
-                memcpy(partial_pending_sent.pending_sent_data,
-                    pending_sent.pending_sent_data + sent_len,
-                    alloc_len);
-
-                //remove first.
-                delete[] pending_sent.pending_sent_data;
-                context_ptr->pending_send_deque_.pop_front();
-
-                //push_front
-                context_ptr->pending_send_deque_.push_front(partial_pending_sent);
-
-                break; //next time
-            }
-        }
-        else if (sent_len < 0)
-        {
-            if (errno == EWOULDBLOCK || errno == EAGAIN)
-            {
-                break; //next time
-            }
-            else if (errno != EINTR)
-            {
-                err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
-                if (sock_usage_ == SOCK_USAGE_TCP_CLIENT ||
-                    sock_usage_ == SOCK_USAGE_IPC_CLIENT)
-                {
-                    //client error!!!
-                    close(context_ptr->socket);
-                    InvokeServerDisconnectedHandler();
-                    is_client_thread_running_ = false;
-                    return false;
-                }
-                else if (sock_usage_ == SOCK_USAGE_TCP_SERVER ||
-                    sock_usage_ == SOCK_USAGE_IPC_SERVER)
-                {
-                    TerminateClient(context_ptr);
-                }
-                break;
-            }
-        }
-    } //while
-
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void  ASock::TerminateClient(Context* context_ptr)
-{
-    client_cnt_--;
-#ifdef __APPLE__
-    ControlKq(context_ptr, EVFILT_READ, EV_DELETE);
-#elif __linux__
-    ControlEpoll(context_ptr, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL); //just in case
-#endif
-
-    close(context_ptr->socket);
-    if (cb_on_client_connected_ != nullptr)
-    {
-        cb_on_client_disconnected_(context_ptr);
-    }
-    else
-    {
-        OnClientDisconnected(context_ptr);
-    }
-
-    PushClientContextToCache(context_ptr);
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-// CLIENT
-///////////////////////////////////////////////////////////////////////////////
-bool  ASock::InitTcpClient(const char* server_ip,
-    int         server_port,
-    int         connect_timeout_secs,
-    int         max_data_len /*DEFAULT_PACKET_SIZE*/)
-{
-    sock_usage_ = SOCK_USAGE_TCP_CLIENT;
-    connect_timeout_secs_ = connect_timeout_secs;
-
-    if (!SetBufferCapacity(max_data_len))
-    {
-        return false;
-    }
-
-    context_.socket = socket(AF_INET, SOCK_STREAM, 0);
-    memset((void *)&tcp_server_addr_, 0x00, sizeof(tcp_server_addr_));
-    tcp_server_addr_.sin_family = AF_INET;
-    tcp_server_addr_.sin_addr.s_addr = inet_addr(server_ip);
-    tcp_server_addr_.sin_port = htons(server_port);
-
-    return ConnectToServer();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool  ASock::InitUdpClient(const char* server_ip,
-    int         server_port,
-    int         max_data_len /*DEFAULT_PACKET_SIZE*/)
-{
-    sock_usage_ = SOCK_USAGE_UDP_CLIENT;
-
-    if (!SetBufferCapacity(max_data_len))
-    {
-        return false;
-    }
-
-    context_.socket = socket(AF_INET, SOCK_DGRAM, 0);
-    memset((void *)&udp_server_addr_, 0x00, sizeof(udp_server_addr_));
-    udp_server_addr_.sin_family = AF_INET;
-    udp_server_addr_.sin_addr.s_addr = inet_addr(server_ip);
-    udp_server_addr_.sin_port = htons(server_port);
-
-    return ConnectToServer();
-}
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::init_ipc_client(const char* sock_path,
-    int         connect_timeout_secs,
-    int         max_data_len)
-{
-    sock_usage_ = SOCK_USAGE_IPC_CLIENT;
-    connect_timeout_secs_ = connect_timeout_secs;
-
-    if (!SetBufferCapacity(max_data_len))
-    {
-        return false;
-    }
-    server_ipc_socket_path_ = sock_path;
-
-    context_.socket = socket(AF_UNIX, SOCK_STREAM, 0);
-    memset((void *)&ipc_conn_addr_, 0x00, sizeof(ipc_conn_addr_));
-    ipc_conn_addr_.sun_family = AF_UNIX;
-    snprintf(ipc_conn_addr_.sun_path, sizeof(ipc_conn_addr_.sun_path), "%s", sock_path);
-
-    return ConnectToServer();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::ConnectToServer()
-{
-    if (context_.socket < 0)
-    {
-        err_msg_ = "error : server socket is invalid";
-        return false;
-    }
-
-    if (!SetSocketNonBlocking(context_.socket))
-    {
-        close(context_.socket);
-        return  false;
-    }
-
-    if (!is_buffer_init_)
-    {
-        if (cumbuffer_defines::OP_RSLT_OK != context_.recv_buffer.Init(max_data_len_))
-        {
-            err_msg_ = "cumBuffer Init error :" + context_.recv_buffer.GetErrMsg();
-            close(context_.socket);
-            return false;
-        }
-        is_buffer_init_ = true;
-    }
-    else
-    {
-        //in case of reconnect
-        context_.recv_buffer.ReSet();
-    }
-
-    struct timeval timeoutVal;
-    timeoutVal.tv_sec = connect_timeout_secs_;
-    timeoutVal.tv_usec = 0;
-    int result = -1;
-
-    //-------------------------------------------------
-    if (sock_usage_ == SOCK_USAGE_IPC_CLIENT)
-    {
-        result = connect(context_.socket, (SOCKADDR*)&ipc_conn_addr_, (SOCKLEN_T)sizeof(SOCKADDR_UN));
-    }
-    else if (sock_usage_ == SOCK_USAGE_TCP_CLIENT)
-    {
-        result = connect(context_.socket, (SOCKADDR*)&tcp_server_addr_, (SOCKLEN_T)sizeof(SOCKADDR_IN));
-    }
-    else if (sock_usage_ == SOCK_USAGE_UDP_CLIENT)
-    {
-        if (!SetSockoptSndRcvBufUdp(context_.socket))
-        {
-            close(context_.socket);
-            return false;
-        }
-        result = connect(context_.socket, (SOCKADDR*)&udp_server_addr_, (SOCKLEN_T)sizeof(SOCKADDR_IN));
-    }
-    else
-    {
-        err_msg_ = "invalid socket usage";
-        close(context_.socket);
-        return false;
-    }
-    //-------------------------------------------------
-
-    if (result < 0)
-    {
-        if (errno != EINPROGRESS)
-        {
-            err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
-            close(context_.socket);
-            return false;
-        }
-    }
-
-    if (result == 0)
-    {
-        is_connected_ = true;
-        return RunClientThread();
-    }
-
-    fd_set   rset, wset;
-    FD_ZERO(&rset);
-    FD_SET(context_.socket, &rset);
-    wset = rset;
-
-    result = select(context_.socket + 1, &rset, &wset, NULL, &timeoutVal);
-    if (result == 0)
-    {
-        err_msg_ = "connect timeout";
-        close(context_.socket);
-        return false;
-    }
-    else if (result < 0)
-    {
-        err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
-        close(context_.socket);
-        return false;
-    }
-
-    if (FD_ISSET(context_.socket, &rset) || FD_ISSET(context_.socket, &wset))
-    {
-        int  socketerror = 0;
-        SOCKLEN_T  len = sizeof(socketerror);
-        if (getsockopt(context_.socket, SOL_SOCKET, SO_ERROR, &socketerror, &len) < 0)
-        {
-            err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
-            close(context_.socket);
-            return false;
-        }
-
-        if (socketerror)
-        {
-            err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
-            close(context_.socket);
-            return false;
-        }
-    }
-    else
-    {
-        err_msg_ = "connect error : fd not set ";
-        std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " << err_msg_ << "\n";
-        close(context_.socket);
-        return false;
-    }
-
-    is_connected_ = true;
-
-    return RunClientThread();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::RunClientThread()
-{
-    if (!is_client_thread_running_)
-    {
-#ifdef __APPLE__
-        kq_events_ptr_ = new struct kevent;
-        memset(kq_events_ptr_, 0x00, sizeof(struct kevent));
-        kq_fd_ = kqueue();
-        if (kq_fd_ == -1)
-        {
-            err_msg_ = "kqueue error [" + std::string(strerror(errno)) + "]";
-            close(context_.socket);
-            return false;
-        }
-#elif __linux__
-        ep_events_ = new struct epoll_event;
-        memset(ep_events_, 0x00, sizeof(struct epoll_event));
-        ep_fd_ = epoll_create1(0);
-        if (ep_fd_ == -1)
-        {
-            err_msg_ = "epoll create error [" + std::string(strerror(errno)) + "]";
-            close(context_.socket);
-            return false;
-        }
-#endif
-
-#ifdef __APPLE__
-        if (!ControlKq(&context_, EVFILT_READ, EV_ADD))
-        {
-            close(context_.socket);
-            return false;
-        }
-#elif __linux__
-        if (!ControlEpoll(&context_, EPOLLIN | EPOLLERR, EPOLL_CTL_ADD))
-        {
-            close(context_.socket);
-            return false;
-        }
-#endif
-        std::thread client_thread(&ASock::ClientThreadRoutine, this);
-        client_thread.detach();
-    }
-
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ASock::ClientThreadRoutine()
-{
-    is_client_thread_running_ = true;
-
-    while (is_connected_)
-    {
-#ifdef __APPLE__
-        struct timespec ts;
-        ts.tv_sec = 1;
-        ts.tv_nsec = 0;
-        int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, 1, &ts);
-#elif __linux__
-        int event_cnt = epoll_wait(ep_fd_, ep_events_, 1, 1000);
-#endif
-        if (event_cnt < 0)
-        {
-#ifdef __APPLE__
-            err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
-#elif __linux__
-            err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
-#endif
-            is_client_thread_running_ = false;
-            return;
-        }
-#ifdef __APPLE__
-        if (kq_events_ptr_->flags & EV_EOF)
-#elif __linux__
-        if (ep_events_->events & EPOLLRDHUP || ep_events_->events & EPOLLERR)
-#endif
-        {
-            //############## close ###########################
-            close(context_.socket);
-            InvokeServerDisconnectedHandler();
-            break;
-        }
-#ifdef __APPLE__
-        else if (EVFILT_READ == kq_events_ptr_->filter)
-#elif __linux__
-        else if (ep_events_->events & EPOLLIN)
-#endif
-        {
-            //############## recv ############################
-            if (sock_usage_ == SOCK_USAGE_UDP_CLIENT)
-            {
-                if (!RecvfromData(&context_))
-                {
-                    close(context_.socket);
-                    InvokeServerDisconnectedHandler();
-                    break;
-                }
-            }
-            else
-            {
-                if (!RecvData(&context_))
-                {
-                    close(context_.socket);
-                    InvokeServerDisconnectedHandler();
-                    break;
-                }
-            }
-        }
-#ifdef __APPLE__
-        else if (EVFILT_WRITE == kq_events_ptr_->filter)
-#elif __linux__
-        else if (ep_events_->events & EPOLLOUT)
-#endif
-        {
-            //############## send ############################
-            if (!SendPendingData(&context_))
-            {
-                return; //error!
-            }
-        }//send
-    } //while
-
-    is_client_thread_running_ = false;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ASock::InvokeServerDisconnectedHandler()
-{
-    if (cb_on_disconnected_from_server_ != nullptr)
-    {
-        cb_on_disconnected_from_server_();
-    }
-    else
-    {
-        OnDisconnectedFromServer();
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SendToServer(const char* data, int len)
-{
-    if (!is_connected_)
-    {
-        err_msg_ = "not connected";
-        return false;
-    }
-
-    return SendData(&context_, data, len);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ASock::Disconnect()
-{
-    if (context_.socket > 0)
-    {
-        close(context_.socket);
-    }
-    context_.socket = -1;
-}
-
-
-
-
-
-
-
-///////////////////////////////////////////////////////////////////////////////
-void ASock::BuildErrMsgString(int nErrNo)
-{
-    LPVOID lpMsgBuf;
-    FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-        NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPTSTR)&lpMsgBuf, 0, NULL);
-
-    err_msg_ += "(";
-	err_msg_ += std::to_string(nErrNo);
-    err_msg_ += ") ";
-	err_msg_ += std::string((LPCTSTR)lpMsgBuf);
-    LocalFree(lpMsgBuf);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::InitWinsock()
-{
-	WSADATA      wsaData;
-	int nResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-
-	if (nResult != 0) 
-	{
+    DBG_LOG("PER_IO_DATA size ==> " << sizeof(PER_IO_DATA));
+	listen_socket_ = WSASocketW(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+	if (listen_socket_ == INVALID_SOCKET) {
 		BuildErrMsgString(WSAGetLastError());
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
+		ELOG( err_msg_ ) ;
+		return false;
+	}
+	if(!SetSocketNonBlocking (listen_socket_)) {
+		return  false;
+	}
+	int opt_zero = 0;
+	if(setsockopt(listen_socket_, SOL_SOCKET, SO_SNDBUF, (char*)&opt_zero, 
+		sizeof(opt_zero)) == SOCKET_ERROR) {
+		BuildErrMsgString(WSAGetLastError());
+		ELOG( err_msg_ ) ;
+		return false;
+	}
+	int opt_on = 1;
+	if (setsockopt(listen_socket_, SOL_SOCKET, SO_REUSEADDR, (char*)&opt_on,
+		sizeof(opt_on)) == SOCKET_ERROR) {
+		BuildErrMsgString(WSAGetLastError());
+		ELOG( err_msg_ ) ;
+		return false;
+	}
+	if (setsockopt(listen_socket_, SOL_SOCKET, SO_KEEPALIVE, (char*)&opt_on,
+		sizeof(opt_on)) == SOCKET_ERROR) {
+		BuildErrMsgString(WSAGetLastError());
+		ELOG( err_msg_ ) ;
+		return false;
+	}
+	memset((void*)&tcp_server_addr_, 0x00, sizeof(tcp_server_addr_));
+	tcp_server_addr_.sin_family = AF_INET;
+	inet_pton(AF_INET, server_ip_.c_str(), &(tcp_server_addr_.sin_addr));
+	tcp_server_addr_.sin_port = htons(server_port_);
+	int result = bind(listen_socket_, (SOCKADDR*)&tcp_server_addr_, 
+                      sizeof(tcp_server_addr_));
+	if (result < 0) {
+		BuildErrMsgString(WSAGetLastError());
+		ELOG( err_msg_ ) ;
+		return false;
+	}
+	result = listen(listen_socket_, SOMAXCONN);
+	if (result < 0) {
+		BuildErrMsgString(WSAGetLastError());
+		ELOG( err_msg_ ) ;
+		return false;
+	}
+	//XXX start server thread
+	std::thread server_thread(&ASock::AcceptThreadRoutine, this);
+	server_thread.detach();
+	//is_need_server_run_ = true;
+    is_server_running_ = true;
+	return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ASock:: AcceptThreadRoutine()
+{
+	SOCKLEN_T socklen=sizeof(SOCKADDR_IN);
+	SOCKADDR_IN client_addr;
+    while(is_need_server_run_) {
+        SOCKET_T client_sock = WSAAccept(listen_socket_, 
+                                  (SOCKADDR*)&client_addr, &socklen, 0, 0);
+		if (client_sock == INVALID_SOCKET) {
+            int last_err = WSAGetLastError();
+            if (WSAEWOULDBLOCK == last_err) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+			BuildErrMsgString(last_err);
+			ELOG( err_msg_ ) ;
+			exit(1);
+		}
+		DBG_LOG("**** accept returns...new client : sock="<<client_sock );
+		client_cnt_++;
+		DBG_LOG("* client total = "<< client_cnt_ );
+		SetSocketNonBlocking(client_sock);
+		Context* ctx_ptr = PopClientContextFromCache();
+		if (ctx_ptr == nullptr) {
+			ELOG(err_msg_);
+			exit(1);
+		}
+		ctx_ptr->is_connected = true;
+		ctx_ptr->socket = client_sock; 
+		ctx_ptr->sock_id_copy = client_sock; //for debugging
+		DBG_LOG("sock="<< client_sock << ", cumbuffer debug=");
+#ifdef DEBUG_PRINT
+		ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
+#endif
+		if (cb_on_client_connected_ != nullptr) {
+			cb_on_client_connected_(ctx_ptr);
+		} else {
+			OnClientConnected(ctx_ptr);
+		}
+		handle_completion_port_ = CreateIoCompletionPort((HANDLE)client_sock, 
+                        handle_completion_port_, (ULONG_PTR)ctx_ptr, 0); 
+		if (NULL == handle_completion_port_) {
+			BuildErrMsgString(WSAGetLastError());
+			ELOG(err_msg_ );
+			ELOG("alloc failed! delete ctx_ptr");
+			delete ctx_ptr;
+			exit(1); 
+		}
+		//XXX ctx_ptr --> per io data !!!
+		{
+			std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); 
+			if (!IssueRecv(99999, ctx_ptr)) { //XXX 99999 accept 표시
+				int last_err = WSAGetLastError();
+				DBG_ELOG("sock="<<ctx_ptr->socket<<",ref_cnt="<<ctx_ptr->ref_cnt
+					<<", error! : " << WSAGetLastError());
+				shutdown(ctx_ptr->socket, SD_BOTH);
+				if (0 != closesocket(ctx_ptr->socket)) {
+					DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
+                            << WSAGetLastError());
+				}
+				LOG("delete ctx_ptr , sock="<<ctx_ptr->socket);
+				ctx_ptr->socket = INVALID_SOCKET; //XXX
+				HandleError(ctx_ptr, last_err);
+				continue; 
+			}
+		}
+	} //while
+	DBG_LOG("exiting");
+	is_need_server_run_ = false;
+    is_server_running_ = false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+//io 작업 결과에 대해 처리한다. --> multi thread 에 의해 수행된다 !!!
+void ASock:: WorkerThreadRoutine(size_t worker_index) {
+	DWORD		bytes_transferred = 0;
+	Context*	ctx_ptr = NULL ;
+	LPWSAOVERLAPPED lp_overlapped = NULL;
+    PER_IO_DATA*    per_io_ctx = NULL;
+	while ( true ) {
+		bytes_transferred = 0;
+		ctx_ptr = NULL ;
+		lp_overlapped = NULL;
+		per_io_ctx = NULL;
+		if (FALSE == GetQueuedCompletionStatus(	handle_completion_port_, 
+							& bytes_transferred, 
+							(PULONG_PTR) & ctx_ptr, 
+							(LPOVERLAPPED*) &lp_overlapped,
+							INFINITE )) {
+            int err = WSAGetLastError();
+			if (err == ERROR_ABANDONED_WAIT_0 || err== ERROR_INVALID_HANDLE) {
+				//set by StopServer()
+				//user quit
+				DBG_LOG("ERROR_ABANDONED_WAIT_0");
+				continue;
+			}
+			BuildErrMsgString(err);
+			std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); //XXX need
+			ctx_ptr->ref_cnt--;
+			if (lp_overlapped != NULL) {
+				//===================== lock
+				DBG_ELOG("worker=" << worker_index
+					<< ", sock=" << ctx_ptr->sock_id_copy
+					<< ", GetQueuedCompletionStatus failed.."
+					<< ", bytes = " << bytes_transferred << ", err=" << err
+					<< ", ref_cnt =" << ctx_ptr->ref_cnt);
+				per_io_ctx = (PER_IO_DATA*)lp_overlapped;
+				if (per_io_ctx->io_type == EnumIOType::IO_SEND) {
+					//XXX per_io_ctx ==> 동적 할당된 메모리임!!!  XXX
+					delete per_io_ctx;
+					per_io_ctx = NULL;
+				}
+				if (bytes_transferred == 0) {
+					//graceful disconnect.
+					DBG_LOG("sock="<<ctx_ptr->sock_id_copy
+                        <<", 0 recved --> gracefully disconnected : " 
+						<< ctx_ptr->sock_id_copy);
+					TerminateClient(ctx_ptr);
+					continue;
+				} else {
+					if (err == ERROR_NETNAME_DELETED) { // --> 64
+						//client hard close --> not an error
+						DBG_LOG("worker=" << worker_index << ",sock=" 
+                            << ctx_ptr->sock_id_copy
+							<< " : client hard close. ERROR_NETNAME_DELETED ");
+						TerminateClient(ctx_ptr, false); //force close
+						continue;
+					} else {
+						//error 
+						DBG_ELOG(" GetQueuedCompletionStatus failed  :" << err_msg_);
+						TerminateClient(ctx_ptr, false); //force close
+						continue;
+					}
+				}
+			} else {
+				DBG_ELOG("GetQueuedCompletionStatus failed..err="<< err);
+				TerminateClient(ctx_ptr, false); //force close
+				continue;
+			}
+		}
+		//-----------------------------------------
+		per_io_ctx = (PER_IO_DATA*)lp_overlapped; 
+		//-----------------------------------------
+		switch (per_io_ctx->io_type) {
+		//case EnumIOType::IO_ACCEPT:
+        //    break;
+		case EnumIOType::IO_RECV:
+		{
+			ctx_ptr->recv_issued_cnt--;
+			ctx_ptr->ref_cnt--;
+			DBG_LOG("worker=" << worker_index << ",IO_RECV: sock=" 
+                << ctx_ptr->sock_id_copy
+				<< ", ref_cnt =" << ctx_ptr->ref_cnt
+				<< ", recv issued cnt =" << ctx_ptr->recv_issued_cnt
+				<< ", recved bytes =" << bytes_transferred);
+			//# recv #---------- 
+			if (bytes_transferred == 0) {
+				//graceful disconnect.
+				DBG_LOG("0 recved --> gracefully disconnected : " 
+                        << ctx_ptr->sock_id_copy);
+				std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); 
+				TerminateClient(ctx_ptr);
+				break;
+			}
+			if (!RecvData(worker_index, ctx_ptr, bytes_transferred)) {
+				int last_err = WSAGetLastError();
+				DBG_ELOG(err_msg_);
+				std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); 
+				shutdown(ctx_ptr->socket, SD_BOTH);
+				if (0 != closesocket(ctx_ptr->socket)) {
+					DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
+                            << last_err);
+				}
+				ctx_ptr->socket = INVALID_SOCKET; 
+				HandleError(ctx_ptr, last_err);
+				break;
+			}
+			std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); //XXX
+			if (!IssueRecv(worker_index, ctx_ptr)) {
+				int last_err = WSAGetLastError();
+				shutdown(ctx_ptr->socket, SD_BOTH);
+				if (0 != closesocket(ctx_ptr->socket)) {
+					DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
+                            << last_err);
+				}
+				ctx_ptr->socket = INVALID_SOCKET; 
+				HandleError(ctx_ptr, last_err);
+				break;
+			}
+		}
+		break;
+		case EnumIOType::IO_SEND:
+		{
+			//===================== lock
+			std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock);  //need 
+			if (ctx_ptr->socket == INVALID_SOCKET) {
+				delete per_io_ctx;
+				DBG_LOG("delete.sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " 
+                        << ctx_ptr->ref_cnt);
+				break;
+			}
+			ctx_ptr->ref_cnt--;
+			ctx_ptr->posted_send_cnt--;
+			DBG_LOG("worker=" << worker_index << ",IO_SEND: sock=" << ctx_ptr->socket 
+				<< ", ref_cnt =" << ctx_ptr->ref_cnt);
+			//XXX per_io_ctx ==> dynamically allocated memory 
+			per_io_ctx->sent_len += bytes_transferred;
+			DBG_LOG("IO_SEND(sock=" << ctx_ptr->socket << ") : sent this time ="
+				<< bytes_transferred << ",total sent =" << per_io_ctx->sent_len
+				<< ",ctx_ptr->posted_send_cnt =" << ctx_ptr->posted_send_cnt);
+			if (per_io_ctx->sent_len < per_io_ctx->total_send_len) {
+				if (ctx_ptr->posted_send_cnt != 0) {
+					//Abandon the rest of the pending transfer. 
+					//This is because the order of sending is important.
+					{//lock scope
+						std::lock_guard<std::mutex> lock(err_msg_lock_);
+						err_msg_ = "partial send. and pending another send exists, "
+							"abandon all. terminate client:";
+						err_msg_ += std::to_string(ctx_ptr->socket);
+					}
+					delete per_io_ctx;
+					DBG_ELOG(err_msg_);
+					shutdown(ctx_ptr->socket, SD_BOTH);
+					if (0 != closesocket(ctx_ptr->socket)) {
+						DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
+                                << WSAGetLastError());
+					}
+					ctx_ptr->socket = INVALID_SOCKET; //XXX
+					continue;
+				}
+				//-----------------------------------
+				//now --> ctx_ptr->posted_send_cnt == 0 
+				//남은 부분 전송
+				DBG_LOG("socket (" << ctx_ptr->socket
+					<< ") send partially completed, total="
+					<< per_io_ctx->total_send_len
+					<< ",partial= " << per_io_ctx->sent_len << ", send again");
+				WSABUF buff_send;
+				DWORD dw_flags = 0;
+				DWORD dw_send_bytes = 0;
+				buff_send.buf = per_io_ctx->send_buffer + per_io_ctx->sent_len;
+				buff_send.len = (ULONG)(per_io_ctx->total_send_len -
+					per_io_ctx->sent_len);
+				per_io_ctx->io_type = EnumIOType::IO_SEND;
+				//----------------------------------------
+				int result = WSASend(ctx_ptr->socket, &buff_send, 1,
+					&dw_send_bytes, dw_flags, &(per_io_ctx->overlapped),
+					NULL);
+				if (result == SOCKET_ERROR &&
+					(ERROR_IO_PENDING != WSAGetLastError())) {
+					delete per_io_ctx;
+					int last_err = WSAGetLastError();
+					BuildErrMsgString(last_err);
+					ELOG("WSASend() failed: " << err_msg_);
+					shutdown(ctx_ptr->socket, SD_BOTH);
+					if (0 != closesocket(ctx_ptr->socket)) {
+						DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
+                                << last_err);
+					}
+					ctx_ptr->socket = INVALID_SOCKET; 
+					break;
+				}
+				ctx_ptr->ref_cnt++;
+				LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
+				DBG_LOG("sock=" << ctx_ptr->socket << ") ref_cnt =" << ctx_ptr->ref_cnt);
+			} else {
+				DBG_LOG("socket (" << ctx_ptr->socket <<
+					") send all completed (" << per_io_ctx->sent_len
+					<< ") ==> delete per io ctx!!");
+				delete per_io_ctx;
+				per_io_ctx = NULL;
+			}
+		}
+		break;
+		}//switch
+	} //while
+    DBG_LOG( "exiting "); 
+    is_server_running_ = false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ASock::HandleError(Context* ctx_ptr, int err) {
+	if (err == WSAECONNRESET) {
+		LOG("invoke PuchClientContextToCache.. sock="<<ctx_ptr->sock_id_copy);
+		DBG_ELOG("invoke PuchClientContextToCache.. sock="<<ctx_ptr->sock_id_copy);
+		PushClientContextToCache(ctx_ptr);
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void  ASock::TerminateClient( Context* ctx_ptr, bool is_graceful)
+{
+	DBG_LOG(" sock=" << ctx_ptr->sock_id_copy <<", ref_cnt="
+		<<ctx_ptr->ref_cnt << ", connection closing ,graceful=" 
+		<< (is_graceful ? "TRUE" : "FALSE"));
+    ctx_ptr->is_connected = false;
+    if (cb_on_client_connected_ != nullptr) {
+        cb_on_client_disconnected_(ctx_ptr);
+    } else {
+        OnClientDisconnected(ctx_ptr);
+    }
+	if(ctx_ptr->socket == INVALID_SOCKET){
+		DBG_LOG(" sock=" << ctx_ptr->sock_id_copy << ", already closed");
+		if (ctx_ptr->ref_cnt <= 0 ) { //XXX
+			PushClientContextToCache(ctx_ptr);
+		}
+	} else {
+		if (!is_graceful) {
+			// force the subsequent closesocket to be abortative.
+			LINGER  linger_struct;
+			linger_struct.l_onoff = 1;
+			linger_struct.l_linger = 0;
+			setsockopt(ctx_ptr->socket, SOL_SOCKET, SO_LINGER,
+				(char*)&linger_struct, sizeof(linger_struct));
+		}
+		shutdown(ctx_ptr->socket, SD_BOTH);
+		if (0 != closesocket(ctx_ptr->socket)) {
+			DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " 
+				<< WSAGetLastError());
+		}
+		ctx_ptr->socket = INVALID_SOCKET; 
+		client_cnt_--;
+		DBG_LOG("* client total = " << client_cnt_);
+		DBG_LOG("ref_cnt = " << ctx_ptr->ref_cnt );
+		if (ctx_ptr->ref_cnt <= 0 ) { //XXX
+			PushClientContextToCache(ctx_ptr);
+		} 
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::InitWinsock() {
+	WSADATA wsa_data;
+	int nResult = WSAStartup(MAKEWORD(2, 2), & wsa_data);
+	if (nResult != 0) {
+		BuildErrMsgString(WSAGetLastError());
+		ELOG( err_msg_ ) ;
 		WSACleanup();
 		return false;
 	}
-
-	if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2) 
-	{
+	if (LOBYTE(wsa_data.wVersion) != 2 || HIBYTE(wsa_data.wVersion) != 2) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "Could not find a usable version of Winsock.dll";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
+		DBG_ELOG(err_msg_);
 		WSACleanup();
 		return false;
 	}
 	return true;
 }
-//TODO linux
-//if (strerror_r(err_code, sys_msg, sizeof sys_msg) != 0)
+///////////////////////////////////////////////////////////////////////////////
+void ASock::StopServer()
+{
+    is_need_server_run_ = false; //stop accept thread
+	//iocp 종료  
+	CloseHandle(handle_completion_port_);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
-bool   ASock::SetNonBlocking(int nSockFd)
+Context* ASock::PopClientContextFromCache() 
 {
+    Context* ctx_ptr = nullptr;
+    { //lock scope
+        std::lock_guard<std::mutex> lock(cache_lock_);
+        if (!queue_client_cache_.empty()) {
+            ctx_ptr = queue_client_cache_.front();
+            queue_client_cache_.pop(); 
+		    DBG_LOG("queue_client_cache not empty! -> "
+				<<"queue client cache size = " << queue_client_cache_.size());
+			ReSetCtxPtr(ctx_ptr);
+            return ctx_ptr;
+        }
+    }
+    //alloc new !!!
+    DBG_LOG("queue_client_cache empty! alloc new !");
+    ctx_ptr = new (std::nothrow) Context();
+    if (nullptr==ctx_ptr) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
+        err_msg_ = "Context alloc failed !";
+        return nullptr;
+    }
+	ctx_ptr->per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
+	if (nullptr == ctx_ptr->per_recv_io_ctx) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
+		err_msg_ = "per_io_ctx alloc failed !";
+		DBG_ELOG(err_msg_);
+		delete ctx_ptr;
+        return nullptr;
+	}
+	if (cumbuffer::OP_RSLT_OK != 
+                ctx_ptr->per_recv_io_ctx->cum_buffer.Init(max_data_len_) ) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
+		err_msg_ = std::string("cumBuffer(recv) Init error : ") +
+			std::string(ctx_ptr->per_recv_io_ctx->cum_buffer.GetErrMsg());
+		DBG_ELOG(err_msg_);
+		delete ctx_ptr->per_recv_io_ctx;
+		delete ctx_ptr;
+        return nullptr;
+	}
+	ReSetCtxPtr(ctx_ptr);
+    return ctx_ptr;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ASock::PushClientContextToCache(Context* ctx_ptr)
+{
+    std::lock_guard<std::mutex> lock(cache_lock_);
+	{
+		//reset all
+		DBG_LOG("sock=" << ctx_ptr->socket << ",sock=" << ctx_ptr->sock_id_copy);
+		ReSetCtxPtr(ctx_ptr);
+	}
+    queue_client_cache_.push(ctx_ptr);
+	//std::cout << "queue client cache size = " << queue_client_cache_.size() <<"\n";
+	DBG_LOG("queue client cache size = " << queue_client_cache_.size());
+}
+///////////////////////////////////////////////////////////////////////////////
+void ASock::ReSetCtxPtr(Context* ctx_ptr)
+{
+	DBG_LOG("sock=" << ctx_ptr->socket << ",sock=" << ctx_ptr->sock_id_copy);
+	SecureZeroMemory((PVOID)&ctx_ptr->per_recv_io_ctx->overlapped, sizeof(WSAOVERLAPPED));
+	ctx_ptr->per_recv_io_ctx->cum_buffer.ReSet();
+	ctx_ptr->socket = INVALID_SOCKET;
+	ctx_ptr->sock_id_copy = -1;
+	ctx_ptr->posted_send_cnt = 0;
+	ctx_ptr->recv_issued_cnt = 0;
+	ctx_ptr->ref_cnt = 0;
+	ctx_ptr->per_recv_io_ctx->wsabuf.buf = ctx_ptr->per_recv_io_ctx->send_buffer;
+	ctx_ptr->per_recv_io_ctx->wsabuf.len = sizeof(ctx_ptr->per_recv_io_ctx->send_buffer);
+	ctx_ptr->per_recv_io_ctx->io_type = EnumIOType::IO_UNKNOWN;
+	memset(ctx_ptr->per_recv_io_ctx->send_buffer, 0x00, 
+            sizeof(ctx_ptr->per_recv_io_ctx->send_buffer));
+	ctx_ptr->per_recv_io_ctx->total_send_len = 0;
+	ctx_ptr->per_recv_io_ctx->complete_recv_len = 0;
+	ctx_ptr->per_recv_io_ctx->sent_len = 0;
+	ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
+	ctx_ptr->is_connected = false;
+}
+///////////////////////////////////////////////////////////////////////////////
+void ASock::ClearClientCache()
+{
+	LOG("======= clear all cache ========");
+    std::lock_guard<std::mutex> lock(cache_lock_);
+    while (!queue_client_cache_.empty()) {
+        Context* ctx_ptr = queue_client_cache_.front();
+        delete ctx_ptr;
+        queue_client_cache_.pop();
+    }
+	DBG_LOG("debug ...... ");
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::RunClientThread()
+{
+	if (!is_client_thread_running_) {
+
+		client_thread_ = std::thread (&ASock::ClientThreadRoutine, this);
+		//client_thread.detach();
+	}
+    return true;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+void ASock::InvokeServerDisconnectedHandler()
+{
+    if (cb_on_disconnected_from_server_ != nullptr) {
+        cb_on_disconnected_from_server_();
+    } else {
+        OnDisconnectedFromServer();
+    }
+}
+
+void ASock::BuildErrMsgString(int err_no)
+{
+    LPVOID lpMsgBuf;
+    FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+        NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPTSTR)&lpMsgBuf, 0, NULL);
+    std::lock_guard<std::mutex> lock(err_msg_lock_);
+    err_msg_ = std::string("(") + std::to_string(err_no) + std::string(") ");
+	err_msg_ += std::string((LPCTSTR)lpMsgBuf);
+    LocalFree(lpMsgBuf);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool   ASock::SetSocketNonBlocking(int nSockFd)
+{
+	// If iMode = 0, blocking is enabled; 
+    // If iMode != 0, non-blocking mode is enabled.
 	unsigned long nMode = 1;
 	int nResult = ioctlsocket(nSockFd, FIONBIO, &nMode);
-	if (nResult != NO_ERROR)
-	{
+	if (nResult != NO_ERROR) {
 		BuildErrMsgString(WSAGetLastError());
+		ELOG( err_msg_ ) ;
         return  false;
 	}
     return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::IssueRecv(Context* pClientContext)
+//for udp server, client only
+bool ASock::SetSockoptSndRcvBufUdp(SOCKET_T socket)
 {
-    DWORD dwFlags = 0;
-    DWORD dwRecvBytes;
-    //memset(&(pClientContext->overlapped), 0, sizeof(OVERLAPPED));
-    //pClientContext->socket_ = newClientSock;
-    pClientContext->wsaBuf.buf = pClientContext->buffer;
-    pClientContext->wsaBuf.len = DEFAULT_CAPACITY;
-    pClientContext->nIoType = EnumIOType::IO_RECV;
-    SecureZeroMemory((PVOID)& pClientContext->overlapped, sizeof(WSAOVERLAPPED));
-
-    //////////////////////////////////////////////
-    if (SOCKET_ERROR == WSARecv(pClientContext->socket,
-        &(pClientContext->wsaBuf),
-        1,
-        &dwRecvBytes,
-        &dwFlags,
-        &(pClientContext->overlapped),
-        NULL
-    ))
-    {
-        if (WSAGetLastError() != WSA_IO_PENDING)
-        {
-            BuildErrMsgString(WSAGetLastError());
-            std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                      << GetLastErrMsg() << "\n";
+	/* TODO
+    size_t opt_cur;
+    int opt_val = max_data_len_;
+    int opt_len = sizeof(opt_cur);
+    if (getsockopt(socket, SOL_SOCKET, SO_SNDBUF, &opt_cur, (SOCKLEN_T *)&opt_len) == -1) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
+        err_msg_ = "gsetsockopt SO_SNDBUF error [" + std::string(strerror(errno)) + "]";
+        return false;
+    }
+    //std::cout << "curr SO_SNDBUF = " << opt_cur << "\n";
+    if (max_data_len_ > opt_cur) {
+        if (setsockopt(socket, SOL_SOCKET, SO_SNDBUF, (char*)&opt_val, sizeof(opt_val)) == -1) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+            err_msg_ = "setsockopt SO_SNDBUF error [" + std::string(strerror(errno)) + "]";
             return false;
         }
+        std::cout << "set SO_SNDBUF = " << opt_val << "\n";
     }
-
+    //--------------
+    if (getsockopt(socket, SOL_SOCKET, SO_RCVBUF, &opt_cur, (SOCKLEN_T *)&opt_len) == -1) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
+        err_msg_ = "setsockopt SO_RCVBUF error [" + std::string(strerror(errno)) + "]";
+        return false;
+    }
+    //std::cout << "curr SO_RCVBUF = " << opt_cur << "\n";
+    if (max_data_len_ > opt_cur) {
+        if (setsockopt(socket, SOL_SOCKET, SO_RCVBUF, (char*)&opt_val, sizeof(opt_val)) == -1) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+            err_msg_ = "setsockopt SO_RCVBUF error [" + std::string(strerror(errno)) + "]";
+            return false;
+        }
+        std::cout << "set SO_RCVBUF = " << opt_val << "\n";
+    }
+	*/
     return true;
 }
-
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::Recv(Context* pContext) //XXX 이부분이 불필요?? 
-{
-#ifdef WIN32
-#endif
-    return true ;
-}
-
+// CLIENT
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::Send (Context* pClientContext, const char* pData, int nLen) 
+bool  ASock::InitTcpClient(	const char* server_ip, unsigned short server_port,
+							int connect_timeout_secs, size_t  max_data_len)
 {
-#ifdef WIN32
-    /*
-    DWORD dwFlags = 0;
-    DWORD dwRecvBytes;
-    pClientContext->wsaBuf.buf = pClientContext->buffer;
-    pClientContext->wsaBuf.len = DEFAULT_CAPACITY;
-    pClientContext->nIoType = EnumIOType::IO_RECV;
-
-    //////////////////////////////////////////////
-    if (SOCKET_ERROR == WSARecv(pClientContext->socket_,
-    &(pClientContext->wsaBuf),
-    1,
-    &dwRecvBytes,
-    &dwFlags,
-    &(pClientContext->overlapped),
-    NULL
-    ))
-    {
-    if (WSAGetLastError() != WSA_IO_PENDING)
-    {
-    BuildErrMsgString(WSAGetLastError());
-    std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " << GetLastErrMsg() << "\n";
-    return false   ;
-    }
-    }
-    */
-    //--------------------------------------------------------------------------------- XXX
-    //XXX 성능을 고려할것... 버퍼가 유지되어야 하는 조건을 만족하면서 성능도 고려할 방법은??????
-    /*
-    Overlapped Socket I/O
-
-    If an overlapped operation completes immediately, WSASend returns a value of zero and the lpNumberOfBytesSent parameter is updated with the number of bytes sent. 
-    
-    If the overlapped operation is successfully initiated and will complete later, WSASend returns SOCKET_ERROR and indicates error code WSA_IO_PENDING. 
-    In this case, lpNumberOfBytesSent is not updated. When the overlapped operation completes the amount of data transferred is indicated either through 
-    the cbTransferred parameter in the completion routine (if specified), or through the lpcbTransfer parameter in WSAGetOverlappedResult.
-    */
-    //memcpy(pClientContext->buffer, pData, nLen);
-    //pClientContext->sendBuffer_.Append(nLen, (char*)pData);
-    //--------------------------------------------------------------------------------- XXX
-
-    DWORD dwSendNumBytes = 0;
-    pClientContext->wsaBuf.buf = (char*) pData;
-    pClientContext->wsaBuf.len = nLen;
-    pClientContext->nIoType = EnumIOType::IO_SEND;
-
-    SecureZeroMemory((PVOID)& pClientContext->overlapped, sizeof(WSAOVERLAPPED));
-
-    //////////////////////////////////////////////
-    int nReturn = WSASend(pClientContext->socket,
-        &(pClientContext->wsaBuf),
-        1,
-        &dwSendNumBytes,
-        0,
-        &(pClientContext->overlapped),
-        NULL
-    );
-
-    if (nReturn == 0)
-    {
-        //모두 전송했는지?
-        if (dwSendNumBytes == nLen)
-        {
-            std::cout << "[" << __func__ << "-" << __LINE__ 
-                      << "] all sent : OK \n"; //debug
-            //Sleep(1000); //TEST
-        }
-        else
-        {
-            std::cerr << "[" << __func__ << "-" << __LINE__ 
-                      << "] NOT all sent : Error \n"; //debug
-        }
-    }
-    else if (nReturn == SOCKET_ERROR)
-    {
-        if (WSAGetLastError() != WSA_IO_PENDING)
-        {
-            BuildErrMsgString(WSAGetLastError());
-            std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                      << GetLastErrMsg() << "\n";
-            return false;
-        }
-        /*
-        if (WSAGetLastError() != WSAENOTSOCK)
-        {
-    #ifndef _DEBUG
-            // Remove Unnecessary Disconnect messages in release mode..
-            if (WSAGetLastError() != WSAECONNRESET&&WSAGetLastError() != WSAECONNABORTED)
-    #endif
-            {
-                CString msg;
-                msg.Format("Error in OnWrite..: %s", ErrorCode2Text(WSAGetLastError()));
-                AppendLog(msg);
-            }
-        }
-        ReleaseBuffer(pOverlapBuff);
-        DisconnectClient(pContext);
-        pOverlapBuff = NULL;
-        IncreaseSendSequenceNumber(pContext);
-        if (m_bSendInOrder && !m_bShutDown)
-            pOverlapBuff = GetNextSendBuffer(pContext);
-        TRACE(">OnWrite(%x)\r\n", pContext);
-        ReleaseClientContext(pContext); 	// pContext may not exist after this call 	
-                                            //break; // removed due to fix. 
-        */
-    }
-#endif
-
-    return true;
-}
-
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// XXX XXX
-
-
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::Connect(const char* connIP, int nPort, 
-                               int nConnectTimeoutSecs)
-{
-    Disconnect(); 
-
-	if(!InitWinsock())
-	{
+    sock_usage_  = SOCK_USAGE_TCP_CLIENT;
+    server_ip_   = server_ip ;
+    server_port_ = server_port;
+    is_connected_ = false;
+	if(!InitWinsock()) {
 		return false;
 	}
-	hCompletionPort_ = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-
-    context_.socket_ = socket(AF_INET,SOCK_STREAM,0) ;
-	if (context_.socket_ == INVALID_SOCKET)
-	{
-		BuildErrMsgString(WSAGetLastError());
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
-		WSACleanup();
+    connect_timeout_secs_ = connect_timeout_secs;
+    if (!SetBufferCapacity(max_data_len)) {
+        return false;
+    }
+	if (context_.per_recv_io_ctx != NULL) {
+		delete context_.per_recv_io_ctx;
+	}
+	context_.per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
+	if (context_.per_recv_io_ctx == nullptr) {
+		DBG_ELOG("mem alloc failed");
 		return false;
 	}
-
-    if(!SetNonBlocking (context_.socket_))
-    {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
-        return  false;
-    }
-    
-    if(!bCumBufferInit_ )
-    {
-        if  ( 
-                cumbuffer_defines::OP_RSLT_OK != 
-                               context_.recvBuffer_.Init(nBufferCapcity_) ||
-                cumbuffer_defines::OP_RSLT_OK != 
-                               context_.sendBuffer_.Init(nBufferCapcity_)
-            )
-        {
-            err_msg_ ="cumBuffer Init error :"+context_.recvBuffer_.GetErrMsg();
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                      << GetLastErrMsg() <<"\n"; 
-            return false;
-        }
-        bCumBufferInit_ = true;
-    }
-    else
-    {
-        //in case of reconnect
-        context_.recvBuffer_.ReSet(); 
-        context_.sendBuffer_.ReSet(); 
-    }
-
-    memset((void *)&connAddr_,0x00,sizeof(connAddr_)) ;
-    connAddr_.sin_family      = AF_INET ;
-
-    //connAddr_.sin_addr.s_addr = inet_addr( connIP ) ;
-	inet_pton(AF_INET, connIP, &(connAddr_.sin_addr));
-
-    connAddr_.sin_port = htons( nPort );
-
-    struct timeval timeoutVal;
-    timeoutVal.tv_sec  = nConnectTimeoutSecs ;  
-    timeoutVal.tv_usec = 0;
-
-    int nRslt = connect(context_.socket_,(SOCKADDR *)&connAddr_, 
-                        (SOCKLEN_T )sizeof(SOCKADDR_IN)) ;
-
-    if ( nRslt == SOCKET_ERROR)
-    {
-		int nLastErr = WSAGetLastError();
-        if (nLastErr != WSAEWOULDBLOCK)
-        {
-			BuildErrMsgString(WSAGetLastError());
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                      << GetLastErrMsg() <<"\n"; 
-            return false;
-        }
-    }
-
-    if (nRslt == 0)
-    {
-        bConnected_ = true;
+    context_.socket = socket(AF_INET, SOCK_STREAM, 0);
+    memset((void *)&tcp_server_addr_, 0x00, sizeof(tcp_server_addr_));
+    tcp_server_addr_.sin_family = AF_INET;
+	inet_pton(AF_INET, server_ip_.c_str(), &(tcp_server_addr_.sin_addr));
+    tcp_server_addr_.sin_port = htons(server_port_);
+    return ConnectToServer();
+}
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::ConnectToServer()
+{
+    if(is_connected_ ){
         return true;
     }
-
-    fd_set   rset, wset, exset; //win32 !
-    FD_ZERO(&rset);
-    FD_SET(context_.socket_, &rset);
-    wset  = rset;
-    exset = rset;
-
-    nRslt = select(context_.socket_+1, &rset, &wset, &exset, &timeoutVal ) ;
-    if (nRslt == 0 )
-    {
-        err_msg_ = "connect timeout";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
-        return false;
+    if (!SetSocketNonBlocking(context_.socket)) {
+        closesocket(context_.socket);
+        return  false;
     }
-    else if (nRslt< 0)
-    {
-		BuildErrMsgString(WSAGetLastError());
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
-        return false;
-    }
-
-#ifdef WIN32
-	WSASetLastError(0);
-    if (!FD_ISSET(context_.socket_, &rset) && 
-        !FD_ISSET(context_.socket_, &wset)) 
-    {
-        err_msg_ = "not connected!";
-		std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                  << GetLastErrMsg() << "\n";
-		return false;
-    } 
-    if (FD_ISSET(context_.socket_, &exset) ) //win32 !
-    {
-        err_msg_ = "not connected!";
-		std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                  << GetLastErrMsg() << "\n";
-		return false;
-	}
-#endif
-
-    bConnected_ = true;
-
-    if(!bClientThreadRunning_ )
-    {
-#ifdef WIN32
-		if (NULL == CreateIoCompletionPort((HANDLE)context_.socket_, 
-                                        hCompletionPort_, (DWORD)&context_, 0))
-		{
-			BuildErrMsgString(WSAGetLastError());
-			std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                      << GetLastErrMsg() << "\n";
-			return false;
-		}
-        /*
-        if (!IssueRecv(&context_))
-        {
-            err_msg_ = "proacitive recv error ["  + GetLastErrMsg() + "]";
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+    if (!is_buffer_init_) {
+        if (cumbuffer::OP_RSLT_OK != 
+                context_.per_recv_io_ctx->cum_buffer.Init(max_data_len_)) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+            err_msg_ = std::string("cumBuffer Init error :") + 
+                    context_.per_recv_io_ctx->cum_buffer.GetErrMsg();
+            closesocket(context_.socket);
+			context_.socket = INVALID_SOCKET;
+			DBG_ELOG(err_msg_);
             return false;
         }
-        */
-#endif
-
-        std::thread client_thread(&ASock::ClientThreadRoutine,this);
-        client_thread.detach();
+        is_buffer_init_ = true;
+    } else {
+        //in case of reconnect
+        context_.per_recv_io_ctx->cum_buffer.ReSet();
     }
-    return true;
+    struct timeval timeout_val;
+    timeout_val.tv_sec  = connect_timeout_secs_;
+    timeout_val.tv_usec = 0;
+    int result = connect(context_.socket,(SOCKADDR *)&tcp_server_addr_, 
+                        (SOCKLEN_T )sizeof(SOCKADDR_IN)) ;
+    if ( result == SOCKET_ERROR) {
+		int last_err = WSAGetLastError();
+        if (last_err != WSAEWOULDBLOCK) {
+			BuildErrMsgString(last_err);
+			ELOG( err_msg_ ) ;
+            return false;
+        }
+    }
+    if (result == 0) {
+        is_connected_ = true;
+        return RunClientThread();
+    }
+	WSASetLastError(0);
+	//wait for connected
+	int wait_timeout_ms = connect_timeout_secs_ * 1000 ;
+	WSAPOLLFD fdarray = { 0 };
+	fdarray.fd = context_.socket;
+	fdarray.events = POLLWRNORM;
+	result = WSAPoll(&fdarray, 1, wait_timeout_ms);
+	DBG_LOG("connect WSAPoll returns....: result ="<<result);
+	if (SOCKET_ERROR == result) {
+		BuildErrMsgString(WSAGetLastError());
+		ELOG( err_msg_ ) ;
+		return false;
+	}
+	if (result) {
+		if (fdarray.revents & POLLWRNORM) {
+			DBG_LOG("Established connection");
+		} else {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+			err_msg_ = "connect timeout";
+			DBG_ELOG(err_msg_);
+			return false;
+		}
+	}
+    is_connected_ = true;
+    return RunClientThread();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::ClientThreadRoutine()
 {
-    bClientThreadRunning_ = true;
-    std::cout << "[" << __func__ << "-" << __LINE__ << "] debug : \n"; //debug
-
-#ifdef WIN32
-	DWORD		dwBytesTransferred;
-	PContext	pContext;
-
-	while (true)
-	{
-        //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-        //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-        //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-		if (FALSE == GetQueuedCompletionStatus(	hCompletionPort_,
-												&dwBytesTransferred,
-												(LPDWORD)&pContext, //XXX TODO --->  issue 할때마다 할당하거나, free list 에서 가져와서 처리할것!!!! 
-												(LPOVERLAPPED *)&pContext,
-												INFINITE
-		))
-        //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-        //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-        //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-		{
-            int nErr = WSAGetLastError();
-            //TODO : hardclose 고려할것!! --> ERROR_NETNAME_DELETED 방지 : 연결이 종료된 경우 post recv 안되게 할것!!
-			if (NULL != pContext)
-			{
-                if (nErr == ERROR_NETNAME_DELETED)
-                {
-                    //client hard close --> not an error
-                    closesocket(pContext->socket_);
-                    OnDisConnected();
-                    bClientThreadRunning_ = false;
-                    return;
-                }
-                else
-                {
-                    //error
-                    BuildErrMsgString(nErr);
-                    std::cerr << "[" << __func__ << "-" << __LINE__ 
-                              << "] error! " << GetLastErrMsg() << "\n";
-                    closesocket(pContext->socket_);
-                    OnDisConnected();
-                    bClientThreadRunning_ = false;
-                    return;
-                }
+	is_client_thread_running_ = true;
+	int wait_timeout_ms = 1 * 1000 ;
+	WSAPOLLFD fdarray = { 0 };
+	while (is_connected_) { 
+		if (context_.socket == INVALID_SOCKET) {
+			DBG_ELOG( "INVALID_SOCKET" ) ;
+			is_client_thread_running_ = false;
+			return;
+		}
+		fdarray.fd = context_.socket;
+		int result = -1;
+		//fdarray.events = POLLWRNORM;
+		//Call WSAPoll for readability on connected socket
+		fdarray.events = POLLRDNORM;
+		result = WSAPoll(&fdarray, 1, wait_timeout_ms);
+		if (SOCKET_ERROR == result) {
+			is_client_thread_running_ = false;
+			if (!is_connected_) { 
+				return;//no error.
+			}
+			BuildErrMsgString(WSAGetLastError());
+			ELOG( err_msg_ ) ;
+			return ;
+		}
+		if (result == 0) {
+			//timeout
+		} else{
+			if (!is_connected_) {
+				is_client_thread_running_ = false;
+				return;//no error.
+			}
+			if (fdarray.revents & POLLRDNORM) {
+				//============================
+				size_t want_recv_len = max_data_len_;
+				//-------------------------------------
+				if (max_data_len_ > context_.GetBuffer()->GetLinearFreeSpace()) { 
+					want_recv_len = context_.GetBuffer()->GetLinearFreeSpace();
+				}
+				if (want_recv_len == 0) {
+					std::lock_guard<std::mutex> lock(err_msg_lock_);
+					err_msg_ = "no linear free space left ";
+					DBG_ELOG(err_msg_);
+					is_client_thread_running_ = false;
+					return ;
+				}
+				//============================
+				// use cumbuffer !
+				if (context_.socket == INVALID_SOCKET) {
+					DBG_ELOG("INVALID_SOCKET");
+					is_client_thread_running_ = false;
+					return;
+				}
+				int ret = recv( context_.socket, 
+                                context_.GetBuffer()->GetLinearAppendPtr(),
+                                (int) want_recv_len, 0);
+				if (SOCKET_ERROR == ret) {
+					BuildErrMsgString(WSAGetLastError());
+					ELOG( err_msg_ ) ;
+					is_client_thread_running_ = false;
+					return;
+				} else {
+					DBG_LOG("client recved : " << ret <<" bytes");
+					if (ret == 0) {
+						DBG_LOG("client disconnected : sock=" << context_.socket);
+						shutdown(context_.socket, SD_BOTH);
+						closesocket(context_.socket);
+						OnDisconnectedFromServer();
+						context_.socket = INVALID_SOCKET; //XXX
+						is_client_thread_running_ = false;
+						return;
+					}
+					DBG_LOG("sock=" << context_.socket << ", bytes_transferred = " 
+                            << ret);
+					if (!RecvData(0, &context_, ret)) { 
+						DBG_ELOG(err_msg_);
+						shutdown(context_.socket, SD_BOTH);
+						if (0 != closesocket(context_.socket)) {
+							DBG_ELOG("close socket error! : " << WSAGetLastError());
+						}
+						context_.socket = INVALID_SOCKET; 
+						OnDisconnectedFromServer();
+						is_client_thread_running_ = false;
+						return;
+					}
+				}
 			}
 		}
-
-		switch (pContext->nIoType)
-		{
-		case EnumIOType::IO_RECV:
-            std::cerr << "[" << __func__ << "-" << __LINE__ << "] recved: " 
-                      << dwBytesTransferred << "\n"; //debug
-            if (dwBytesTransferred == 0)
-            {
-                //err_msg_ = "recv 0, client disconnected , fd:" + std::to_string(pContext->socket_);
-                //std::cerr << "[" << __func__ << "-" << __LINE__ << "] " << err_msg_ << "\n";
-                closesocket(pContext->socket_);
-                OnDisConnected();
-                bClientThreadRunning_ = false;
-                return;
-                //pContext->nOverlappedPendingCount; //TODO XXX
-            }
-            pContext->recvBuffer_.Append(dwBytesTransferred,pContext->buffer);
-            while (pContext->recvBuffer_.GetCumulatedLen())
-            {
-                //invoke user specific implementation
-                size_t nOnePacketLength = GetOnePacketLength(pContext);
-
-                if (nOnePacketLength == asocklib::MORE_TO_COME)
-                {
-                    //return true; //need to recv more
-                    std::cerr << "[" << __func__ << "-" << __LINE__ 
-                              << "] More to come  " <<  "\n"; //debug
-                    break;
-                }
-                else if (nOnePacketLength > pContext->recvBuffer_.GetCumulatedLen())
-                {
-                    //return true; //need to recv more
-                    std::cerr << "[" << __func__ << "-" << __LINE__ 
-                              << "] More to come \n"; //debug
-                    break;
-                }
-                else
-                {
-                    //got complete packet 
-                    if (cumbuffer_defines::OP_RSLT_OK != 
-                        pContext->recvBuffer_.GetData(nOnePacketLength, 
-                                                      szOnePacketData_))
-                    {
-                        //error !
-                        err_msg_ = pContext->recvBuffer_.GetErrMsg();
-                        std::cerr << "[" << __func__ << "-" << __LINE__ 
-                                  << "] " << err_msg_ << "\n";
-                        //continue;
-                        return ;
-                    }
-
-                    //invoke user specific implementation
-                    OnRecvOnePacketData(pContext, 
-                                        szOnePacketData_, 
-                                        nOnePacketLength);
-                }
-            } //while
-
-            if (!IssueRecv(pContext))
-            {
-                break;
-            }
-			break;
-
-		case EnumIOType::IO_SEND:
-            //TODO : XXX send 2번 보내고 응답을 기다릴때 IO_RECV , IO_SEND context 구분이 필요함!!!
-            std::cout << "[" << __func__ << "-" << __LINE__ 
-                      << "] IO_SEND : sent: " << dwBytesTransferred << "\n"; 
-            if (!IssueRecv(pContext))
-            {
-                break;
-            }
-			break;
-		}
-	} //while
-#endif
-
-    bClientThreadRunning_ = false;
+	} //while(true)
+    is_client_thread_running_ = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock:: SendToServer(const char* pData, int nLen)
+//client use
+bool ASock:: SendToServer(const char* data, size_t len)
 {
-    if ( !bConnected_ )
-    {
+    if ( !is_connected_ ) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "not connected";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error : "
-                  << GetLastErrMsg() <<"\n"; 
+        DBG_ELOG( err_msg_ ) ;
         return false;
     }
-
-    return Send(&context_, pData, nLen);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void ASock:: Disconnect()
-{
-    if(context_.socket_ > 0 )
-    {
-        closesocket(context_.socket_);
-    }
-}
-
-
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// XXX XXX
-
-
-
-//TODO : multiple pending socket read and write operations
-//TODO : options: high throughput or maximizing connections --> zero byte recv
-//TODO : Post accept
-
-/*
-  https://www.codeproject.com/Articles/10330/A-simple-IOCP-Server-Client-Class
-  http://www.serverframework.com/handling-multiple-pending-socket-read-and-write-operations.html
-  http://microsoft.public.win32.programmer.networks.narkive.com/FRa81Gzo/about-zero-byte-receive-iocp-server
-  http://www.nevelsteen.com/coding/completion_ports_in_delphi.htm
-  Keep in mind that for each IssueRead/Write there will be a complimentary release of a thread resulting 
-  in the case Successful IO (except in the event of an internal error, of course). 
-  The thread being released is NOT necessarily the same as the one that issued the read or write. 
-  It is also extremely important to keep in mind that, as SOON as the IssueRead/Write is called 
-  it is best to assume a parallel running thread is already busy handling the completed I/O of 
-  the current IssueRead/Write before the call exits. 
-  Failure to adhere to this thinking will result in a race condition between threads. 
-  So what does this mean practically? Common memory resources should not be accessed after 
-  the IssueRead/Write is executed, including essentially the PerHandleData structure and members thereof.
-  
-  각 IssueRead / Write에는 Thread IO의 성공적인 릴리스가있을 것입니다 (물론 내부 오류가 발생한 경우는 예외). 
-  릴리스되는 스레드는 반드시 읽거나 쓰는 스레드와 동일하지는 않습니다. 
-  IssueRead / Write가 호출 될 때 SOON이 호출됨에 따라 호출이 종료되기 전에 병렬 실행 스레드가 
-  현재 IssueRead / Write의 완료된 I / O를 처리하는 것이 이미 바쁜 것으로 가정하는 것이 가장 좋습니다. 
-  이 사고를 고수하지 않으면 스레드간에 경쟁 조건이 발생합니다. 
-  그렇다면 이것은 실질적으로 무엇을 의미합니까? 본질적으로 PerHandleData 구조체와 그 멤버를 포함하여 
-  IssueRead / Write가 실행 된 후에는 일반적인 메모리 리소스에 액세스해서는 안됩니다. 
-
-  http://mindgear.tistory.com/191
-
-- Zero Byte Recv를 통한 PAGE_LOKING 최소화 http://ozt88.tistory.com/26
-- http://www.viper.pe.kr/wiki2/wiki.php/Overlapped%20I/O%20%BF%CD%20IOCP%20Programming
-- 에러 코드를 반드시 확인한다
-- 참조 카운트를 유지한다
-- http://eltgroup.tistory.com/16
-	걸어놓은 recv에 대한 응답이 안 온 상태에서 send를 할 수 있으므로 소켓 1개에 대해 2개의 참조 카운트가 발생할 수 있다. 
-	GetQueuedCompletionStatus가 FALSE를 리턴한 경우, 대부분의 에코서버 소스에서는 바로 소켓을 close한 다음 커넥션 객체를 삭제해 버리는데, 
-	이것은 참조 카운트가 1이상 올라가지 않기 때문이다. 이런 경우 게임서버에서는 그 소켓에 대한 참조카운트가 2라면, 
-	그냥 소켓을 close한 다음 나머지 작업에 대한 실패 통보가 와서 참조 카운트가 0이 되었을때 커넥션 객체를 삭제해야만 한다. 
-	마찬가지로 WSARecv에 대한 리턴이 왔는데 전송 바이트가 0인 경우에도 무조건 객체를 지워서는 안된다.
-
-	서버에서 소켓을 close하는 것이 closesocket() 호출 이전에 포스팅한 WSASend, WSARecv를 꼭 실패시키지는 않는다. 성공할 수도 있고, 실패할 수도 있다.
-	서버에서 소켓을 close하면 이전에 포스팅된 연산에 대한 결과는 반드시 GetQueuedCompletionStatus에서 각각 모두 리턴된다.
-
-	http://myblog.opendocs.co.kr/archives/1206
-*/
-
-
-///////////////////////////////////////////////////////////////////////////////
-bool AServerSocketTCP::SetConnInfo (const char* connIP, int nPort, 
-                                    int nMaxClient, int nMaxMsgLen)
-{
-    strServerIp_    =   connIP; 
-    nServerPort_    =   nPort; 
-
-    nMaxClientNum_  =   nMaxClient; 
-    if(nMaxClientNum_<0)
-    {
-        return false;
-    }
-
-    return SetBufferCapacity(nMaxMsgLen);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool AServerSocketTCP::RunServer()
-{
-	if(!InitWinsock())
-	{
-		return false;
-	}
-
-	hCompletionPort_ = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-
-
-    if(bServerRunning_ )
-    { 
-        err_msg_ = "error [server is already running]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
-        return false;
-    }
-
-    if(nBufferCapcity_ <0)
-    {
-        err_msg_ = "init error [packet length is negative]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
-        return  false;
-    }
-
-	listen_socket_ = WSASocketW(AF_INET, SOCK_STREAM, 0, NULL, 0, 
-                                WSA_FLAG_OVERLAPPED);
-	if (listen_socket_ == INVALID_SOCKET)
-	{
-		BuildErrMsgString(WSAGetLastError());
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
-        return false;
-	}
-
-
-    //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX TODO
-    /* XXX 일단 blocking 으로 처리하자!! 나중에 proactive accept 로 변경필요!!
-    if(!SetNonBlocking (listen_socket_))
-    {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
-        return  false;
-    }
-    */
-    //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX TODO
-
-    int opt_on=1;
-    int nRtn = -1;
-
-    if (setsockopt(listen_socket_,SOL_SOCKET,SO_REUSEADDR,(char*)&opt_on ,
-                   sizeof(opt_on))==-1) 
-    {
-		BuildErrMsgString(WSAGetLastError());
-        //err_msg_ = "setsockopt SO_REUSEADDR error ["  + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
-        return false;
-    }
-
-    if (setsockopt(listen_socket_,SOL_SOCKET,SO_KEEPALIVE,(char*)&opt_on ,
-                   sizeof(opt_on))==-1) 
-    {
-		BuildErrMsgString(WSAGetLastError());
-        //err_msg_ = "setsockopt SO_REUSEADDR error ["  + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
-        return false;
-    }
-
-    memset((void *)&serverAddr_,0x00,sizeof(serverAddr_)) ;
-    serverAddr_.sin_family      = AF_INET ;
-    //serverAddr_.sin_addr.s_addr = inet_addr(strServerIp_.c_str()) ;
-	inet_pton(AF_INET, strServerIp_.c_str(), &(serverAddr_.sin_addr));
-    serverAddr_.sin_port = htons(nServerPort_);
-
-    nRtn = bind(listen_socket_,(SOCKADDR*)&serverAddr_,sizeof(serverAddr_)) ;
-    if ( nRtn < 0 )
-    {
-		BuildErrMsgString(WSAGetLastError());
-        //err_msg_ = "bind error ["  + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
-        return false ;
-    }
-
-    nRtn = listen(listen_socket_,SOMAXCONN) ;
-    if ( nRtn < 0 )
-    {
-		BuildErrMsgString(WSAGetLastError());
-        //err_msg_ = "listrn error [" + std::string(strerror(errno)) + "]";
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                  << GetLastErrMsg() <<"\n"; 
-        return false ;
-    }
-
-    //start server thread
-    bServerRun_ = true;
-    std::thread server_thread(&AServerSocketTCP::ServerThreadRoutine, this, 0);
-    server_thread.detach();
-
-    bServerRunning_ = true;
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void AServerSocketTCP::StopServer()
-{
-    bServerRun_ = false;
-}
-
-
-
-///////////////////////////////////////////////////////////////////////////////
-/*
-bool AServerSocketTCP::IssueRecv(Context* pClientContext)
-{
-#ifdef WIN32
-	DWORD dwFlags = 0;
-	DWORD dwRecvBytes;
-    //memset(&(pClientContext->overlapped), 0, sizeof(OVERLAPPED));
-    //pClientContext->socket_ = newClientSock;
-    pClientContext->wsaBuf.buf = pClientContext->buffer;
-    pClientContext->wsaBuf.len = DEFAULT_CAPACITY;
-    pClientContext->nIoType = EnumIOType::IO_RECV;
-    SecureZeroMemory((PVOID)& pClientContext->overlapped, sizeof(WSAOVERLAPPED));
-
-    //////////////////////////////////////////////
-    if (SOCKET_ERROR == WSARecv(pClientContext->socket_,
-        &(pClientContext->wsaBuf),
-        1,
-        &dwRecvBytes,
-        &dwFlags,
-        &(pClientContext->overlapped),
-        NULL
-    ))
-    {
-        if (WSAGetLastError() != WSA_IO_PENDING)
-        {
-            BuildErrMsgString(WSAGetLastError());
-            std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                      << GetLastErrMsg() << "\n";
-            return false   ;
-        }
-    }
-#endif
-
-    return true;
-}
-*/
-
-/*
-///////////////////////////////////////////////////////////////////////////////
-bool AServerSocketTCP::IssueSend(Context* pClientContext)
-{
-#ifdef WIN32
-	DWORD dwSentBytes;
-    pClientContext->wsaBuf.buf = pClientContext->buffer;
-    pClientContext->wsaBuf.len = DEFAULT_CAPACITY;
-    pClientContext->nIoType = EnumIOType::IO_SEND;
-    SecureZeroMemory((PVOID)& pClientContext->overlapped, sizeof(WSAOVERLAPPED));
-
-    //////////////////////////////////////////////
-    if (SOCKET_ERROR == WSASend(pClientContext->socket_,
-        &(pClientContext->wsaBuf),
-        1,
-        &dwSentBytes,
-        0,
-        &(pClientContext->overlapped),
-        NULL
-    ))
-    {
-        if (WSAGetLastError() != WSA_IO_PENDING)
-        {
-            BuildErrMsgString(WSAGetLastError());
-            std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                      << GetLastErrMsg() << "\n";
-            return false   ;
-        }
-    }
-#endif
-
-    return true;
-}
-*/
-
-///////////////////////////////////////////////////////////////////////////////
-void AServerSocketTCP:: ServerThreadRoutine(int nCoreIndex)
-{
-    std::cout << "[" << __func__ << "-" << __LINE__ << "] debug \n"; //debug
-#ifdef WIN32
-	//DWORD dwFlags = 0;
-	//DWORD dwRecvBytes;
-	SYSTEM_INFO systemInfo;
-
-	GetSystemInfo(&systemInfo);
-    int nMaxWorkerThreadCnt = systemInfo.dwNumberOfProcessors * 2;
-	for (int i = 0; i<nMaxWorkerThreadCnt; i++)
-	{
-		//_beginthreadex(NULL, 0, CompletionThread, (LPVOID)hCompletionPort, 0, NULL);
-		std::thread worker_thread(&AServerSocketTCP::WorkerThreadRoutine, this);
-		worker_thread.detach();
-	}
-
-	SOCKLEN_T socklen=sizeof(SOCKADDR_IN);
-	SOCKADDR_IN clientAddr;
-    while(bServerRun_)
-	{
-        //SOCKET_T newClientSock = WSAAccept(listen_socket_, 
-        //                          (SOCKADDR*)&clientAddr, &socklen, 0, 0);
-	    SOCKET_T newClientSock = accept(listen_socket_,
-                                        (SOCKADDR*)&clientAddr,&socklen ) ;
-		if (newClientSock == INVALID_SOCKET)
-		{
-            /* for blocking call...not in use!!
-            int nLastError = WSAGetLastError();
-            if (WSAEWOULDBLOCK == nLastError)
-            {
-                continue;
-            }
-			BuildErrMsgString(nLastError);
-            */
-
+    std::lock_guard<std::mutex> lock(context_.ctx_lock);
+	//TODO : async 
+	size_t sent_sum = 0;
+	while (true) {
+		if (context_.socket == INVALID_SOCKET) {
+			err_msg_ = "not connected";
+			DBG_ELOG(err_msg_);
+			return false;
+		}
+		int result = send(context_.socket, data + sent_sum, (int)(len - sent_sum), 0);
+		if (SOCKET_ERROR == result && WSAEWOULDBLOCK != WSAGetLastError()) {
 			BuildErrMsgString(WSAGetLastError());
-			std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                      << GetLastErrMsg() << "\n";
-			break;
-		}
-
-		//////////////////////////////////////////////
-		++nClientCnt_;
-		SetNonBlocking(newClientSock);
-
-		//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		//XXX : linux --> reactor
-		//      IOCP  --> proactor
-		//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		Context* pClientContext = PopClientContextFromCache();
-		if (pClientContext == nullptr)
-		{
-			pClientContext = new (std::nothrow) Context();
-			if (!pClientContext)
-			{
-				err_msg_ = "Context alloc failed !";
-				std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                          << GetLastErrMsg() << "\n";
+			ELOG( err_msg_ ) ;
+			shutdown(context_.socket, SD_BOTH);
+			if (0 != closesocket(context_.socket)) {
+				DBG_ELOG("close socket error! : " << WSAGetLastError());
+			}
+			context_.socket = INVALID_SOCKET;
+			return false;
+		} else {
+			sent_sum += result;
+			if (sent_sum == len) {
+				//DBG_LOG("all sent OK");
 				break;
-			}
-
-			pClientContext->socket_ = newClientSock;
-			if ( cumbuffer_defines::OP_RSLT_OK != 
-                        pClientContext->recvBuffer_.Init(nBufferCapcity_) ||
-				 cumbuffer_defines::OP_RSLT_OK != 
-                        pClientContext->sendBuffer_.Init(nBufferCapcity_))
-			{
-				err_msg_ = "cumBuffer Init error : " + 
-                                    pClientContext->recvBuffer_.GetErrMsg();
-				std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                          << GetLastErrMsg() << "\n";
-				break;
+			} else {
+				LOG("all sent failed --> send again : total= " << len 
+                        << ",sent=" <<sent_sum);
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				continue;
 			}
 		}
-
-		std::pair<CLIENT_UNORDERMAP_ITER_T, bool> clientMapRslt;
-		clientMapRslt =clientMap_.insert(std::pair<int,Context*>(newClientSock, 
-                                                            pClientContext));
-		if (!clientMapRslt.second)
-		{
-			err_msg_ = "clientMap_ insert error [" + 
-                        std::to_string(newClientSock) + " already exist]";
-			std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                      << GetLastErrMsg() << "\n";
-			break;
-		}
-
-		OnClientConnected(pClientContext);
-
-		//////////////////////////////////////////////
-		if (NULL == CreateIoCompletionPort((HANDLE)newClientSock, 
-                                   hCompletionPort_, (DWORD)pClientContext, 0))
-		{
-			BuildErrMsgString(WSAGetLastError());
-			std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! " 
-                      << GetLastErrMsg() << "\n";
-			break;
-		}
-
-		//memset(&(pClientContext->overlapped), 0, sizeof(OVERLAPPED));
-		pClientContext->socket_		= newClientSock;
-        if (!IssueRecv(pClientContext))
-        {
-			std::cerr << "[" << __func__ << "-" << __LINE__ << "] error! \n";
-            break;
-        }
-	} //while
-
-    std::cerr << "[" << __func__ << "-" << __LINE__ << "] exiting! \n"; //debug
-    bServerRunning_ = false;
-#endif
+	}
+	return true;
 }
-
-///////////////////////////////////////////////////////////////////////////////
-void AServerSocketTCP:: WorkerThreadRoutine()
-{
-    //std::cout << "[" << __func__ << "-" << __LINE__ << "] debug \n"; //debug
-#ifdef WIN32
-	DWORD		dwBytesTransferred;
-	PContext	pContext;
-	//DWORD		dwFlags;
-
-	while (true)
-	{
-		if (FALSE == GetQueuedCompletionStatus(	hCompletionPort_,
-												&dwBytesTransferred,
-												(LPDWORD)&pContext,
-												(LPOVERLAPPED *)&pContext,
-												INFINITE
-		))
-		{
-            int nErr = WSAGetLastError();
-            //TODO : hardclose 고려할것!! --> ERROR_NETNAME_DELETED 방지 : 
-            //       연결이 종료된 경우 post recv 안되게 할것!!
-			if (NULL != pContext)
-			{
-                if (nErr == ERROR_NETNAME_DELETED)
-                {
-                    //client hard close --> not an error
-                    TerminateClient(pContext);
-                }
-                else
-                {
-                    //error
-                    BuildErrMsgString(nErr);
-                    std::cerr << "[" << __func__ << "-" << __LINE__ 
-                              << "] error! " << GetLastErrMsg() << "\n";
-                    TerminateClient(pContext);
-                    return;
-                }
-			}
-		}
-
-		switch (pContext->nIoType)
-		{
-		case EnumIOType::IO_ACCEPT:
-            //TODO -----> 지금 blocking accept 인것을 개선할것!!
-            break;
-
-		case EnumIOType::IO_RECV:
-            if (dwBytesTransferred == 0)
-            {
-                //err_msg_ = "recv 0, client disconnected , fd:" + 
-                //          std::to_string(pContext->socket_);
-                //std::cerr << "[" << __func__ << "-" << __LINE__ << "] " 
-                //          << err_msg_ << "\n";
-                TerminateClient(pContext);
-                //pContext->nOverlappedPendingCount; //TODO XXX
-                continue;
-            }
-            pContext->recvBuffer_.Append(dwBytesTransferred,pContext->buffer );
-            while (pContext->recvBuffer_.GetCumulatedLen())
-            {
-                std::cerr << "[" << __func__ << "-"<< __LINE__ 
-                          << "] IO_RECV : recved: "<<dwBytesTransferred<<"\n"; 
-                //invoke user specific implementation
-                size_t nOnePacketLength = GetOnePacketLength(pContext);
-
-                if (nOnePacketLength == asocklib::MORE_TO_COME)
-                {
-                    //return true; //need to recv more
-                    std::cerr << "[" << __func__ << "-" << __LINE__ 
-                              << "] More to come  " <<  "\n"; //debug
-                    break;
-                }
-                else if (nOnePacketLength > pContext->recvBuffer_.GetCumulatedLen())
-                {
-                    //return true; //need to recv more
-                    std::cerr << "[" << __func__ << "-" << __LINE__ 
-                              << "] More to come \n"; //debug
-                    break;
-                }
-                else
-                {
-                    //got complete packet 
-                    if (cumbuffer_defines::OP_RSLT_OK != 
-                        pContext->recvBuffer_.GetData(nOnePacketLength, 
-                                                      szOnePacketData_))
-                    {
-                        //error !
-                        err_msg_ = pContext->recvBuffer_.GetErrMsg();
-                        std::cerr << "[" << __func__ << "-" << __LINE__ << "] " 
-                                  << err_msg_ << "\n";
-                        //continue;
-                        return ;
-                    }
-
-                    //invoke user specific implementation
-                    OnRecvOnePacketData(pContext, szOnePacketData_, 
-                                        nOnePacketLength);
-                }
-            } //while
-
-            if (!IssueRecv(pContext))
-            {
-                break;
-            }
-			break;
-
-		case EnumIOType::IO_SEND:
-            //TODO : send 모든 데이터가 전송되었는지 확인!!
-            std::cout << "[" << __func__ << "-" << __LINE__ 
-                      << "] debug : IO_SEND noti:  \n"; //debug
-            std::cout << "[" << __func__ << "-" << __LINE__ 
-                      << "] IO_SEND : sent: " << dwBytesTransferred << "\n"; 
-            /*
-            if (!IssueSend(pContext))
-            {
-                break;
-            }
-            */
-			break;
-		}
-	} //while
-#endif
-    std::cout << "[" << __func__ << "-" << __LINE__ << "] debug \n"; //debug
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//void  AServerSocketTCP::TerminateClient(int nClientIndex, Context* pClientContext)
-void  AServerSocketTCP::TerminateClient( Context* pClientContext)
-{
-    --nClientCnt_;
-	/*
-#ifdef __APPLE__
-    KqueueCtl(pClientContext->socket_, EVFILT_READ, EV_DELETE );
-#elif __linux__
-    EpollCtl (pClientContext->socket_, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL ); //just in case
-#endif
-	*/
-
-    closesocket(pClientContext->socket_);
-    OnClientDisConnected(pClientContext);
-    PushClientInfoToCache(pClientContext);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-int  AServerSocketTCP::GetCountOfClients()
-{
-    return nClientCnt_ ; 
-}
-
-
-
-
-
-
-
 
 
 

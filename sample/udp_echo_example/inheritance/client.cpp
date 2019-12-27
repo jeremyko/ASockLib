@@ -7,14 +7,14 @@
 #include "../../msg_defines.h"
 
 ///////////////////////////////////////////////////////////////////////////////
-class EchoClient : public ASock
+class EchoClient : public asock::ASock
 {
   private:
-    bool OnRecvedCompleteData(Context* context_ptr,char* data_ptr, size_t len); 
+    bool OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len); 
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-bool EchoClient:: OnRecvedCompleteData(Context* context_ptr,char* data_ptr, size_t len) 
+bool EchoClient:: OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) 
 {
     //user specific : - your whole data has arrived.
     char packet[asock::DEFAULT_PACKET_SIZE]; 

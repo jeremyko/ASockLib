@@ -7,7 +7,7 @@
 #include "../../msg_defines.h"
 
 ///////////////////////////////////////////////////////////////////////////////
-class EchoClient : public ASock
+class EchoClient : public asock::ASock
 {
   private:
     size_t  OnCalculateDataLen(asock::Context* context_ptr); 

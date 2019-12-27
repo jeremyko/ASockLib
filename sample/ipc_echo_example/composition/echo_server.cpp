@@ -15,7 +15,7 @@ class EchoServer
     bool    IsServerRunning(){return ipc_server_.IsServerRunning();};
     std::string  GetLastErrMsg(){return  ipc_server_.GetLastErrMsg() ; }
   private:
-    ASock ipc_server_ ; //composite usage
+    asock::ASock ipc_server_ ; //composite usage
     static  EchoServer* this_instance_ ;
   private:
     size_t  OnCalculateDataLen(asock::Context* context_ptr);

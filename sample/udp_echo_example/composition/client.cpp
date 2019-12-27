@@ -16,8 +16,8 @@ class UdpEchoClient
     std::string  GetLastErrMsg(){return  udp_client_.GetLastErrMsg() ; }
 
   private:
-    ASock   udp_client_ ; //composite usage
-    bool    OnRecvedCompleteData(Context* context_ptr, 
+    asock::ASock   udp_client_ ; //composite usage
+    bool    OnRecvedCompleteData(asock::Context* context_ptr, 
                                  char* data_ptr, size_t len); 
 };
 
@@ -40,7 +40,7 @@ bool UdpEchoClient::initialize_udp_client()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool UdpEchoClient:: OnRecvedCompleteData(Context* context_ptr, 
+bool UdpEchoClient:: OnRecvedCompleteData(asock::Context* context_ptr, 
                                           char* data_ptr, size_t len) 
 {
     //user specific : your whole data has arrived.

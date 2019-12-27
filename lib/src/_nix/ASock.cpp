@@ -23,21 +23,17 @@ SOFTWARE.
  *****************************************************************************/
 
 #include "ASock.hpp"
-#include <chrono>
 
 using namespace asock ;
 
 ///////////////////////////////////////////////////////////////////////////////
 ASock::ASock()
 {
+    is_connected_ = false;
 }
 
 ASock::~ASock()
 {
-    if(complete_packet_data_!=NULL) {
-        delete [] complete_packet_data_ ;
-        complete_packet_data_ = NULL;
-    }
     if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || 
          sock_usage_ == SOCK_USAGE_UDP_CLIENT ||   
          sock_usage_ == SOCK_USAGE_IPC_CLIENT ) {
@@ -52,8 +48,8 @@ ASock::~ASock()
 #endif
         Disconnect();
     } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
-              sock_usage_ == SOCK_USAGE_UDP_SERVER ||  
-              sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
+                sock_usage_ == SOCK_USAGE_UDP_SERVER ||  
+                sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
 #ifdef __APPLE__
         if ( kq_events_ptr_ ) { 
             delete [] kq_events_ptr_;    
@@ -63,11 +59,6 @@ ASock::~ASock()
             delete [] ep_events_;    
         }
 #endif
-        CLIENT_UNORDERMAP_ITER_T it_del = client_map_.begin();
-        while (it_del != client_map_.end()) {
-            delete it_del->second;
-            it_del = client_map_.erase(it_del);
-        }
         ClearClientCache();
 #ifdef __APPLE__
         ControlKq(listen_context_ptr_, EVFILT_READ, EV_DELETE );
@@ -85,97 +76,19 @@ ASock::~ASock()
     }
 }
 
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetCbOnCalculatePacketLen(std::function<size_t(Context*)> cb)  
-{
-    //for composition usage 
-    if(cb != nullptr) {
-        cb_on_calculate_data_len_ = cb;
-    } else {
-        err_msg_ = "callback is null";
-        return false;
-    }
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetCbOnRecvedCompletePacket(std::function<bool(Context*, char*, size_t)> cb) 
-{
-    //for composition usage 
-    if(cb != nullptr) {
-        cb_on_recved_complete_packet_ = cb;
-    } else {
-        err_msg_ = "callback is null";
-        return false;
-    }
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool  ASock::SetCbOnDisconnectedFromServer(std::function<void()> cb)  
-{
-    //for composition usage 
-    if(cb != nullptr) {
-        cb_on_disconnected_from_server_ = cb;
-    } else {
-        err_msg_ = "callback is null";
-        return false;
-    }
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetCbOnClientConnected(std::function<void(Context*)> cb)  
-{
-    //for composition usage 
-    if(cb != nullptr) {
-         cb_on_client_connected_= cb;
-    } else {
-        err_msg_ = "callback is null";
-        return false;
-    }
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetCbOnClientDisconnected(std::function<void(Context*)> cb)  
-{
-    //for composition usage 
-    if(cb != nullptr) {
-        cb_on_client_disconnected_ = cb;
-    } else {
-        err_msg_ = "callback is null";
-        return false;
-    }
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetBufferCapacity(size_t max_data_len)
-{
-    if(max_data_len<=0) {
-        err_msg_ = " length is invalid";
-        return false;
-    }
-    max_data_len_ = max_data_len ; 
-    complete_packet_data_ = new (std::nothrow) char [max_data_len_] ;
-    if(complete_packet_data_ == NULL) {
-        err_msg_ = "memory alloc failed!";
-        return false;
-    }
-    return true;
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 bool   ASock::SetSocketNonBlocking(int sock_fd)
 {
     int oldflags  ;
     if ((oldflags = fcntl( sock_fd,F_GETFL, 0)) < 0 ) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "fcntl F_GETFL error [" + std::string(strerror(errno))+ "]";
         return  false;
     }
     int ret  = fcntl( sock_fd,F_SETFL,oldflags | O_NONBLOCK) ;
     if ( ret < 0 ) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "fcntl O_NONBLOCK error [" + std::string(strerror(errno))+ "]";
         return  false;
     }
@@ -183,27 +96,31 @@ bool   ASock::SetSocketNonBlocking(int sock_fd)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::SetSockoptSndRcvBufUdp(int socket)
+bool ASock::SetSockoptSndRcvBufUdp(SOCKET_T socket)
 {
     size_t opt_cur ; 
     int opt_val=max_data_len_ ; 
     int opt_len = sizeof(opt_cur) ;
     if (getsockopt(socket,SOL_SOCKET,SO_SNDBUF,&opt_cur, (SOCKLEN_T *) &opt_len)==-1) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "gsetsockopt SO_SNDBUF error ["  + std::string(strerror(errno)) + "]";
         return false;
     }
     if(max_data_len_ > opt_cur ) {
         if (setsockopt(socket,SOL_SOCKET,SO_SNDBUF,(char*)&opt_val, sizeof(opt_val))==-1) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "setsockopt SO_SNDBUF error ["  + std::string(strerror(errno)) + "]";
             return false;
         }
     }
     if (getsockopt(socket,SOL_SOCKET,SO_RCVBUF,&opt_cur, (SOCKLEN_T *)&opt_len)==-1) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "setsockopt SO_RCVBUF error ["  + std::string(strerror(errno)) + "]";
         return false;
     }
     if(max_data_len_ > opt_cur ) {
         if (setsockopt(socket,SOL_SOCKET,SO_RCVBUF,(char*)&opt_val, sizeof(opt_val))==-1) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "setsockopt SO_RCVBUF error ["  + std::string(strerror(errno)) + "]";
             return false;
         }
@@ -212,139 +129,159 @@ bool ASock::SetSockoptSndRcvBufUdp(int socket)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::RecvfromData(Context* context_ptr) //XXX context 가 지금 서버 context 임!!
+bool ASock::RecvfromData(Context* ctx_ptr) //XXX context 가 지금 서버 context 임!!
 {
-    if(max_data_len_ > context_ptr->recv_buffer.GetLinearFreeSpace() ) {
+    if(max_data_len_ > ctx_ptr->recv_buffer.GetLinearFreeSpace() ) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "no linear free space left " + 
-            std::to_string( context_ptr->recv_buffer.GetLinearFreeSpace()) ;
+            std::to_string( ctx_ptr->recv_buffer.GetLinearFreeSpace()) ;
         return false; 
     }
 
-    SOCKLEN_T addrlen = sizeof(context_ptr->udp_remote_addr);
-    int recved_len = recvfrom(context_ptr->socket, //--> is listen_socket_
-                              context_ptr->recv_buffer.GetLinearAppendPtr(), 
+    SOCKLEN_T addrlen = sizeof(ctx_ptr->udp_remote_addr);
+    int recved_len = recvfrom(ctx_ptr->socket, //--> is listen_socket_
+                              ctx_ptr->recv_buffer.GetLinearAppendPtr(), 
                               max_data_len_ , 
                               0,
-                              (struct sockaddr *)&context_ptr->udp_remote_addr, 
+                              (struct sockaddr *)&ctx_ptr->udp_remote_addr, 
                               &addrlen ); 
     if( recved_len > 0) {
-        context_ptr->recv_buffer.IncreaseData(recved_len);
+        ctx_ptr->recv_buffer.IncreaseData(recved_len);
         //udp got complete packet 
+        char* complete_packet_data = new (std::nothrow) char [max_data_len_] ; 
+        if(complete_packet_data == NULL) {
+            err_msg_ = "memory alloc failed!";
+            return false;
+        }
         if(cumbuffer::OP_RSLT_OK!= 
-           context_ptr->recv_buffer.GetData(recved_len, complete_packet_data_ )) {
+           ctx_ptr->recv_buffer.GetData(recved_len, complete_packet_data )) {
             //error !
-            err_msg_ = context_ptr->recv_buffer.GetErrMsg();
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+            err_msg_ = ctx_ptr->recv_buffer.GetErrMsg();
             std::cerr << err_msg_ << "\n";
-            context_ptr->is_packet_len_calculated = false;
+            ctx_ptr->is_packet_len_calculated = false;
+            delete[] complete_packet_data; //XXX
             return false; 
         }
         //XXX UDP 이므로 받는 버퍼를 초기화해서, linear free space를 초기화 상태로!! XXX 
-        context_ptr->recv_buffer.ReSet(); //this is udp. all data has arrived!
+        ctx_ptr->recv_buffer.ReSet(); //this is udp. all data has arrived!
 
         if(cb_on_recved_complete_packet_!=nullptr) {
             //invoke user specific callback
-            cb_on_recved_complete_packet_ (context_ptr, complete_packet_data_ , recved_len ); 
+            cb_on_recved_complete_packet_ (ctx_ptr, complete_packet_data , recved_len ); 
         } else {
             //invoke user specific implementation
-            OnRecvedCompleteData(context_ptr,complete_packet_data_ , recved_len ); 
+            OnRecvedCompleteData(ctx_ptr,complete_packet_data , recved_len ); 
         }
+        delete[] complete_packet_data; //XXX
     }
     return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::RecvData(Context* context_ptr) 
+bool ASock::RecvData(Context* ctx_ptr) 
 {
+	//std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); //XXX Ȯ���Ұ�!!!
     int want_recv_len = max_data_len_ ;
-    if(max_data_len_ > context_ptr->recv_buffer.GetLinearFreeSpace() ) {
-        want_recv_len = context_ptr->recv_buffer.GetLinearFreeSpace() ; 
+    if(max_data_len_ > ctx_ptr->recv_buffer.GetLinearFreeSpace() ) {
+        want_recv_len = ctx_ptr->recv_buffer.GetLinearFreeSpace() ; 
     }
     if(want_recv_len==0) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "no linear free space left ";
         return false; 
     }
-    int recved_len = recv( context_ptr->socket, 
-                           context_ptr->recv_buffer.GetLinearAppendPtr(), 
+    int recved_len = recv( ctx_ptr->socket, 
+                           ctx_ptr->recv_buffer.GetLinearAppendPtr(), 
                            want_recv_len, 0); 
     if( recved_len > 0) {
-        context_ptr->recv_buffer.IncreaseData(recved_len);
-        while(context_ptr->recv_buffer.GetCumulatedLen()) {
+        ctx_ptr->recv_buffer.IncreaseData(recved_len);
+        while(ctx_ptr->recv_buffer.GetCumulatedLen()) {
             //invoke user specific implementation
-            if(!context_ptr->is_packet_len_calculated ) {
+            if(!ctx_ptr->is_packet_len_calculated ) {
                 //only when calculation is necessary
                 if(cb_on_calculate_data_len_!=nullptr) {
                     //invoke user specific callback
-                    context_ptr->complete_packet_len_ =cb_on_calculate_data_len_ ( context_ptr ); 
+                    ctx_ptr->complete_packet_len =cb_on_calculate_data_len_ ( ctx_ptr ); 
                 } else {
                     //invoke user specific implementation
-                    context_ptr->complete_packet_len_ = OnCalculateDataLen( context_ptr ); 
+                    ctx_ptr->complete_packet_len = OnCalculateDataLen( ctx_ptr ); 
                 }
-                context_ptr->is_packet_len_calculated = true;
+                ctx_ptr->is_packet_len_calculated = true;
             }
-            if(context_ptr->complete_packet_len_ == asock::MORE_TO_COME) {
-                context_ptr->is_packet_len_calculated = false;
+            if(ctx_ptr->complete_packet_len == asock::MORE_TO_COME) {
+                ctx_ptr->is_packet_len_calculated = false;
                 return true; //need to recv more
-            } else if(context_ptr->complete_packet_len_ > context_ptr->recv_buffer.GetCumulatedLen()) {
+            } else if(ctx_ptr->complete_packet_len > 
+                      ctx_ptr->recv_buffer.GetCumulatedLen()) {
                 return true; //need to recv more
             } else {
                 //got complete packet 
+                char* complete_packet_data = new (std::nothrow) char [max_data_len_] ; //XXX 
+                if(complete_packet_data == NULL) {
+                    err_msg_ = "memory alloc failed!";
+                    return false;
+                }
                 if(cumbuffer::OP_RSLT_OK!=
-                   context_ptr->recv_buffer.GetData(context_ptr->complete_packet_len_, 
-                                                     complete_packet_data_ )) {
+                   ctx_ptr->recv_buffer.GetData(ctx_ptr->complete_packet_len, 
+                                                     complete_packet_data )) {
                     //error !
-                    err_msg_ = context_ptr->recv_buffer.GetErrMsg();
-                    context_ptr->is_packet_len_calculated = false;
+                    {
+                        std::lock_guard<std::mutex> lock(err_msg_lock_);
+                        err_msg_ = ctx_ptr->recv_buffer.GetErrMsg();
+                    }
+                    ctx_ptr->is_packet_len_calculated = false;
+                    delete[] complete_packet_data; //XXX
                     return false; 
                 }
                 if(cb_on_recved_complete_packet_!=nullptr) {
                     //invoke user specific callback
-                    cb_on_recved_complete_packet_ (context_ptr, 
-                                                   complete_packet_data_ , 
-                                                   context_ptr->complete_packet_len_ ); 
+                    cb_on_recved_complete_packet_ (ctx_ptr, complete_packet_data , 
+                                                   ctx_ptr->complete_packet_len ); 
                 } else {
                     //invoke user specific implementation
-                    OnRecvedCompleteData(context_ptr, 
-                                            complete_packet_data_ , 
-                                            context_ptr->complete_packet_len_ ); 
+                    OnRecvedCompleteData(ctx_ptr, complete_packet_data , 
+                                            ctx_ptr->complete_packet_len ); 
                 }
-                context_ptr->is_packet_len_calculated = false;
+                ctx_ptr->is_packet_len_calculated = false;
+                delete[] complete_packet_data; //XXX
             }
         } //while
     } else if( recved_len == 0 ) {
-        err_msg_ = "recv 0, client disconnected , fd:" + std::to_string(context_ptr->socket);
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
+        err_msg_ = "recv 0, client disconnected , fd:" + std::to_string(ctx_ptr->socket);
         return false ;
     }
     return true ;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::SendData (Context* context_ptr, const char* data_ptr, size_t len) 
+bool ASock::SendData (Context* ctx_ptr, const char* data_ptr, size_t len) 
 {
-    std::lock_guard<std::mutex> lock(context_ptr->send_lock);
+    std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock);
     char* data_position_ptr = const_cast<char*>(data_ptr) ;   
     size_t total_sent = 0;           
 
     //if sent is pending, just push to queue. 
-    if(context_ptr->is_sent_pending){ //tcp, domain socket only  
+    if(ctx_ptr->is_sent_pending){ //tcp, domain socket only  
         PENDING_SENT pending_sent;
         pending_sent.pending_sent_data = new char [len]; 
         pending_sent.pending_sent_len  = len;
         memcpy(pending_sent.pending_sent_data, data_ptr, len);
         if(sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
             //udp(server) 인 경우엔, 데이터와 client remote addr 정보를 함께 queue에 저장
-            memcpy( &pending_sent.udp_remote_addr, 
-                    &context_ptr->udp_remote_addr, 
+            memcpy( &pending_sent.udp_remote_addr, &ctx_ptr->udp_remote_addr, 
                     sizeof(pending_sent.udp_remote_addr));
         }
-        context_ptr->pending_send_deque_.push_back(pending_sent);
+        ctx_ptr->pending_send_deque.push_back(pending_sent);
 #ifdef __APPLE__
-        if(!ControlKq(context_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
+        if(!ControlKq(ctx_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE )) {
 #elif __linux__
-        if(!ControlEpoll (context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
+        if(!ControlEpoll (ctx_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, 
+                            EPOLL_CTL_MOD)){
 #endif
-        {
             delete [] pending_sent.pending_sent_data ;
-            context_ptr->pending_send_deque_.pop_back();
+            ctx_ptr->pending_send_deque.pop_back();
             return false;
         }
         return true;
@@ -352,23 +289,19 @@ bool ASock::SendData (Context* context_ptr, const char* data_ptr, size_t len)
     while( total_sent < len ) {
         int sent_len =0;
         if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
-            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
-            sent_len = sendto(context_ptr->socket,  
-                              data_position_ptr, 
-                              len-total_sent , 
-                              0, 
-                              (struct sockaddr*)& context_ptr->udp_remote_addr,   
-                              sizeof(context_ptr->udp_remote_addr)) ;
+            //XXX UDP : all or nothing. no partial sent!
+            sent_len = sendto(ctx_ptr->socket,  data_position_ptr, 
+                              len-total_sent , 0, 
+                              (struct sockaddr*)& ctx_ptr->udp_remote_addr,   
+                              sizeof(ctx_ptr->udp_remote_addr)) ;
         } else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
-            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
-            sent_len = sendto(context_ptr->socket,  
-                              data_position_ptr, 
-                              len-total_sent , 
-                              0, 
+            //XXX UDP : all or nothing. no partial sent!
+            sent_len = sendto(ctx_ptr->socket,  data_position_ptr, 
+                              len-total_sent , 0, 
                               0, //XXX client : already set! (via connect)  
-                              sizeof(context_ptr->udp_remote_addr)) ;
+                              sizeof(ctx_ptr->udp_remote_addr)) ;
         } else {
-            sent_len = send(context_ptr->socket, data_position_ptr, len-total_sent, 0);
+            sent_len = send(ctx_ptr->socket, data_position_ptr, len-total_sent, 0);
         }
 
         if(sent_len > 0) {
@@ -384,23 +317,24 @@ bool ASock::SendData (Context* context_ptr, const char* data_ptr, size_t len)
                 if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
                     //udp(server) 인 경우엔, 데이터와 client remote addr 정보를 함께 queue에 저장
                     memcpy( &pending_sent.udp_remote_addr, 
-                            &context_ptr->udp_remote_addr, 
+                            &ctx_ptr->udp_remote_addr, 
                             sizeof(pending_sent.udp_remote_addr));
                 }
-                context_ptr->pending_send_deque_.push_back(pending_sent);
+                ctx_ptr->pending_send_deque.push_back(pending_sent);
 #ifdef __APPLE__
-                if(!ControlKq(context_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE ))
+                if(!ControlKq(ctx_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE )){
 #elif __linux__
-                if(!ControlEpoll (context_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ) )
+                if(!ControlEpoll (ctx_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD)){
 #endif
-                {
                     delete [] pending_sent.pending_sent_data;
-                    context_ptr->pending_send_deque_.pop_back();
+                    ctx_ptr->pending_send_deque.pop_back();
                     return false;
                 }
-                context_ptr->is_sent_pending = true;
+                ctx_ptr->is_sent_pending = true;
                 return true;
             } else if ( errno != EINTR ) {
+                //XXX err_msg_ need lock for multithread
+                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
                 return false;
             }
@@ -411,15 +345,16 @@ bool ASock::SendData (Context* context_ptr, const char* data_ptr, size_t len)
 
 #ifdef __APPLE__
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::ControlKq(Context* context_ptr , uint32_t events, uint32_t fflags)
+bool ASock::ControlKq(Context* ctx_ptr , uint32_t events, uint32_t fflags)
 {
     struct  kevent kq_event;
     memset(&kq_event, 0, sizeof(struct kevent));
-    EV_SET(&kq_event, context_ptr->socket, events,fflags , 0, 0, context_ptr); 
-    //udata = context_ptr
+    EV_SET(&kq_event, ctx_ptr->socket, events,fflags , 0, 0, ctx_ptr); 
+    //udata = ctx_ptr
 
     int result = kevent(kq_fd_, &kq_event, 1, NULL, 0, NULL);
     if (result == -1) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
         return false; 
     }
@@ -429,14 +364,15 @@ bool ASock::ControlKq(Context* context_ptr , uint32_t events, uint32_t fflags)
 }
 #elif __linux__
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::ControlEpoll(Context* context_ptr , uint32_t events, int op)
+bool ASock::ControlEpoll(Context* ctx_ptr , uint32_t events, int op)
 {
     struct  epoll_event ev_client{};
-    ev_client.data.fd    = context_ptr->socket;
+    ev_client.data.fd    = ctx_ptr->socket;
     ev_client.events     = events ;
-    ev_client.data.ptr   = context_ptr;
+    ev_client.data.ptr   = ctx_ptr;
 
-    if(epoll_ctl(ep_fd_, op, context_ptr->socket, &ev_client)<0) {
+    if(epoll_ctl(ep_fd_, op, ctx_ptr->socket, &ev_client)<0) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
         return false; 
     }
@@ -454,7 +390,6 @@ bool ASock::InitTcpServer(const char* bind_ip,
                           size_t      max_client /*=DEFAULT_MAX_CLIENT*/)
 {
     sock_usage_ = SOCK_USAGE_TCP_SERVER  ;
-
     server_ip_ = bind_ip ; 
     server_port_ = bind_port ; 
     max_client_limit_ = max_client ; 
@@ -474,7 +409,6 @@ bool ASock::InitUdpServer(const char* bind_ip,
                           size_t      max_client /*=DEFAULT_MAX_CLIENT*/)
 {
     sock_usage_ = SOCK_USAGE_UDP_SERVER  ;
-
     server_ip_ = bind_ip ; 
     server_port_ = bind_port ; 
     max_client_limit_ = max_client ; 
@@ -494,17 +428,13 @@ bool  ASock::InitIpcServer (const char* sock_path,
 {
     sock_usage_ = SOCK_USAGE_IPC_SERVER  ;
     server_ipc_socket_path_ = sock_path;
-
     max_client_limit_ = max_client ; 
-    if(max_client_limit_<0)
-    {
+    if(max_client_limit_<0) {
         return false;
     }
-    if(!SetBufferCapacity(max_data_len))
-    {
+    if(!SetBufferCapacity(max_data_len)) {
         return false;
     }
-
     return RunServer();
 }
 
@@ -512,11 +442,11 @@ bool  ASock::InitIpcServer (const char* sock_path,
 bool ASock::RunServer()
 {
 #ifdef __APPLE__
-    if ( kq_events_ptr_ )
+    if ( kq_events_ptr_ ) {
 #elif __linux__
-    if (ep_events_)   
+    if (ep_events_) {
 #endif
-    { 
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "error [server is already running]";
         return false;
     }
@@ -528,6 +458,7 @@ bool ASock::RunServer()
         listen_socket_ = socket(AF_INET,SOCK_DGRAM,0) ;
     }
     if( listen_socket_ < 0 ) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "init error [" + std::string(strerror(errno)) + "]";
         return false;
     }   
@@ -537,10 +468,12 @@ bool ASock::RunServer()
     int opt_on=1;
     int result = -1;
     if (setsockopt(listen_socket_,SOL_SOCKET,SO_REUSEADDR,&opt_on,sizeof(opt_on))==-1) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "setsockopt SO_REUSEADDR error ["  + std::string(strerror(errno)) + "]";
         return false;
     }
     if (setsockopt(listen_socket_,SOL_SOCKET,SO_KEEPALIVE, &opt_on, sizeof(opt_on))==-1) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "setsockopt SO_KEEPALIVE error ["  + std::string(strerror(errno)) + "]";
         return false;
     }
@@ -556,7 +489,6 @@ bool ASock::RunServer()
         ipc_server_addr.sun_family = AF_UNIX;
         snprintf(ipc_server_addr.sun_path, sizeof(ipc_server_addr.sun_path),
                 "%s",server_ipc_socket_path_.c_str()); 
-
         result = bind(listen_socket_,(SOCKADDR*)&ipc_server_addr, sizeof(ipc_server_addr)) ;
     } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
                 sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
@@ -565,7 +497,6 @@ bool ASock::RunServer()
         server_addr.sin_family      = AF_INET ;
         server_addr.sin_addr.s_addr = inet_addr(server_ip_.c_str()) ;
         server_addr.sin_port = htons(server_port_);
-
         result = bind(listen_socket_,(SOCKADDR*)&server_addr,sizeof(server_addr)) ;
     }
     //-------------------------------------------------
@@ -577,6 +508,7 @@ bool ASock::RunServer()
          sock_usage_ == SOCK_USAGE_TCP_SERVER ) {
         result = listen(listen_socket_,SOMAXCONN) ;
         if ( result < 0 ) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "listen error [" + std::string(strerror(errno)) + "]";
             return false ;
         }
@@ -589,6 +521,7 @@ bool ASock::RunServer()
 #if defined __APPLE__ || defined __linux__ 
     listen_context_ptr_ = new (std::nothrow) Context();
     if(!listen_context_ptr_) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "Context alloc failed !";
         return false;
     }
@@ -597,6 +530,7 @@ bool ASock::RunServer()
 #ifdef __APPLE__
     kq_fd_ = kqueue();
     if (kq_fd_ == -1) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "kqueue error ["  + std::string(strerror(errno)) + "]";
         return false;
     }
@@ -606,6 +540,7 @@ bool ASock::RunServer()
 #elif __linux__
     ep_fd_ = epoll_create1(0);
     if (ep_fd_ == -1) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "epoll create error ["  + std::string(strerror(errno)) + "]";
         return false;
     }
@@ -643,54 +578,61 @@ void ASock::StopServer()
 ///////////////////////////////////////////////////////////////////////////////
 Context* ASock::PopClientContextFromCache()
 {
-    Context* context_ptr = nullptr;
-    if (!queue_client_cache_.empty()) {
-        context_ptr = queue_client_cache_.front();
-        queue_client_cache_.pop();
-        return context_ptr;
+    Context* ctx_ptr = nullptr;
+    {//lock scope
+        std::lock_guard<std::mutex> lock(cache_lock_);
+        if (!queue_client_cache_.empty()) {
+            ctx_ptr = queue_client_cache_.front();
+            queue_client_cache_.pop();
+            return ctx_ptr;
+        }
     }
-    context_ptr = new (std::nothrow) Context();
-    if(!context_ptr) {
+    ctx_ptr = new (std::nothrow) Context();
+    if(!ctx_ptr) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "Context alloc failed !";
         return nullptr;
     }
-    return context_ptr ;
+    if ( cumbuffer::OP_RSLT_OK != 
+            ctx_ptr->recv_buffer.Init(max_data_len_) ) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
+        err_msg_  = std::string("cumBuffer Init error : ") + 
+            std::string(ctx_ptr->recv_buffer.GetErrMsg());
+        return nullptr;
+    }
+    return ctx_ptr ;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void ASock::PushClientContextToCache(Context* context_ptr)
+void ASock::PushClientContextToCache(Context* ctx_ptr)
 {
-    CLIENT_UNORDERMAP_ITER_T it_found;
-    it_found = client_map_.find(context_ptr->socket);
-    if (it_found != client_map_.end()) {
-        client_map_.erase(it_found);
-    }
     //reset
-    context_ptr->recv_buffer.ReSet();
-    context_ptr->socket = -1;
-    context_ptr->is_packet_len_calculated = false;
-    context_ptr->is_sent_pending = false;
-    context_ptr->complete_packet_len_ = 0;
-    while(!context_ptr->pending_send_deque_.empty() ) {
-        PENDING_SENT pending_sent= context_ptr->pending_send_deque_.front();
+    ctx_ptr->recv_buffer.ReSet();
+    ctx_ptr->socket = -1;
+    ctx_ptr->is_packet_len_calculated = false;
+    ctx_ptr->is_sent_pending = false;
+    ctx_ptr->complete_packet_len = 0;
+    while(!ctx_ptr->pending_send_deque.empty() ) {
+        PENDING_SENT pending_sent= ctx_ptr->pending_send_deque.front();
         delete [] pending_sent.pending_sent_data;
-        context_ptr->pending_send_deque_.pop_front();
+        ctx_ptr->pending_send_deque.pop_front();
     }
-    queue_client_cache_.push(context_ptr);
+    std::lock_guard<std::mutex> lock(cache_lock_);
+    queue_client_cache_.push(ctx_ptr);
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::ClearClientCache()
 {
+    std::lock_guard<std::mutex> lock(cache_lock_);
     while(!queue_client_cache_.empty() ) {
-        Context* context_ptr = queue_client_cache_.front();
-        while(!context_ptr->pending_send_deque_.empty() ) {
-            PENDING_SENT pending_sent= context_ptr->pending_send_deque_.front();
+        Context* ctx_ptr = queue_client_cache_.front();
+        while(!ctx_ptr->pending_send_deque.empty() ) {
+            PENDING_SENT pending_sent= ctx_ptr->pending_send_deque.front();
             delete [] pending_sent.pending_sent_data;
-            context_ptr->pending_send_deque_.pop_front();
+            ctx_ptr->pending_send_deque.pop_front();
         }
-        delete context_ptr;
+        delete ctx_ptr;
         queue_client_cache_.pop();
     }
 }
@@ -716,6 +658,7 @@ bool ASock::AcceptNewClient()
             } else if (errno == ECONNABORTED) {
                 break;
             } else {
+                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "accept error [" + std::string(strerror(errno)) + "]";
                 is_server_running_ = false;
                 return false;
@@ -728,33 +671,18 @@ bool ASock::AcceptNewClient()
             is_server_running_ = false;
             return false;
         }
-        if ( cumbuffer::OP_RSLT_OK != 
-             client_context_ptr->recv_buffer.Init(max_data_len_) ) {
-            err_msg_  = std::string("cumBuffer Init error : ") + 
-                std::string(client_context_ptr->recv_buffer.GetErrMsg());
-            is_server_running_ = false;
-            return false;
-        }
         client_context_ptr->socket = client_fd;
 
-        std::pair<CLIENT_UNORDERMAP_ITER_T, bool> client_map_rslt;
-        client_map_rslt = client_map_.insert(std::pair<int, Context*>(client_fd, client_context_ptr));
-        if (!client_map_rslt.second) {
-            err_msg_ = "client_map_ insert error [" + 
-                        std::to_string(client_fd) + " already exist]";
-            return false;
-        }
         if(cb_on_client_connected_!=nullptr) {
             cb_on_client_connected_(client_context_ptr);
         } else {
             OnClientConnected(client_context_ptr);
         }
 #ifdef __APPLE__
-        if(!ControlKq(client_context_ptr, EVFILT_READ, EV_ADD ))
+        if(!ControlKq(client_context_ptr, EVFILT_READ, EV_ADD )){
 #elif __linux__
-        if(!ControlEpoll( client_context_ptr, EPOLLIN |EPOLLRDHUP  , EPOLL_CTL_ADD ))
+        if(!ControlEpoll( client_context_ptr, EPOLLIN |EPOLLRDHUP, EPOLL_CTL_ADD)){
 #endif
-        {
             is_server_running_ = false;
             return false;
         }
@@ -771,6 +699,7 @@ void ASock:: ServerThreadUdpRoutine()
     ts.tv_nsec =0;
 #endif
     if (cumbuffer::OP_RSLT_OK != listen_context_ptr_->recv_buffer.Init(max_data_len_) ) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_  = "cumBuffer Init error : " + 
                     std::string(listen_context_ptr_->recv_buffer.GetErrMsg());
         is_server_running_ = false;
@@ -780,6 +709,7 @@ void ASock:: ServerThreadUdpRoutine()
 #ifdef __APPLE__
         int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, max_client_limit_, &ts); 
         if (event_cnt < 0) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";
             is_server_running_ = false;
             return;
@@ -787,6 +717,7 @@ void ASock:: ServerThreadUdpRoutine()
 #elif __linux__
         int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 1000 );
         if (event_cnt < 0) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
             is_server_running_ = false;
             return;
@@ -794,22 +725,20 @@ void ASock:: ServerThreadUdpRoutine()
 #endif
         for (int i = 0; i < event_cnt; i++) {
 #ifdef __APPLE__
-            if (EVFILT_READ == kq_events_ptr_[i].filter)
+            if (EVFILT_READ == kq_events_ptr_[i].filter){
 #elif __linux__
-            if (ep_events_[i].events & EPOLLIN) 
+            if (ep_events_[i].events & EPOLLIN) {
 #endif
-            {
                 //# recv #----------
                 if(! RecvfromData(listen_context_ptr_)) {
                     break;
                 }
             }
 #ifdef __APPLE__
-            else if (EVFILT_WRITE == kq_events_ptr_[i].filter )
+            else if (EVFILT_WRITE == kq_events_ptr_[i].filter ){
 #elif __linux__
-            else if (ep_events_[i].events & EPOLLOUT) 
+            else if (ep_events_[i].events & EPOLLOUT) {
 #endif
-            {
                 //# send #----------
                 if(!SendPendingData(listen_context_ptr_)) {
                     return; //error!
@@ -832,6 +761,7 @@ void ASock:: ServerThreadRoutine()
 #ifdef __APPLE__
         int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, max_client_limit_, &ts); 
         if (event_cnt < 0) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";
             is_server_running_ = false;
             return;
@@ -839,6 +769,7 @@ void ASock:: ServerThreadRoutine()
 #elif __linux__
         int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 1000 );
         if (event_cnt < 0) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
             is_server_running_ = false;
             return;
@@ -846,11 +777,10 @@ void ASock:: ServerThreadRoutine()
 #endif
         for (int i = 0; i < event_cnt; i++) {
 #ifdef __APPLE__
-            if (kq_events_ptr_[i].ident   == listen_socket_) 
+            if (kq_events_ptr_[i].ident   == listen_socket_) {
 #elif __linux__
-            if (((Context*)ep_events_[i].data.ptr)->socket == listen_socket_)
+            if (((Context*)ep_events_[i].data.ptr)->socket == listen_socket_){
 #endif
-            {
                 //# accept #----------
                 if(!AcceptNewClient()) {
                     std::cerr <<"accept error:" << err_msg_ << "\n";
@@ -858,39 +788,32 @@ void ASock:: ServerThreadRoutine()
                 }
             } else {
 #ifdef __APPLE__
-                Context* context_ptr = (Context*)kq_events_ptr_[i].udata;
+                Context* ctx_ptr = (Context*)kq_events_ptr_[i].udata;
+                if (kq_events_ptr_[i].flags & EV_EOF){
 #elif __linux__
-                Context* context_ptr = (Context*)ep_events_[i].data.ptr ;
+                Context* ctx_ptr = (Context*)ep_events_[i].data.ptr ;
+                if (ep_events_[i].events & EPOLLRDHUP || ep_events_[i].events & EPOLLERR) {
 #endif
-
-#ifdef __APPLE__
-                if (kq_events_ptr_[i].flags & EV_EOF)
-#elif __linux__
-                if (ep_events_[i].events & EPOLLRDHUP || ep_events_[i].events & EPOLLERR) 
-#endif
-                {
                     //# close #----------
-                    TerminateClient(context_ptr); 
+                    TerminateClient(ctx_ptr); 
                 }
 #ifdef __APPLE__
-                else if (EVFILT_READ == kq_events_ptr_[i].filter)
+                else if (EVFILT_READ == kq_events_ptr_[i].filter){
 #elif __linux__
-                else if (ep_events_[i].events & EPOLLIN) 
+                else if (ep_events_[i].events & EPOLLIN) {
 #endif
-                {
                     //# recv #----------
-                    if(! RecvData(context_ptr) ) {
-                        TerminateClient(context_ptr); 
+                    if(! RecvData(ctx_ptr) ) {
+                        TerminateClient(ctx_ptr); 
                     }
                 }
 #ifdef __APPLE__
-                else if (EVFILT_WRITE == kq_events_ptr_[i].filter )
+                else if (EVFILT_WRITE == kq_events_ptr_[i].filter ){
 #elif __linux__
-                else if (ep_events_[i].events & EPOLLOUT) 
+                else if (ep_events_[i].events & EPOLLOUT) {
 #endif
-                {
                     //# send #----------
-                    if(!SendPendingData(context_ptr)) {
+                    if(!SendPendingData(ctx_ptr)) {
                         return; //error!
                     }
                 } 
@@ -901,15 +824,15 @@ void ASock:: ServerThreadRoutine()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::SendPendingData(Context* context_ptr)
+bool ASock::SendPendingData(Context* ctx_ptr)
 {
-    std::lock_guard<std::mutex> guard(context_ptr->send_lock);
-    while(!context_ptr->pending_send_deque_.empty()) {
-        PENDING_SENT pending_sent = context_ptr->pending_send_deque_.front();
+    std::lock_guard<std::mutex> guard(ctx_ptr->ctx_lock);
+    while(!ctx_ptr->pending_send_deque.empty()) {
+        PENDING_SENT pending_sent = ctx_ptr->pending_send_deque.front();
         int sent_len = 0;
         if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
             //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
-            sent_len = sendto(context_ptr->socket,  
+            sent_len = sendto(ctx_ptr->socket,  
                               pending_sent.pending_sent_data, 
                               pending_sent.pending_sent_len, 
                               0, 
@@ -917,37 +840,36 @@ bool ASock::SendPendingData(Context* context_ptr)
                               sizeof(pending_sent.udp_remote_addr)) ;
         } else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
             //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
-            sent_len = sendto(context_ptr->socket,  
+            sent_len = sendto(ctx_ptr->socket,  
                               pending_sent.pending_sent_data, 
                               pending_sent.pending_sent_len, 
                               0, 
                               0, //XXX client : already set! (via connect)  
                               sizeof(pending_sent.udp_remote_addr)) ;
         } else {
-            sent_len = send(context_ptr->socket, 
+            sent_len = send(ctx_ptr->socket, 
                             pending_sent.pending_sent_data, 
                             pending_sent.pending_sent_len, 
                             0) ;
         }
-
         if( sent_len > 0 ) {
             if(sent_len == pending_sent.pending_sent_len) {
                 delete [] pending_sent.pending_sent_data;
-                context_ptr->pending_send_deque_.pop_front();
-                if(context_ptr->pending_send_deque_.empty()) {
+                ctx_ptr->pending_send_deque.pop_front();
+                if(ctx_ptr->pending_send_deque.empty()) {
                     //sent all data
-                    context_ptr->is_sent_pending = false; 
+                    ctx_ptr->is_sent_pending = false; 
 #ifdef __APPLE__
-                    if(!ControlKq(context_ptr, EVFILT_WRITE, EV_DELETE ) ||
-                       !ControlKq(context_ptr, EVFILT_READ, EV_ADD ) )
+                    if(!ControlKq(ctx_ptr, EVFILT_WRITE, EV_DELETE ) ||
+                       !ControlKq(ctx_ptr, EVFILT_READ, EV_ADD)){
 #elif __linux__
-                    if(!ControlEpoll (context_ptr, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD ))
+                    if(!ControlEpoll (ctx_ptr, EPOLLIN | EPOLLERR | EPOLLRDHUP, 
+                                      EPOLL_CTL_MOD)){
 #endif
-                    {
                         //error!!!
                         if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || 
                              sock_usage_ == SOCK_USAGE_IPC_CLIENT ) {
-                            close( context_ptr->socket);
+                            close( ctx_ptr->socket);
                             InvokeServerDisconnectedHandler();
                             is_client_thread_running_ = false;
                         } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
@@ -969,26 +891,29 @@ bool ASock::SendPendingData(Context* context_ptr)
                         alloc_len);
                 //remove first.
                 delete [] pending_sent.pending_sent_data;
-                context_ptr->pending_send_deque_.pop_front();
+                ctx_ptr->pending_send_deque.pop_front();
                 //push_front
-                context_ptr->pending_send_deque_.push_front(partial_pending_sent);
+                ctx_ptr->pending_send_deque.push_front(partial_pending_sent);
                 break; //next time
             }
         } else if( sent_len < 0 ) {
             if ( errno == EWOULDBLOCK || errno == EAGAIN ) {
                 break; //next time
             } else if ( errno != EINTR ) {
-                err_msg_ = "send error ["  + std::string(strerror(errno)) + "]";
+                {//lock scope
+                    std::lock_guard<std::mutex> lock(err_msg_lock_);
+                    err_msg_ = "send error ["  + std::string(strerror(errno)) + "]";
+                }
                 if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || 
                      sock_usage_ == SOCK_USAGE_IPC_CLIENT ) {
                     //client error!!!
-                    close( context_ptr->socket);
+                    close( ctx_ptr->socket);
                     InvokeServerDisconnectedHandler();
                     is_client_thread_running_ = false;
                     return false; 
                 } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
                             sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
-                    TerminateClient(context_ptr); 
+                    TerminateClient(ctx_ptr); 
                 }
                 break;
             } 
@@ -998,29 +923,37 @@ bool ASock::SendPendingData(Context* context_ptr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void  ASock::TerminateClient(Context* context_ptr)
+void  ASock::TerminateClient( Context* client_ctx, bool is_graceful)
 {
-    client_cnt_--;
+	client_cnt_--;
+	DBG_LOG(" socket : "<< client_ctx->socket 
+			<<", connection closing ,graceful=" << (is_graceful ? "TRUE" : "FALSE"));
+	if (!is_graceful) {
+		// force the subsequent closesocket to be abortative.
+		struct linger linger_struct ;
+		linger_struct.l_onoff = 1;
+		linger_struct.l_linger = 0;
+		setsockopt(client_ctx->socket, SOL_SOCKET, SO_LINGER, (char*)&linger_struct, sizeof(linger_struct));
+	}
 #ifdef __APPLE__
-    ControlKq(context_ptr, EVFILT_READ, EV_DELETE );
+    ControlKq(client_ctx, EVFILT_READ, EV_DELETE );
 #elif __linux__
-    ControlEpoll(context_ptr, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL ); //just in case
+    ControlEpoll(client_ctx, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL ); //just in case
 #endif
-    close(context_ptr->socket);
-    if(cb_on_client_connected_!=nullptr) {
-        cb_on_client_disconnected_(context_ptr);
-    } else {
-        OnClientDisconnected(context_ptr);
-    }
-
-    PushClientContextToCache(context_ptr);
+	close(client_ctx->socket);
+	if (cb_on_client_disconnected_ != nullptr) {
+		cb_on_client_disconnected_(client_ctx);
+	} else {
+		OnClientDisconnected(client_ctx);
+	}
+	PushClientContextToCache(client_ctx);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // CLIENT
 ///////////////////////////////////////////////////////////////////////////////
 bool  ASock::InitTcpClient(const char* server_ip, 
-                           size_t      server_port, 
+                           unsigned short  server_port, 
                            int         connect_timeout_secs, 
                            size_t      max_data_len /*DEFAULT_PACKET_SIZE*/ )
 {
@@ -1039,7 +972,7 @@ bool  ASock::InitTcpClient(const char* server_ip,
 
 ///////////////////////////////////////////////////////////////////////////////
 bool  ASock::InitUdpClient(const char* server_ip, 
-                           size_t      server_port, 
+                           unsigned short  server_port, 
                            size_t      max_data_len /*DEFAULT_PACKET_SIZE*/ )
 {
     sock_usage_ = SOCK_USAGE_UDP_CLIENT  ;
@@ -1055,8 +988,7 @@ bool  ASock::InitUdpClient(const char* server_ip,
 }
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::InitIpcClient(const char* sock_path,  
-                          int         connect_timeout_secs,
-                          size_t      max_data_len)
+                          int connect_timeout_secs, size_t max_data_len)
 {
     sock_usage_ = SOCK_USAGE_IPC_CLIENT  ;
     connect_timeout_secs_ = connect_timeout_secs;
@@ -1074,7 +1006,11 @@ bool ASock::InitIpcClient(const char* sock_path,
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::ConnectToServer()
 {
+    if(is_connected_ ){
+        return true;
+    }
     if( context_.socket < 0 ) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "error : server socket is invalid" ;
         return false;
     }   
@@ -1083,7 +1019,8 @@ bool ASock::ConnectToServer()
         return  false;
     }
     if(!is_buffer_init_ ) {
-        if  ( cumbuffer::OP_RSLT_OK != context_.recv_buffer.Init(max_data_len_) ) {
+        if(cumbuffer::OP_RSLT_OK != context_.recv_buffer.Init(max_data_len_) ) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ =  std::string("cumBuffer Init error :") + 
                         std::string(context_.recv_buffer.GetErrMsg());
             close(context_.socket);
@@ -1109,12 +1046,14 @@ bool ASock::ConnectToServer()
         }
         result = connect(context_.socket,(SOCKADDR*)&udp_server_addr_,(SOCKLEN_T)sizeof(SOCKADDR_IN)) ;
     } else {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "invalid socket usage" ;
         close(context_.socket);
         return false;
     }
     if ( result < 0) {
         if (errno != EINPROGRESS) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "connect error [" + std::string(strerror(errno))+ "]";
             close(context_.socket);
             return false;
@@ -1130,29 +1069,33 @@ bool ASock::ConnectToServer()
     wset = rset;
     result = select(context_.socket+1, &rset, &wset, NULL, &timeoutVal ) ;
     if (result == 0 ) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "connect timeout";
         close(context_.socket);
         return false;
     } else if (result< 0) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
         close(context_.socket);
         return false;
     }
-
     if (FD_ISSET(context_.socket, &rset) || FD_ISSET(context_.socket, &wset)) {
         int  socketerror = 0;
         SOCKLEN_T  len = sizeof(socketerror);
         if (getsockopt(context_.socket, SOL_SOCKET, SO_ERROR, &socketerror, &len) < 0) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
             close(context_.socket);
             return false;
         }
         if (socketerror) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
             close(context_.socket);
             return false;
         }
     } else {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "connect error : fd not set ";
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< err_msg_ <<"\n"; 
         close(context_.socket);
@@ -1171,6 +1114,7 @@ bool ASock::RunClientThread()
         memset(kq_events_ptr_, 0x00, sizeof(struct kevent) );
         kq_fd_ = kqueue();
         if (kq_fd_ == -1) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "kqueue error ["  + std::string(strerror(errno)) + "]";
             close(context_.socket);
             return false;
@@ -1180,6 +1124,7 @@ bool ASock::RunClientThread()
         memset(ep_events_, 0x00, sizeof(struct epoll_event) );
         ep_fd_ = epoll_create1(0);
         if ( ep_fd_== -1) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "epoll create error ["  + std::string(strerror(errno)) + "]";
             close(context_.socket);
             return false;
@@ -1199,6 +1144,7 @@ bool ASock::RunClientThread()
 #endif
         std::thread client_thread(&ASock::ClientThreadRoutine, this);
         client_thread.detach();
+        is_client_thread_running_ = true;
     }
     return true;
 }
@@ -1206,7 +1152,6 @@ bool ASock::RunClientThread()
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::ClientThreadRoutine()
 {
-    is_client_thread_running_ = true;
     while(is_connected_) {
 #ifdef __APPLE__
         struct timespec ts;
@@ -1217,6 +1162,7 @@ void ASock::ClientThreadRoutine()
         int event_cnt = epoll_wait(ep_fd_, ep_events_, 1, 1000 );
 #endif
         if (event_cnt < 0) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
 #ifdef __APPLE__
             err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";
 #elif __linux__
@@ -1225,24 +1171,22 @@ void ASock::ClientThreadRoutine()
             is_client_thread_running_ = false;
             return;
         }
+        //############## close ###########################
 #ifdef __APPLE__
-        if (kq_events_ptr_->flags & EV_EOF)
+        if (kq_events_ptr_->flags & EV_EOF){
 #elif __linux__
-        if (ep_events_->events & EPOLLRDHUP || ep_events_->events & EPOLLERR) 
+        if (ep_events_->events & EPOLLRDHUP || ep_events_->events & EPOLLERR) {
 #endif
-        {
-            //############## close ###########################
             close( context_.socket);
             InvokeServerDisconnectedHandler();
             break;
         }
+        //############## recv ############################
 #ifdef __APPLE__
-        else if (EVFILT_READ == kq_events_ptr_->filter )
+        else if (EVFILT_READ == kq_events_ptr_->filter ){
 #elif __linux__
-        else if (ep_events_->events & EPOLLIN) 
+        else if (ep_events_->events & EPOLLIN) {
 #endif
-        {
-            //############## recv ############################
             if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
                 if(! RecvfromData(&context_) ) {
                     close( context_.socket);
@@ -1257,13 +1201,12 @@ void ASock::ClientThreadRoutine()
                 }
             }
         }
+        //############## send ############################
 #ifdef __APPLE__
-        else if ( EVFILT_WRITE == kq_events_ptr_->filter )
+        else if ( EVFILT_WRITE == kq_events_ptr_->filter ){
 #elif __linux__
-        else if (ep_events_->events & EPOLLOUT) 
+        else if (ep_events_->events & EPOLLOUT) {
 #endif
-        {
-            //############## send ############################
             if(!SendPendingData(&context_)) {
                 return; //error!
             }
@@ -1286,6 +1229,7 @@ void ASock::InvokeServerDisconnectedHandler()
 bool ASock:: SendToServer(const char* data, size_t len)
 {
     if ( !is_connected_ ) {
+        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "not connected";
         return false;
     }
@@ -1299,5 +1243,6 @@ void ASock:: Disconnect()
         close(context_.socket);
     }
     context_.socket = -1;
+    is_connected_ = false;
 }
 

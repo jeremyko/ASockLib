@@ -15,7 +15,7 @@ class EchoClient
     bool IsConnected() { return ipc_client_.IsConnected();}
     std::string  GetLastErrMsg(){return  ipc_client_.GetLastErrMsg() ; }
   private:
-    ASock   ipc_client_ ; //composite usage
+    asock::ASock   ipc_client_ ; //composite usage
     size_t  OnCalculateDataLen(asock::Context* context_ptr); 
     bool    OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len); 
     void    OnDisconnectedFromServer() ; 

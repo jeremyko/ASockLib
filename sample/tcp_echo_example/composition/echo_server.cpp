@@ -10,13 +10,15 @@ class EchoServer
 {
   public:
     EchoServer(){this_instance_ = this; }
+#if defined __APPLE__ || defined __linux__ 
     static void sigint_handler(int signo);
+#endif
     bool    initialize_tcp_server();
     bool    IsServerRunning(){return tcp_server_.IsServerRunning();};
     std::string  GetLastErrMsg(){return  tcp_server_.GetLastErrMsg() ; }
 
   private:
-    ASock tcp_server_ ; //composite usage
+    asock::ASock tcp_server_ ; //composite usage
     static  EchoServer* this_instance_ ;
   private:
     size_t  OnCalculateDataLen(asock::Context* context_ptr);
@@ -55,13 +57,16 @@ bool EchoServer::initialize_tcp_server()
 size_t EchoServer::OnCalculateDataLen(asock::Context* context_ptr)
 {
     //user specific : calculate your complete packet length here using buffer data.
-    if(context_ptr->recv_buffer.GetCumulatedLen() < (int)CHAT_HEADER_SIZE ) {
+    if(context_ptr->GetBuffer()->GetCumulatedLen() < (int)CHAT_HEADER_SIZE ) {
         return asock::MORE_TO_COME ; //more to come 
     }
     ST_MY_HEADER header ;
-    context_ptr->recv_buffer.PeekData(CHAT_HEADER_SIZE, (char*)&header); 
+    context_ptr->GetBuffer()->PeekData(CHAT_HEADER_SIZE, (char*)&header); 
     size_t supposed_total_len = std::atoi(header.msg_len) + CHAT_HEADER_SIZE;
-    assert(supposed_total_len<=context_ptr->recv_buffer.GetCapacity());
+    assert(supposed_total_len<=context_ptr->GetBuffer()->GetCapacity());
+    if (supposed_total_len == 6) {
+        std::cerr << "error !\n"; //XXX TODO just debug
+    }
     return supposed_total_len ;
 }
 
@@ -97,6 +102,7 @@ void EchoServer::OnClientDisconnected(asock::Context* context_ptr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+#if defined __APPLE__ || defined __linux__ 
 void EchoServer::sigint_handler(int signo)
 {
     sigset_t sigset, oldset;
@@ -107,16 +113,19 @@ void EchoServer::sigint_handler(int signo)
     std::cout << "Stop Server! \n";
     this_instance_->tcp_server_.StopServer();
 }
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
+#if defined __APPLE__ || defined __linux__ 
     std::signal(SIGINT,EchoServer::sigint_handler);
+#endif
     EchoServer echoserver; 
     echoserver.initialize_tcp_server();
 
     while( echoserver.IsServerRunning() ) {
-        sleep(1);
+		std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "server exit...\n";
     return 0;
