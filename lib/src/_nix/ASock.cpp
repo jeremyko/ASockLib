@@ -1246,3 +1246,14 @@ void ASock:: Disconnect()
     is_connected_ = false;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+//for client use
+void ASock:: WaitForClientLoopExit()
+{
+    //wait thread exit
+    if (client_thread_.joinable()) {
+        client_thread_.join();
+    }
+}
+
+

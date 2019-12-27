@@ -167,10 +167,8 @@ int main(int argc, char* argv[])
     }
     //spawn thread after all client starts..
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
-        int j = 0;
         for (size_t j = 0; j < MAX_THREADS; j++) {
             vec_threads.push_back(std::thread(&STEO_Client::SendThread, *it, j));
-            j++;
         }
     }
     
