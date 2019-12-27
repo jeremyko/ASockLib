@@ -15,7 +15,7 @@ class STEO_Client
     void DisConnectTcpClient();
     bool IsConnected() { return tcp_client_.IsConnected();}
     void SendThread(size_t index) ;
-	void WaitForClientLoopExit();
+    void WaitForClientLoopExit();
     std::string  GetLastErrMsg(){return  tcp_client_.GetLastErrMsg() ; }
   private:
     size_t client_id_;
@@ -54,7 +54,7 @@ void STEO_Client::DisConnectTcpClient() {
 }
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Client::WaitForClientLoopExit() {
-	tcp_client_.WaitForClientLoopExit();
+    tcp_client_.WaitForClientLoopExit();
 }
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Client::SendThread(size_t index) 
@@ -67,17 +67,17 @@ void STEO_Client::SendThread(size_t index)
             continue;
         }
     }
-	//DBG_LOG("Send Thread starts....... : "<< index);
+    //DBG_LOG("Send Thread starts....... : "<< index);
     int sent_cnt =0;
     ST_MY_HEADER header;
     //char send_msg[256];
     while(IsConnected()){
-		std::string data = "client [";
-		data += std::to_string(client_id_);
+        std::string data = "client [";
+        data += std::to_string(client_id_);
         data += "] thread index [";
-		data += std::to_string(index);
-		data += "] ---- sending this(";
-		data += std::to_string(sent_cnt) + std::string(")");
+        data += std::to_string(index);
+        data += "] ---- sending this(";
+        data += std::to_string(sent_cnt) + std::string(")");
         snprintf(header.msg_len, sizeof(header.msg_len), "%zu", data.length() );
         /*
         //---------------------------------------- send one buffer
@@ -105,8 +105,8 @@ void STEO_Client::SendThread(size_t index)
             DBG_LOG("client " <<index << " completes send ");
             break;
         }
-		//std::this_thread::sleep_for(std::chrono::seconds(1));
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        //std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     DBG_LOG("send thread exiting : " << index);
 }
@@ -155,38 +155,38 @@ int main(int argc, char* argv[])
             exit(1);
         }
         if(!client->InitializeTcpClient(i)){
-			continue;
-		}
-		//spawn threads along with creating clients
+            continue;
+        }
+        //spawn threads along with creating clients
         /*
         for (size_t j = 0; j < MAX_THREADS; j++) {
             vec_threads.push_back(std::thread(&STEO_Client::SendThread, client, j));
         }
         */
-		vec_clients.push_back(client);
+        vec_clients.push_back(client);
     }
-	//spawn thread after all client starts..
-	for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
-		int j = 0;
-		for (size_t j = 0; j < MAX_THREADS; j++) {
-			vec_threads.push_back(std::thread(&STEO_Client::SendThread, *it, j));
-			j++;
-		}
-	}
+    //spawn thread after all client starts..
+    for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
+        int j = 0;
+        for (size_t j = 0; j < MAX_THREADS; j++) {
+            vec_threads.push_back(std::thread(&STEO_Client::SendThread, *it, j));
+            j++;
+        }
+    }
     
     DBG_LOG("total clients = " << vec_clients.size());
     DBG_LOG("total threads = " << vec_threads.size());
-	for(size_t i = 0; i < vec_threads.size(); i++) {
-		if (vec_threads[i].joinable()) {
-			vec_threads[i].join();
-		}
-	}
+    for(size_t i = 0; i < vec_threads.size(); i++) {
+        if (vec_threads[i].joinable()) {
+            vec_threads[i].join();
+        }
+    }
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
-		(*it)->DisConnectTcpClient();
-	}
+        (*it)->DisConnectTcpClient();
+    }
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
         (*it)->WaitForClientLoopExit();
-	}
+    }
     std::cout << "==== all clients exiting : "<<vec_clients.size()<<"\n";
     while (! vec_clients.empty()) {
         delete vec_clients.back();

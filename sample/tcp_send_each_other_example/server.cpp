@@ -58,16 +58,16 @@ bool STEO_Server::InitializeTcpServer()
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Server::SendThread(asock::Context* ctx_ptr) 
 {
-	DBG_LOG("Send Thread starts.......");
+    DBG_LOG("Send Thread starts.......");
     size_t cnt = 0;
     while(ctx_ptr->is_connected) {
-		std::string data = "server sending this....";
+        std::string data = "server sending this....";
         data += std::to_string(cnt);
-		ST_MY_HEADER header;
-		snprintf(header.msg_len, sizeof(header.msg_len), "%zu", data.length());
+        ST_MY_HEADER header;
+        snprintf(header.msg_len, sizeof(header.msg_len), "%zu", data.length());
         //---------------------------------------- send one buffer
         /*
-		char send_msg[256];
+        char send_msg[256];
         memcpy(&send_msg, &header, sizeof(header));
         memcpy(send_msg+sizeof(ST_MY_HEADER), data.c_str(), data.length());
         //DBG_LOG( "send msg ["<< send_msg <<"], len=" 
@@ -88,8 +88,8 @@ void STEO_Server::SendThread(asock::Context* ctx_ptr)
             DBG_ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
             return ;
         }
-		std::this_thread::sleep_for(std::chrono::seconds(1));
-		//std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        //std::this_thread::sleep_for(std::chrono::milliseconds(30));
         cnt++;
     }
 }
@@ -121,18 +121,18 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
     std::cout<<"recved [" << packet << "]\n"; 
     //---------------------------------------
     //this is echo server
-	std::string data = "server echo:";
-	data += std::string(packet);
-	ST_MY_HEADER header;
-	snprintf(header.msg_len, sizeof(header.msg_len), "%zu", data.length());
-	char send_msg[256];
-	memcpy(&send_msg, &header, sizeof(header));
-	memcpy(send_msg + sizeof(ST_MY_HEADER), data.c_str(), data.length());
-	if (!tcp_server_.SendData(  ctx_ptr, send_msg, 
+    std::string data = "server echo:";
+    data += std::string(packet);
+    ST_MY_HEADER header;
+    snprintf(header.msg_len, sizeof(header.msg_len), "%zu", data.length());
+    char send_msg[256];
+    memcpy(&send_msg, &header, sizeof(header));
+    memcpy(send_msg + sizeof(ST_MY_HEADER), data.c_str(), data.length());
+    if (!tcp_server_.SendData(  ctx_ptr, send_msg, 
                                 sizeof(ST_MY_HEADER) + data.length())) {
-		DBG_ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
-		return false;
-	}
+        DBG_ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
+        return false;
+    }
     return true;
 }
 
@@ -185,14 +185,14 @@ int main(int argc, char* argv[])
     std::signal(SIGINT,STEO_Server::SigIntHandler);
 #else
     if (0 == SetConsoleCtrlHandler(CtrlHandler, TRUE)) {
-		std::cout << "error: server exit...\n";
-		return 1;
+        std::cout << "error: server exit...\n";
+        return 1;
     }
 #endif
     STEO_Server echoserver; 
     echoserver.InitializeTcpServer();
     while( echoserver.IsServerRunning() ) {
-		std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "server exit...\n";
     return 0;
