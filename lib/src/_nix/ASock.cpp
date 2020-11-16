@@ -129,7 +129,7 @@ bool ASock::SetSockoptSndRcvBufUdp(SOCKET_T socket)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool ASock::RecvfromData(Context* ctx_ptr) //XXX context 가 지금 서버 context 임!!
+bool ASock::RecvfromData(Context* ctx_ptr) //XXX context 가 지금 서버 것.
 {
     if(max_data_len_ > ctx_ptr->recv_buffer.GetLinearFreeSpace() ) {
         std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -163,7 +163,7 @@ bool ASock::RecvfromData(Context* ctx_ptr) //XXX context 가 지금 서버 conte
             delete[] complete_packet_data; //XXX
             return false; 
         }
-        //XXX UDP 이므로 받는 버퍼를 초기화해서, linear free space를 초기화 상태로!! XXX 
+        //XXX UDP 이므로 받는 버퍼를 초기화해서, linear free space를 초기화 상태로 
         ctx_ptr->recv_buffer.ReSet(); //this is udp. all data has arrived!
 
         if(cb_on_recved_complete_packet_!=nullptr) {
@@ -180,8 +180,7 @@ bool ASock::RecvfromData(Context* ctx_ptr) //XXX context 가 지금 서버 conte
 
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::RecvData(Context* ctx_ptr) 
-{
-	//std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); //XXX Ȯ���Ұ�!!!
+{	
     int want_recv_len = max_data_len_ ;
     if(max_data_len_ > ctx_ptr->recv_buffer.GetLinearFreeSpace() ) {
         want_recv_len = ctx_ptr->recv_buffer.GetLinearFreeSpace() ; 
@@ -831,7 +830,7 @@ bool ASock::SendPendingData(Context* ctx_ptr)
         PENDING_SENT pending_sent = ctx_ptr->pending_send_deque.front();
         int sent_len = 0;
         if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
-            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
+            //XXX UDP : all or nothing . no partial sent!
             sent_len = sendto(ctx_ptr->socket,  
                               pending_sent.pending_sent_data, 
                               pending_sent.pending_sent_len, 
@@ -839,7 +838,7 @@ bool ASock::SendPendingData(Context* ctx_ptr)
                               (struct sockaddr*)& pending_sent.udp_remote_addr,   
                               sizeof(pending_sent.udp_remote_addr)) ;
         } else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
-            //XXX UDP 인 경우엔 all or nothing 으로 동작할것임.. no partial sent!
+            //XXX UDP : all or nothing . no partial sent!
             sent_len = sendto(ctx_ptr->socket,  
                               pending_sent.pending_sent_data, 
                               pending_sent.pending_sent_len, 
