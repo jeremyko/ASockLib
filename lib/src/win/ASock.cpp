@@ -26,13 +26,14 @@ SOFTWARE.
 //for windows, ipcp(server), wsapoll(client) is used.
 //there is no concurrent send/recv per a socket.
 ///////////////////////////////////////////////////////////////////////////////
-//TODO per_io_ctx ==> µ¿Àû ÇÒ´çµÈ ¸Ş¸ğ¸®
+//TODO per_io_ctx ==> ë™ì  í• ë‹¹ëœ ë©”ëª¨ë¦¬
 //TODO SOCK_USAGE_UDP_SERVER 
 //TODO SOCK_USAGE_UDP_CLIENT 
 //TODO SOCK_USAGE_IPC_SERVER 
 //TODO SOCK_USAGE_IPC_CLIENT 
 //TODO bool use_zero_byte_receive_ 
 //TODO one header file only ? if possible..
+//202011 encoding to utf-8
 #include "ASock.hpp"
 
 using namespace asock;
@@ -61,7 +62,7 @@ ASock::~ASock()
 //server use
 bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len) 
 {
-    //XXX  recv¿¡¼­ ¿¬°á Á¾·á ÆÇ´ÜµÇ¾úÀ» ¼ö ÀÖÀ½!!!
+    //XXX  recvì—ì„œ ì—°ê²° ì¢…ë£Œ íŒë‹¨ë˜ì—ˆì„ ìˆ˜ ìˆìŒ!!!
     std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock);  //XXX need
     if (ctx_ptr->socket == INVALID_SOCKET) {
         DBG_ELOG("invalid socket, failed.");
@@ -71,8 +72,8 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
         DBG_ELOG("diconnected socket, failed.");
         return false;
     }
-    //ex)multi thread °¡ µ¿ÀÏÇÑ ¼ÒÄÏ¿¡ ´ëÇØ °¢°¢ º¸³»´Â °æ¿ì...
-    //buffer °¡ °¢°¢ ÇÊ¿äÇÔ(Àü¼Û ¿©ºÎ ºñµ¿±â ÅëÁö, ÁßÃ¸)
+    //ex)multi thread ê°€ ë™ì¼í•œ ì†Œì¼“ì— ëŒ€í•´ ê°ê° ë³´ë‚´ëŠ” ê²½ìš°...
+    //buffer ê°€ ê°ê° í•„ìš”í•¨(ì „ì†¡ ì—¬ë¶€ ë¹„ë™ê¸° í†µì§€, ì¤‘ì²©)
     PER_IO_DATA* per_send_ctx = new (std::nothrow) asock::PER_IO_DATA;
     if (per_send_ctx == nullptr) {
         DBG_ELOG("mem alloc failed");
@@ -274,17 +275,17 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
         return false;
     }
     if (ctx_ptr->recv_issued_cnt > 0) {
-        //XXX ¾ÆÁ÷ recv issued µÈ°Í¿¡ ´ëÇØ Ã³¸®°¡ ¾ÈµÈ »óÅÂ¶ó¸é skip!!
-        //ÀÌ Ã³¸® ¾øÀ¸¸é cumbuffer ÀÇ ³²Àº ¿ë·®¿¡ ¸Â°Ô want recv len Á¶Á¤
-        //µ¿±âÈ­°¡ ¾ÈµÊ! client °¡ °è¼Ó Àü¼ÛÇÏ´Â °æ¿ì¿¡, recv issue ¹İº¹µÇ°í, 
-        //iocp ´Â ¸ÖÆ¼¾²·¹µå pool ·Î Ã³¸®µÇ¹Ç·Î..
+        //XXX ì•„ì§ recv issued ëœê²ƒì— ëŒ€í•´ ì²˜ë¦¬ê°€ ì•ˆëœ ìƒíƒœë¼ë©´ skip!!
+        //ì´ ì²˜ë¦¬ ì—†ìœ¼ë©´ cumbuffer ì˜ ë‚¨ì€ ìš©ëŸ‰ì— ë§ê²Œ want recv len ì¡°ì •
+        //ë™ê¸°í™”ê°€ ì•ˆë¨! client ê°€ ê³„ì† ì „ì†¡í•˜ëŠ” ê²½ìš°ì—, recv issue ë°˜ë³µë˜ê³ , 
+        //iocp ëŠ” ë©€í‹°ì“°ë ˆë“œ pool ë¡œ ì²˜ë¦¬ë˜ë¯€ë¡œ..
         DBG_LOG("worker=" << worker_index << ",sock=" << ctx_ptr->sock_id_copy
             << ", recv issued cnt=" << ctx_ptr->recv_issued_cnt
             << " --> SKIP !");
         return true;
     }
-    //XXX cumbuffer ¿¡ Append °¡´ÉÇÒ ¸¸Å­¸¸ ¼ö½ÅÇÏ°Ô ÇØÁà¾ßÇÔ!!
-    //TODO 0 byte ¼ö½ÅÀ» °í·Á?? 
+    //XXX cumbuffer ì— Append ê°€ëŠ¥í•  ë§Œí¼ë§Œ ìˆ˜ì‹ í•˜ê²Œ í•´ì¤˜ì•¼í•¨!!
+    //TODO 0 byte ìˆ˜ì‹ ì„ ê³ ë ¤?? 
     size_t want_recv_len = max_data_len_;
     //-------------------------------------
     if (max_data_len_ > ctx_ptr->GetBuffer()->GetLinearFreeSpace()) { 
@@ -304,7 +305,7 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
     DWORD dw_flags = 0;
     DWORD dw_recv_bytes = 0;
     SecureZeroMemory((PVOID)& ctx_ptr->per_recv_io_ctx->overlapped, sizeof(WSAOVERLAPPED));
-    //XXX cumbuffer ¿¡ °¡´ÉÇÑ ¸¸Å­¸¸ ...
+    //XXX cumbuffer ì— ê°€ëŠ¥í•œ ë§Œí¼ë§Œ ...
     ctx_ptr->per_recv_io_ctx->wsabuf.buf = ctx_ptr->GetBuffer()->GetLinearAppendPtr();
     ctx_ptr->per_recv_io_ctx->wsabuf.len = (ULONG)want_recv_len ;
     ctx_ptr->per_recv_io_ctx->io_type = EnumIOType::IO_RECV;
@@ -504,7 +505,7 @@ void ASock:: AcceptThreadRoutine()
         //XXX ctx_ptr --> per io data !!!
         {
             std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); 
-            if (!IssueRecv(99999, ctx_ptr)) { //XXX 99999 accept Ç¥½Ã
+            if (!IssueRecv(99999, ctx_ptr)) { //XXX 99999 accept í‘œì‹œ
                 int last_err = WSAGetLastError();
                 DBG_ELOG("sock="<<ctx_ptr->socket<<",ref_cnt="<<ctx_ptr->ref_cnt
                     <<", error! : " << WSAGetLastError());
@@ -527,7 +528,7 @@ void ASock:: AcceptThreadRoutine()
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-//io ÀÛ¾÷ °á°ú¿¡ ´ëÇØ Ã³¸®ÇÑ´Ù. --> multi thread ¿¡ ÀÇÇØ ¼öÇàµÈ´Ù !!!
+//io ì‘ì—… ê²°ê³¼ì— ëŒ€í•´ ì²˜ë¦¬í•œë‹¤. --> multi thread ì— ì˜í•´ ìˆ˜í–‰ëœë‹¤ !!!
 void ASock:: WorkerThreadRoutine(size_t worker_index) {
     DWORD       bytes_transferred = 0;
     Context*    ctx_ptr = NULL ;
@@ -562,7 +563,7 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                     << ", ref_cnt =" << ctx_ptr->ref_cnt);
                 per_io_ctx = (PER_IO_DATA*)lp_overlapped;
                 if (per_io_ctx->io_type == EnumIOType::IO_SEND) {
-                    //XXX per_io_ctx ==> µ¿Àû ÇÒ´çµÈ ¸Ş¸ğ¸®ÀÓ!!!  XXX
+                    //XXX per_io_ctx ==> ë™ì  í• ë‹¹ëœ ë©”ëª¨ë¦¬ì„!!!  XXX
                     delete per_io_ctx;
                     per_io_ctx = NULL;
                 }
@@ -686,7 +687,7 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                 }
                 //-----------------------------------
                 //now --> ctx_ptr->posted_send_cnt == 0 
-                //³²Àº ºÎºĞ Àü¼Û
+                //ë‚¨ì€ ë¶€ë¶„ ì „ì†¡
                 DBG_LOG("socket (" << ctx_ptr->socket
                     << ") send partially completed, total="
                     << per_io_ctx->total_send_len
@@ -807,7 +808,7 @@ bool ASock::InitWinsock() {
 void ASock::StopServer()
 {
     is_need_server_run_ = false; //stop accept thread
-    //iocp Á¾·á  
+    //iocp ì¢…ë£Œ  
     CloseHandle(handle_completion_port_);
 }
 
