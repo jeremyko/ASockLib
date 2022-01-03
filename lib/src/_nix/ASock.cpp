@@ -262,7 +262,7 @@ bool ASock::SendData (Context* ctx_ptr, const char* data_ptr, size_t len)
     size_t total_sent = 0;           
 
     //if sent is pending, just push to queue. 
-    if(ctx_ptr->is_sent_pending){ //tcp, domain socket only  
+    if(ctx_ptr->is_sent_pending){ 
         PENDING_SENT pending_sent;
         pending_sent.pending_sent_data = new char [len]; 
         pending_sent.pending_sent_len  = len;
