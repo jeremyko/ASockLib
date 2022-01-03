@@ -166,7 +166,7 @@ namespace asock {
         IO_QUIT,
 		IO_UNKNOWN
     };
-    typedef struct { 
+    typedef struct _PER_IO_DATA_ {
         OVERLAPPED	overlapped ;
         WSABUF      wsabuf;
 		EnumIOType  io_type;

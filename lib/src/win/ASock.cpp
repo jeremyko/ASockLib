@@ -193,17 +193,7 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
             }
             DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy<<", whole length =" 
                 << ctx_ptr->per_recv_io_ctx->complete_recv_len);
-            if (ctx_ptr->per_recv_io_ctx->complete_recv_len == 6) {
-                //DEBUG only!!
-                DBG_ELOG("whole length is 6 ?????? ");
-                typedef struct _ST_MY_CHAT_HEADER_ {
-                    char msg_len[6];
-                } ST_MY_HEADER;
-                ST_MY_HEADER header;
-                const size_t  CHAT_HEADER_SIZE = sizeof(ST_MY_HEADER);
-                ctx_ptr->GetBuffer()->PeekData(CHAT_HEADER_SIZE, (char*)&header);
-                DBG_LOG("header ="<<header.msg_len);
-            }
+            
             ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = true;
         }
         if (ctx_ptr->per_recv_io_ctx->complete_recv_len == asock::MORE_TO_COME) {
@@ -912,6 +902,7 @@ bool ASock::RunClientThread()
 
         client_thread_ = std::thread (&ASock::ClientThreadRoutine, this);
         //client_thread.detach();
+        is_client_thread_running_ = true;        
     }
     return true;
 }
@@ -1160,7 +1151,7 @@ void ASock::ClientThreadRoutine()
                     is_client_thread_running_ = false;
                     return;
                 } else {
-                    DBG_LOG("client recved : " << ret <<" bytes");
+                    //DBG_LOG("client recved : " << ret <<" bytes");
                     if (ret == 0) {
                         DBG_LOG("client disconnected : sock=" << context_.socket);
                         shutdown(context_.socket, SD_BOTH);
@@ -1170,8 +1161,7 @@ void ASock::ClientThreadRoutine()
                         is_client_thread_running_ = false;
                         return;
                     }
-                    DBG_LOG("sock=" << context_.socket << ", bytes_transferred = " 
-                            << ret);
+                    //DBG_LOG("sock=" << context_.socket << ", bytes_transferred = " << ret);
                     if (!RecvData(0, &context_, ret)) { 
                         DBG_ELOG(err_msg_);
                         shutdown(context_.socket, SD_BOTH);
