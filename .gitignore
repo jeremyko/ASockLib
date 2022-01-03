@@ -11,4 +11,5 @@ server
 build
 my_test
 TODO.txt
-
+.vs
+CMakeSettings.json
