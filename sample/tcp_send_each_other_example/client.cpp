@@ -180,6 +180,9 @@ int main(int argc, char* argv[])
             vec_threads[i].join();
         }
     }
+    std::this_thread::sleep_for(std::chrono::seconds(5)); 
+    // need to wait for a while until all server responses arrive.
+
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
         (*it)->DisConnectTcpClient();
     }
@@ -187,11 +190,15 @@ int main(int argc, char* argv[])
         (*it)->WaitForClientLoopExit();
     }
     std::cout << "==== all clients exiting : "<<vec_clients.size()<<"\n";
+    
     while (! vec_clients.empty()) {
         delete vec_clients.back();
         vec_clients.pop_back();
     }
     vec_clients.clear();
+    //std::cout << "press enter to exit : " <<  "\n";
+    //std::cin.get(); // no... windows defender 
+
     return 0;
 }
 
