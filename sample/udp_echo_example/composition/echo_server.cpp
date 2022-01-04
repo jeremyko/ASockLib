@@ -77,6 +77,7 @@ int main(int argc, char* argv[])
     std::signal(SIGINT,UdpEchoServer::sigint_handler);
     UdpEchoServer echoserver; 
     echoserver.initialize_udp_server();
+    std::cout << "server started" << "\n";
     while( echoserver.IsServerRunning() ) {
         sleep(1);
     }

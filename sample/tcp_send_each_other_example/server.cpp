@@ -58,7 +58,7 @@ bool STEO_Server::InitializeTcpServer()
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Server::SendThread(asock::Context* ctx_ptr) 
 {
-    DBG_LOG("Send Thread starts.......");
+    LOG("Send Thread starts.......");
     size_t cnt = 0;
     while(ctx_ptr->is_connected) {
         std::string data = "server sending this....";
@@ -81,11 +81,11 @@ void STEO_Server::SendThread(asock::Context* ctx_ptr)
         //---------------------------------------- send 2 times
         if(! tcp_server_.SendData(ctx_ptr, reinterpret_cast<char*>(&header), 
                     sizeof(ST_MY_HEADER)) ) {
-            DBG_ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
+            std::cerr <<"error! "<< tcp_server_.GetLastErrMsg() <<"\n";
             return ;
         }
         if(! tcp_server_.SendData(ctx_ptr, data.c_str(), data.length()) ) {
-            DBG_ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
+            std::cerr <<  "error! "<< tcp_server_.GetLastErrMsg() << "\n";
             return ;
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -130,7 +130,7 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
     memcpy(send_msg + sizeof(ST_MY_HEADER), data.c_str(), data.length());
     if (!tcp_server_.SendData(  ctx_ptr, send_msg, 
                                 sizeof(ST_MY_HEADER) + data.length())) {
-        DBG_ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
+        std::cerr <<  "error! "<< tcp_server_.GetLastErrMsg() ; 
         return false;
     }
     return true;
@@ -139,7 +139,7 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Server::OnClientConnected(asock::Context* ctx_ptr) 
 {
-    DBG_LOG("client connected : socket fd ["<< ctx_ptr->socket <<"]");
+    std::cout <<"client connected : socket fd ["<< ctx_ptr->socket <<"]";
     //spawn new thread (server, client both sending each other)
     std::thread send_thread (&STEO_Server::SendThread,this, ctx_ptr);
     send_thread.detach();
@@ -148,7 +148,7 @@ void STEO_Server::OnClientConnected(asock::Context* ctx_ptr)
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Server::OnClientDisconnected(asock::Context* ctx_ptr) 
 {
-    DBG_LOG("client disconnected ");
+    std::cout << "client disconnected \n";
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -191,6 +191,7 @@ int main(int argc, char* argv[])
 #endif
     STEO_Server echoserver; 
     echoserver.InitializeTcpServer();
+    std::cout << "server started\n";
     while( echoserver.IsServerRunning() ) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }

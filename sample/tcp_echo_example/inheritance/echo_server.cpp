@@ -99,6 +99,7 @@ int main(int argc, char* argv[])
                   <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
         return 1;
     }
+    std::cout << "server started" << "\n";
     while( echoserver.IsServerRunning() ) {
 		std::this_thread::sleep_for(std::chrono::seconds(1));
     }

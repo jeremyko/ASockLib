@@ -97,7 +97,7 @@ int main(int argc, char* argv[])
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
                   <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
         exit(1);
-    }
+    }std::cout << "server started" << "\n";
     while( echoserver.IsServerRunning() ) {
         sleep(1);
     }

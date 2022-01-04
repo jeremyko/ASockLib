@@ -116,7 +116,7 @@ int main(int argc, char* argv[])
     std::signal(SIGINT,EchoServer::sigint_handler);
     EchoServer echoserver; 
     echoserver.initialize_ipc_server(argv[1]);
-
+    std::cout << "server started" << "\n";
     while( echoserver.IsServerRunning() ) {
         sleep(1);
     }

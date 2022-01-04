@@ -88,7 +88,7 @@ int main(int argc, char* argv[])
     EchoClient client;
     client.initialize_tcp_client(); 
     //std::this_thread::sleep_for(std::chrono::seconds(3));
-        
+    std::cout << "client started" << "\n";
     std::string user_msg  {""}; 
     while( client.IsConnected() ) {
         std::cin.clear();

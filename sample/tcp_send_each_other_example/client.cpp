@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <stdio.h>
 #include <cassert>
+#include <conio.h >
 #include "ASock.hpp"
 #include "../msg_defines.h"
 
@@ -92,23 +93,23 @@ void STEO_Client::SendThread(size_t index)
         //---------------------------------------- send 2 times
         if (!tcp_client_.SendToServer(reinterpret_cast<char*>(&header),
             sizeof(ST_MY_HEADER))) {
-            DBG_ELOG("error! " << tcp_client_.GetLastErrMsg());
+            std::cerr <<"error! " << tcp_client_.GetLastErrMsg()<<"\n";
             return;
         }
         if (!tcp_client_.SendToServer(data.c_str(), data.length())) {
-            DBG_ELOG("error! " << tcp_client_.GetLastErrMsg());
+            std::cerr <<"error! " << tcp_client_.GetLastErrMsg()<< "\n";
             return;
         }
         
         sent_cnt++ ;
         if(sent_cnt >= 5){
-            DBG_LOG("client " <<index << " completes send ");
+            LOG("client " <<index << " completes send ");
             break;
         }
         //std::this_thread::sleep_for(std::chrono::seconds(1));
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    DBG_LOG("send thread exiting : " << index);
+    LOG("send thread exiting : " << index);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -144,10 +145,11 @@ void STEO_Client::OnDisconnectedFromServer() {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
-    size_t MAX_CLIENTS = 1000;
+    size_t MAX_CLIENTS = 100;
     size_t MAX_THREADS = 3;
     std::vector<std::thread>  vec_threads ;
     std::vector<STEO_Client*> vec_clients;
+    std::cout << "client started\n";
     for (size_t i = 0; i < MAX_CLIENTS; i++) {
         STEO_Client* client = new (std::nothrow) STEO_Client;
         if (client == nullptr) {
@@ -172,8 +174,8 @@ int main(int argc, char* argv[])
         }
     }
     
-    DBG_LOG("total clients = " << vec_clients.size());
-    DBG_LOG("total threads = " << vec_threads.size());
+    std::cout <<"total clients = " << vec_clients.size();
+    std::cout << "total threads = " << vec_threads.size();
     for(size_t i = 0; i < vec_threads.size(); i++) {
         if (vec_threads[i].joinable()) {
             vec_threads[i].join();
@@ -191,6 +193,8 @@ int main(int argc, char* argv[])
         vec_clients.pop_back();
     }
     vec_clients.clear();
+    std::cout << '\n' << "Press enter to exit...";
+    char c = getchar() ;
     return 0;
 }
 

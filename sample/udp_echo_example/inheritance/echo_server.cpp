@@ -60,6 +60,7 @@ int main(int argc, char* argv[])
                   <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
         return 1;
     }
+    std::cout << "server started" << "\n";
     while( echoserver.IsServerRunning() ) {
         sleep(1);
     }

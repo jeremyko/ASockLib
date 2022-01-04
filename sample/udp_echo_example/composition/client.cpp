@@ -63,6 +63,7 @@ int main(int argc, char* argv[])
     UdpEchoClient client;
     client.initialize_udp_client();
     std::string user_msg  {""}; 
+    std::cout << "client started" << "\n";
     while( client.IsConnected() ) {
         std::cin.clear();
         getline(std::cin, user_msg);

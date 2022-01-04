@@ -123,7 +123,7 @@ int main(int argc, char* argv[])
 #endif
     EchoServer echoserver; 
     echoserver.initialize_tcp_server();
-
+    std::cout << "server started" <<  "\n";
     while( echoserver.IsServerRunning() ) {
 		std::this_thread::sleep_for(std::chrono::seconds(1));
     }

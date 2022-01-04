@@ -60,6 +60,7 @@ int main(int argc, char* argv[])
                   <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
         return 1;
     }
+    std::cout << "client started" << "\n";
     std::string user_msg  {""}; 
     while( client.IsConnected() ) {
         std::cin.clear();
