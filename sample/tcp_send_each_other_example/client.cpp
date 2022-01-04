@@ -3,7 +3,6 @@
 #include <cstdlib>
 #include <stdio.h>
 #include <cassert>
-#include <conio.h >
 #include "ASock.hpp"
 #include "../msg_defines.h"
 
@@ -193,8 +192,6 @@ int main(int argc, char* argv[])
         vec_clients.pop_back();
     }
     vec_clients.clear();
-    std::cout << '\n' << "Press enter to exit...";
-    char c = getchar() ;
     return 0;
 }
 
