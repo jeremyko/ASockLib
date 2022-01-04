@@ -63,8 +63,7 @@ ASock::~ASock()
 #ifdef __APPLE__
         ControlKq(listen_context_ptr_, EVFILT_READ, EV_DELETE );
 #elif __linux__
-        ControlEpoll(listen_context_ptr_, EPOLLIN | EPOLLERR | EPOLLRDHUP, 
-                                        EPOLL_CTL_DEL ); //just in case
+        ControlEpoll(listen_context_ptr_, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_DEL ); //just in case
 #endif
 
 #if defined __APPLE__ || defined __linux__ 
@@ -190,9 +189,7 @@ bool ASock::RecvData(Context* ctx_ptr)
         err_msg_ = "no linear free space left ";
         return false; 
     }
-    int recved_len = recv( ctx_ptr->socket, 
-                           ctx_ptr->recv_buffer.GetLinearAppendPtr(), 
-                           want_recv_len, 0); 
+    int recved_len = recv( ctx_ptr->socket, ctx_ptr->recv_buffer.GetLinearAppendPtr(), want_recv_len, 0); 
     if( recved_len > 0) {
         ctx_ptr->recv_buffer.IncreaseData(recved_len);
         while(ctx_ptr->recv_buffer.GetCumulatedLen()) {
@@ -221,9 +218,8 @@ bool ASock::RecvData(Context* ctx_ptr)
                     err_msg_ = "memory alloc failed!";
                     return false;
                 }
-                if(cumbuffer::OP_RSLT_OK!=
-                   ctx_ptr->recv_buffer.GetData(ctx_ptr->complete_packet_len, 
-                                                     complete_packet_data )) {
+                if(cumbuffer::OP_RSLT_OK!= ctx_ptr->recv_buffer.GetData(ctx_ptr->complete_packet_len, 
+                                                         complete_packet_data )) {
                     //error !
                     {
                         std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -235,12 +231,10 @@ bool ASock::RecvData(Context* ctx_ptr)
                 }
                 if(cb_on_recved_complete_packet_!=nullptr) {
                     //invoke user specific callback
-                    cb_on_recved_complete_packet_ (ctx_ptr, complete_packet_data , 
-                                                   ctx_ptr->complete_packet_len ); 
+                    cb_on_recved_complete_packet_ (ctx_ptr, complete_packet_data , ctx_ptr->complete_packet_len ); 
                 } else {
                     //invoke user specific implementation
-                    OnRecvedCompleteData(ctx_ptr, complete_packet_data , 
-                                            ctx_ptr->complete_packet_len ); 
+                    OnRecvedCompleteData(ctx_ptr, complete_packet_data , ctx_ptr->complete_packet_len ); 
                 }
                 ctx_ptr->is_packet_len_calculated = false;
                 delete[] complete_packet_data; //XXX
@@ -269,15 +263,13 @@ bool ASock::SendData (Context* ctx_ptr, const char* data_ptr, size_t len)
         memcpy(pending_sent.pending_sent_data, data_ptr, len);
         if(sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
             //udp(server) 인 경우엔, 데이터와 client remote addr 정보를 함께 queue에 저장
-            memcpy( &pending_sent.udp_remote_addr, &ctx_ptr->udp_remote_addr, 
-                    sizeof(pending_sent.udp_remote_addr));
+            memcpy( &pending_sent.udp_remote_addr, &ctx_ptr->udp_remote_addr, sizeof(pending_sent.udp_remote_addr));
         }
         ctx_ptr->pending_send_deque.push_back(pending_sent);
 #ifdef __APPLE__
         if(!ControlKq(ctx_ptr, EVFILT_WRITE, EV_ADD|EV_ENABLE )) {
 #elif __linux__
-        if(!ControlEpoll (ctx_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, 
-                            EPOLL_CTL_MOD)){
+        if(!ControlEpoll (ctx_ptr, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD)){
 #endif
             delete [] pending_sent.pending_sent_data ;
             ctx_ptr->pending_send_deque.pop_back();
@@ -289,14 +281,12 @@ bool ASock::SendData (Context* ctx_ptr, const char* data_ptr, size_t len)
         int sent_len =0;
         if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
             //XXX UDP : all or nothing. no partial sent!
-            sent_len = sendto(ctx_ptr->socket,  data_position_ptr, 
-                              len-total_sent , 0, 
+            sent_len = sendto(ctx_ptr->socket,  data_position_ptr, len-total_sent , 0, 
                               (struct sockaddr*)& ctx_ptr->udp_remote_addr,   
                               sizeof(ctx_ptr->udp_remote_addr)) ;
         } else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
             //XXX UDP : all or nothing. no partial sent!
-            sent_len = sendto(ctx_ptr->socket,  data_position_ptr, 
-                              len-total_sent , 0, 
+            sent_len = sendto(ctx_ptr->socket,  data_position_ptr, len-total_sent , 0, 
                               0, //XXX client : already set! (via connect)  
                               sizeof(ctx_ptr->udp_remote_addr)) ;
         } else {
@@ -316,8 +306,7 @@ bool ASock::SendData (Context* ctx_ptr, const char* data_ptr, size_t len)
                 if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
                     //udp(server) 인 경우엔, 데이터와 client remote addr 정보를 함께 queue에 저장
                     memcpy( &pending_sent.udp_remote_addr, 
-                            &ctx_ptr->udp_remote_addr, 
-                            sizeof(pending_sent.udp_remote_addr));
+                            &ctx_ptr->udp_remote_addr, sizeof(pending_sent.udp_remote_addr));
                 }
                 ctx_ptr->pending_send_deque.push_back(pending_sent);
 #ifdef __APPLE__
@@ -489,8 +478,7 @@ bool ASock::RunServer()
         snprintf(ipc_server_addr.sun_path, sizeof(ipc_server_addr.sun_path),
                 "%s",server_ipc_socket_path_.c_str()); 
         result = bind(listen_socket_,(SOCKADDR*)&ipc_server_addr, sizeof(ipc_server_addr)) ;
-    } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
-                sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
+    } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
         SOCKADDR_IN    server_addr  ;
         memset((void *)&server_addr,0x00,sizeof(server_addr)) ;
         server_addr.sin_family      = AF_INET ;
@@ -503,8 +491,7 @@ bool ASock::RunServer()
         err_msg_ = "bind error ["  + std::string(strerror(errno)) + "]";
         return false ;
     }
-    if ( sock_usage_ == SOCK_USAGE_IPC_SERVER || 
-         sock_usage_ == SOCK_USAGE_TCP_SERVER ) {
+    if ( sock_usage_ == SOCK_USAGE_IPC_SERVER || sock_usage_ == SOCK_USAGE_TCP_SERVER ) {
         result = listen(listen_socket_,SOMAXCONN) ;
         if ( result < 0 ) {
             std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -592,8 +579,7 @@ Context* ASock::PopClientContextFromCache()
         err_msg_ = "Context alloc failed !";
         return nullptr;
     }
-    if ( cumbuffer::OP_RSLT_OK != 
-            ctx_ptr->recv_buffer.Init(max_data_len_) ) {
+    if ( cumbuffer::OP_RSLT_OK != ctx_ptr->recv_buffer.Init(max_data_len_) ) {
         std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_  = std::string("cumBuffer Init error : ") + 
             std::string(ctx_ptr->recv_buffer.GetErrMsg());
@@ -831,25 +817,16 @@ bool ASock::SendPendingData(Context* ctx_ptr)
         int sent_len = 0;
         if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
             //XXX UDP : all or nothing . no partial sent!
-            sent_len = sendto(ctx_ptr->socket,  
-                              pending_sent.pending_sent_data, 
-                              pending_sent.pending_sent_len, 
-                              0, 
-                              (struct sockaddr*)& pending_sent.udp_remote_addr,   
+            sent_len = sendto(ctx_ptr->socket,  pending_sent.pending_sent_data, pending_sent.pending_sent_len, 
+                              0, (struct sockaddr*)& pending_sent.udp_remote_addr,   
                               sizeof(pending_sent.udp_remote_addr)) ;
         } else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
             //XXX UDP : all or nothing . no partial sent!
-            sent_len = sendto(ctx_ptr->socket,  
-                              pending_sent.pending_sent_data, 
-                              pending_sent.pending_sent_len, 
-                              0, 
-                              0, //XXX client : already set! (via connect)  
+            sent_len = sendto(ctx_ptr->socket,  pending_sent.pending_sent_data, pending_sent.pending_sent_len, 
+                              0, 0, //XXX client : already set! (via connect)  
                               sizeof(pending_sent.udp_remote_addr)) ;
         } else {
-            sent_len = send(ctx_ptr->socket, 
-                            pending_sent.pending_sent_data, 
-                            pending_sent.pending_sent_len, 
-                            0) ;
+            sent_len = send(ctx_ptr->socket, pending_sent.pending_sent_data, pending_sent.pending_sent_len, 0) ;
         }
         if( sent_len > 0 ) {
             if(sent_len == pending_sent.pending_sent_len) {
@@ -859,20 +836,16 @@ bool ASock::SendPendingData(Context* ctx_ptr)
                     //sent all data
                     ctx_ptr->is_sent_pending = false; 
 #ifdef __APPLE__
-                    if(!ControlKq(ctx_ptr, EVFILT_WRITE, EV_DELETE ) ||
-                       !ControlKq(ctx_ptr, EVFILT_READ, EV_ADD)){
+                    if(!ControlKq(ctx_ptr, EVFILT_WRITE, EV_DELETE ) || !ControlKq(ctx_ptr, EVFILT_READ, EV_ADD)){
 #elif __linux__
-                    if(!ControlEpoll (ctx_ptr, EPOLLIN | EPOLLERR | EPOLLRDHUP, 
-                                      EPOLL_CTL_MOD)){
+                    if(!ControlEpoll (ctx_ptr, EPOLLIN | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_MOD)){
 #endif
                         //error!!!
-                        if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || 
-                             sock_usage_ == SOCK_USAGE_IPC_CLIENT ) {
+                        if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || sock_usage_ == SOCK_USAGE_IPC_CLIENT ) {
                             close( ctx_ptr->socket);
                             InvokeServerDisconnectedHandler();
                             is_client_thread_running_ = false;
-                        } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
-                                    sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
+                        } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
                             is_server_running_ = false;
                         }
                         return false;
@@ -886,8 +859,7 @@ bool ASock::SendPendingData(Context* ctx_ptr)
                 partial_pending_sent.pending_sent_data = new char [alloc_len]; 
                 partial_pending_sent.pending_sent_len  = alloc_len;
                 memcpy( partial_pending_sent.pending_sent_data, 
-                        pending_sent.pending_sent_data+sent_len, 
-                        alloc_len);
+                        pending_sent.pending_sent_data+sent_len, alloc_len);
                 //remove first.
                 delete [] pending_sent.pending_sent_data;
                 ctx_ptr->pending_send_deque.pop_front();
@@ -903,15 +875,13 @@ bool ASock::SendPendingData(Context* ctx_ptr)
                     std::lock_guard<std::mutex> lock(err_msg_lock_);
                     err_msg_ = "send error ["  + std::string(strerror(errno)) + "]";
                 }
-                if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || 
-                     sock_usage_ == SOCK_USAGE_IPC_CLIENT ) {
+                if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || sock_usage_ == SOCK_USAGE_IPC_CLIENT ) {
                     //client error!!!
                     close( ctx_ptr->socket);
                     InvokeServerDisconnectedHandler();
                     is_client_thread_running_ = false;
                     return false; 
-                } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
-                            sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
+                } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
                     TerminateClient(ctx_ptr); 
                 }
                 break;
@@ -925,8 +895,7 @@ bool ASock::SendPendingData(Context* ctx_ptr)
 void  ASock::TerminateClient( Context* client_ctx, bool is_graceful)
 {
 	client_cnt_--;
-	DBG_LOG(" socket : "<< client_ctx->socket 
-			<<", connection closing ,graceful=" << (is_graceful ? "TRUE" : "FALSE"));
+	DBG_LOG(" socket : "<< client_ctx->socket <<", connection closing ,graceful=" << (is_graceful ? "TRUE" : "FALSE"));
 	if (!is_graceful) {
 		// force the subsequent closesocket to be abortative.
 		struct linger linger_struct ;
@@ -1020,8 +989,7 @@ bool ASock::ConnectToServer()
     if(!is_buffer_init_ ) {
         if(cumbuffer::OP_RSLT_OK != context_.recv_buffer.Init(max_data_len_) ) {
             std::lock_guard<std::mutex> lock(err_msg_lock_);
-            err_msg_ =  std::string("cumBuffer Init error :") + 
-                        std::string(context_.recv_buffer.GetErrMsg());
+            err_msg_ =  std::string("cumBuffer Init error :") + std::string(context_.recv_buffer.GetErrMsg());
             close(context_.socket);
             return false;
         }

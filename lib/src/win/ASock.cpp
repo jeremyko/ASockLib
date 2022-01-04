@@ -76,11 +76,10 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
     //buffer 가 각각 필요함(전송 여부 비동기 통지, 중첩)
     PER_IO_DATA* per_send_ctx = new (std::nothrow) asock::PER_IO_DATA;
     if (per_send_ctx == nullptr) {
-        DBG_ELOG("mem alloc failed");
+        ELOG("mem alloc failed");
         shutdown(ctx_ptr->socket, SD_BOTH);
         if (0 != closesocket(ctx_ptr->socket)) {
-            DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
-                    << WSAGetLastError());
+            DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " << WSAGetLastError());
         }
         ctx_ptr->socket = INVALID_SOCKET; //XXX
         exit(1);
@@ -97,8 +96,7 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
     int result = 0;
 
     result = WSASend(ctx_ptr->socket, &(per_send_ctx->wsabuf),
-                    1, &dw_send_bytes, dw_flags,
-                    &(per_send_ctx->overlapped), NULL);
+                    1, &dw_send_bytes, dw_flags, &(per_send_ctx->overlapped), NULL);
     if (result == 0) {
         //no error occurs and the send operation has completed immediately
         DBG_LOG("!!! WSASend returns 0 !!! ");
@@ -108,13 +106,11 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
         } else {
             int last_err = WSAGetLastError();
             BuildErrMsgString(last_err);
-            DBG_ELOG("WSASend error : " << err_msg_ <<"recv posted="
-                << ctx_ptr->recv_issued_cnt );
+            DBG_ELOG("WSASend error : " << err_msg_ <<"recv posted=" << ctx_ptr->recv_issued_cnt );
             delete per_send_ctx; //TEST XXX 
             shutdown(ctx_ptr->socket, SD_BOTH);
             if (0 != closesocket(ctx_ptr->socket)) {
-                DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
-                        << last_err);
+                DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " << last_err);
             }
             ctx_ptr->socket = INVALID_SOCKET; 
             return false;
@@ -122,7 +118,6 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
     }
     ctx_ptr->posted_send_cnt++;
     ctx_ptr->ref_cnt++;
-    //LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
     DBG_LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt=" << ctx_ptr->ref_cnt);
     return true;
 }
@@ -160,8 +155,7 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
     //std::cout << "sock="<<ctx_ptr->socket <<", bytes_transferred = " << bytes_transferred <<"\n";
     ctx_ptr->GetBuffer()->IncreaseData(bytes_transferred);
     DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy<<",GetCumulatedLen = " 
-        << ctx_ptr->GetBuffer()->GetCumulatedLen()
-        << ",ref_cnt=" << ctx_ptr->ref_cnt
+        << ctx_ptr->GetBuffer()->GetCumulatedLen() << ",ref_cnt=" << ctx_ptr->ref_cnt
         << ",bytes_transferred=" << bytes_transferred );
 #ifdef DEBUG_PRINT
     ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
@@ -175,21 +169,17 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
         }
         //XXX .. for client !!! =========== END
         DBG_LOG("worker="<<worker_index<<",sock=" << ctx_ptr->sock_id_copy 
-            << ",GetCumulatedLen = " 
-            << ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()
-            << ",ref_cnt=" << ctx_ptr->ref_cnt
-            << ",bytes_transferred=" << bytes_transferred);
+            << ",GetCumulatedLen = " << ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()
+            << ",ref_cnt=" << ctx_ptr->ref_cnt << ",bytes_transferred=" << bytes_transferred);
         //invoke user specific implementation
         if (!ctx_ptr->per_recv_io_ctx->is_packet_len_calculated){ 
             //only when calculation is necessary
             if (cb_on_calculate_data_len_ != nullptr) {
                 //invoke user specific callback
-                ctx_ptr->per_recv_io_ctx->complete_recv_len = 
-                    cb_on_calculate_data_len_(ctx_ptr);
+                ctx_ptr->per_recv_io_ctx->complete_recv_len = cb_on_calculate_data_len_(ctx_ptr);
             } else {
                 //invoke user specific implementation
-                ctx_ptr->per_recv_io_ctx->complete_recv_len = 
-                    OnCalculateDataLen(ctx_ptr);
+                ctx_ptr->per_recv_io_ctx->complete_recv_len = OnCalculateDataLen(ctx_ptr);
             }
             DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy<<", whole length =" 
                 << ctx_ptr->per_recv_io_ctx->complete_recv_len);
@@ -207,9 +197,7 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
         } else if (ctx_ptr->per_recv_io_ctx->complete_recv_len > 
                    ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()) {
             DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy
-                <<",GetCumulatedLen = " 
-                << ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()
-                <<": more to come" );
+                <<",GetCumulatedLen = " << ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen() <<": more to come" );
             DBG_LOG("sock=" << ctx_ptr->sock_id_copy << ", cumbuffer debug=");
 #ifdef DEBUG_PRINT
             ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
@@ -239,16 +227,13 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
                 return false;
             }
             DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy
-                << ",ref_cnt=" << ctx_ptr->ref_cnt
-                << ":got complete data [" << complete_packet_data <<"]"  ); 
+                << ",ref_cnt=" << ctx_ptr->ref_cnt << ":got complete data [" << complete_packet_data <<"]"  ); 
             if (cb_on_recved_complete_packet_ != nullptr) {
                 //invoke user specific callback
-                cb_on_recved_complete_packet_(ctx_ptr, complete_packet_data, 
-                                    ctx_ptr->per_recv_io_ctx->complete_recv_len);
+                cb_on_recved_complete_packet_(ctx_ptr, complete_packet_data, ctx_ptr->per_recv_io_ctx->complete_recv_len);
             } else {
                 //invoke user specific implementation
-                OnRecvedCompleteData(ctx_ptr, complete_packet_data, 
-                                    ctx_ptr->per_recv_io_ctx->complete_recv_len);
+                OnRecvedCompleteData(ctx_ptr, complete_packet_data, ctx_ptr->per_recv_io_ctx->complete_recv_len);
             }
             delete[] complete_packet_data; //XXX
             ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
@@ -270,8 +255,7 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
         //동기화가 안됨! client 가 계속 전송하는 경우에, recv issue 반복되고, 
         //iocp 는 멀티쓰레드 pool 로 처리되므로..
         DBG_LOG("worker=" << worker_index << ",sock=" << ctx_ptr->sock_id_copy
-            << ", recv issued cnt=" << ctx_ptr->recv_issued_cnt
-            << " --> SKIP !");
+            << ", recv issued cnt=" << ctx_ptr->recv_issued_cnt << " --> SKIP !");
         return true;
     }
     //XXX cumbuffer 에 Append 가능할 만큼만 수신하게 해줘야함!!
@@ -287,11 +271,9 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
         DBG_ELOG(err_msg_);
         return false;
     }
-    /*
-    DBG_LOG("worker="<<worker_index<<",sock=" << ctx_ptr->sock_id_copy 
-        << ", recv issued cnt=" << ctx_ptr->recv_issued_cnt
-        << ", *** want_recv_len =" << want_recv_len);
-        */
+    //DBG_LOG("worker="<<worker_index<<",sock=" << ctx_ptr->sock_id_copy 
+    //    << ", recv issued cnt=" << ctx_ptr->recv_issued_cnt
+    //    << ", *** want_recv_len =" << want_recv_len);
     DWORD dw_flags = 0;
     DWORD dw_recv_bytes = 0;
     SecureZeroMemory((PVOID)& ctx_ptr->per_recv_io_ctx->overlapped, sizeof(WSAOVERLAPPED));
@@ -299,13 +281,9 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
     ctx_ptr->per_recv_io_ctx->wsabuf.buf = ctx_ptr->GetBuffer()->GetLinearAppendPtr();
     ctx_ptr->per_recv_io_ctx->wsabuf.len = (ULONG)want_recv_len ;
     ctx_ptr->per_recv_io_ctx->io_type = EnumIOType::IO_RECV;
-    int result = WSARecv(   ctx_ptr->socket, 
-                            &(ctx_ptr->per_recv_io_ctx->wsabuf), 
-                            1, 
-                            & dw_recv_bytes, 
-                            & dw_flags, 
-                            &(ctx_ptr->per_recv_io_ctx->overlapped), 
-                            NULL);
+    int result = WSARecv(ctx_ptr->socket, &(ctx_ptr->per_recv_io_ctx->wsabuf), 
+                            1, & dw_recv_bytes, & dw_flags, 
+                            &(ctx_ptr->per_recv_io_ctx->overlapped), NULL);
     if (SOCKET_ERROR == result) {
         if (WSAGetLastError() != WSA_IO_PENDING) {
             BuildErrMsgString(WSAGetLastError());
@@ -317,8 +295,7 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
     ctx_ptr->recv_issued_cnt++;
     //LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
     DBG_LOG("worker="<<worker_index<<",sock=" << ctx_ptr->sock_id_copy 
-        << ", want recv len=" <<want_recv_len
-        << ", post recv , ref_cnt =" << ctx_ptr->ref_cnt);
+        << ", want recv len=" <<want_recv_len << ", post recv , ref_cnt =" << ctx_ptr->ref_cnt);
 #ifdef DEBUG_PRINT
     ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
 #endif
@@ -400,21 +377,18 @@ bool ASock::StartAcceptThread()
         return  false;
     }
     int opt_zero = 0;
-    if(setsockopt(listen_socket_, SOL_SOCKET, SO_SNDBUF, (char*)&opt_zero, 
-        sizeof(opt_zero)) == SOCKET_ERROR) {
+    if(setsockopt(listen_socket_, SOL_SOCKET, SO_SNDBUF, (char*)&opt_zero, sizeof(opt_zero)) == SOCKET_ERROR) {
         BuildErrMsgString(WSAGetLastError());
         ELOG( err_msg_ ) ;
         return false;
     }
     int opt_on = 1;
-    if (setsockopt(listen_socket_, SOL_SOCKET, SO_REUSEADDR, (char*)&opt_on,
-        sizeof(opt_on)) == SOCKET_ERROR) {
+    if (setsockopt(listen_socket_, SOL_SOCKET, SO_REUSEADDR, (char*)&opt_on, sizeof(opt_on)) == SOCKET_ERROR) {
         BuildErrMsgString(WSAGetLastError());
         ELOG( err_msg_ ) ;
         return false;
     }
-    if (setsockopt(listen_socket_, SOL_SOCKET, SO_KEEPALIVE, (char*)&opt_on,
-        sizeof(opt_on)) == SOCKET_ERROR) {
+    if (setsockopt(listen_socket_, SOL_SOCKET, SO_KEEPALIVE, (char*)&opt_on, sizeof(opt_on)) == SOCKET_ERROR) {
         BuildErrMsgString(WSAGetLastError());
         ELOG( err_msg_ ) ;
         return false;
@@ -423,8 +397,7 @@ bool ASock::StartAcceptThread()
     tcp_server_addr_.sin_family = AF_INET;
     inet_pton(AF_INET, server_ip_.c_str(), &(tcp_server_addr_.sin_addr));
     tcp_server_addr_.sin_port = htons(server_port_);
-    int result = bind(listen_socket_, (SOCKADDR*)&tcp_server_addr_, 
-                      sizeof(tcp_server_addr_));
+    int result = bind(listen_socket_, (SOCKADDR*)&tcp_server_addr_, sizeof(tcp_server_addr_));
     if (result < 0) {
         BuildErrMsgString(WSAGetLastError());
         ELOG( err_msg_ ) ;
@@ -450,8 +423,7 @@ void ASock:: AcceptThreadRoutine()
     SOCKLEN_T socklen=sizeof(SOCKADDR_IN);
     SOCKADDR_IN client_addr;
     while(is_need_server_run_) {
-        SOCKET_T client_sock = WSAAccept(listen_socket_, 
-                                  (SOCKADDR*)&client_addr, &socklen, 0, 0);
+        SOCKET_T client_sock = WSAAccept(listen_socket_, (SOCKADDR*)&client_addr, &socklen, 0, 0);
         if (client_sock == INVALID_SOCKET) {
             int last_err = WSAGetLastError();
             if (WSAEWOULDBLOCK == last_err) {
@@ -483,8 +455,7 @@ void ASock:: AcceptThreadRoutine()
         } else {
             OnClientConnected(ctx_ptr);
         }
-        handle_completion_port_ = CreateIoCompletionPort((HANDLE)client_sock, 
-                        handle_completion_port_, (ULONG_PTR)ctx_ptr, 0); 
+        handle_completion_port_ = CreateIoCompletionPort((HANDLE)client_sock, handle_completion_port_, (ULONG_PTR)ctx_ptr, 0); 
         if (NULL == handle_completion_port_) {
             BuildErrMsgString(WSAGetLastError());
             ELOG(err_msg_ );
@@ -497,12 +468,10 @@ void ASock:: AcceptThreadRoutine()
             std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); 
             if (!IssueRecv(99999, ctx_ptr)) { //XXX 99999 accept 표시
                 int last_err = WSAGetLastError();
-                DBG_ELOG("sock="<<ctx_ptr->socket<<",ref_cnt="<<ctx_ptr->ref_cnt
-                    <<", error! : " << WSAGetLastError());
+                DBG_ELOG("sock="<<ctx_ptr->socket<<",ref_cnt="<<ctx_ptr->ref_cnt <<", error! : " << WSAGetLastError());
                 shutdown(ctx_ptr->socket, SD_BOTH);
                 if (0 != closesocket(ctx_ptr->socket)) {
-                    DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
-                            << WSAGetLastError());
+                    DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " << WSAGetLastError());
                 }
                 LOG("delete ctx_ptr , sock="<<ctx_ptr->socket);
                 ctx_ptr->socket = INVALID_SOCKET; //XXX
@@ -530,10 +499,8 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
         lp_overlapped = NULL;
         per_io_ctx = NULL;
         if (FALSE == GetQueuedCompletionStatus( handle_completion_port_, 
-                            & bytes_transferred, 
-                            (PULONG_PTR) & ctx_ptr, 
-                            (LPOVERLAPPED*) &lp_overlapped,
-                            INFINITE )) {
+                                            & bytes_transferred, (PULONG_PTR) & ctx_ptr, 
+                                            (LPOVERLAPPED*) &lp_overlapped, INFINITE )) {
             int err = WSAGetLastError();
             if (err == ERROR_ABANDONED_WAIT_0 || err== ERROR_INVALID_HANDLE) {
                 //set by StopServer()
@@ -546,11 +513,8 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
             ctx_ptr->ref_cnt--;
             if (lp_overlapped != NULL) {
                 //===================== lock
-                DBG_ELOG("worker=" << worker_index
-                    << ", sock=" << ctx_ptr->sock_id_copy
-                    << ", GetQueuedCompletionStatus failed.."
-                    << ", bytes = " << bytes_transferred << ", err=" << err
-                    << ", ref_cnt =" << ctx_ptr->ref_cnt);
+                DBG_ELOG("worker=" << worker_index << ", sock=" << ctx_ptr->sock_id_copy << ", GetQueuedCompletionStatus failed.."
+                    << ", bytes = " << bytes_transferred << ", err=" << err << ", ref_cnt =" << ctx_ptr->ref_cnt);
                 per_io_ctx = (PER_IO_DATA*)lp_overlapped;
                 if (per_io_ctx->io_type == EnumIOType::IO_SEND) {
                     //XXX per_io_ctx ==> 동적 할당된 메모리임!!!  XXX
@@ -559,17 +523,15 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                 }
                 if (bytes_transferred == 0) {
                     //graceful disconnect.
-                    DBG_LOG("sock="<<ctx_ptr->sock_id_copy
-                        <<", 0 recved --> gracefully disconnected : " 
-                        << ctx_ptr->sock_id_copy);
+                    DBG_LOG("sock="<<ctx_ptr->sock_id_copy <<", 0 recved --> gracefully disconnected : " 
+                            << ctx_ptr->sock_id_copy);
                     TerminateClient(ctx_ptr);
                     continue;
                 } else {
                     if (err == ERROR_NETNAME_DELETED) { // --> 64
                         //client hard close --> not an error
-                        DBG_LOG("worker=" << worker_index << ",sock=" 
-                            << ctx_ptr->sock_id_copy
-                            << " : client hard close. ERROR_NETNAME_DELETED ");
+                        DBG_LOG("worker=" << worker_index << ",sock=" << ctx_ptr->sock_id_copy 
+                                << " : client hard close. ERROR_NETNAME_DELETED ");
                         TerminateClient(ctx_ptr, false); //force close
                         continue;
                     } else {
@@ -595,16 +557,13 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
         {
             ctx_ptr->recv_issued_cnt--;
             ctx_ptr->ref_cnt--;
-            DBG_LOG("worker=" << worker_index << ",IO_RECV: sock=" 
-                << ctx_ptr->sock_id_copy
-                << ", ref_cnt =" << ctx_ptr->ref_cnt
-                << ", recv issued cnt =" << ctx_ptr->recv_issued_cnt
+            DBG_LOG("worker=" << worker_index << ",IO_RECV: sock=" << ctx_ptr->sock_id_copy
+                << ", ref_cnt =" << ctx_ptr->ref_cnt << ", recv issued cnt =" << ctx_ptr->recv_issued_cnt
                 << ", recved bytes =" << bytes_transferred);
             //# recv #---------- 
             if (bytes_transferred == 0) {
                 //graceful disconnect.
-                DBG_LOG("0 recved --> gracefully disconnected : " 
-                        << ctx_ptr->sock_id_copy);
+                DBG_LOG("0 recved --> gracefully disconnected : " << ctx_ptr->sock_id_copy);
                 std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); 
                 TerminateClient(ctx_ptr);
                 break;
@@ -615,8 +574,7 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                 std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); 
                 shutdown(ctx_ptr->socket, SD_BOTH);
                 if (0 != closesocket(ctx_ptr->socket)) {
-                    DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
-                            << last_err);
+                    DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " << last_err);
                 }
                 ctx_ptr->socket = INVALID_SOCKET; 
                 HandleError(ctx_ptr, last_err);
@@ -627,8 +585,7 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                 int last_err = WSAGetLastError();
                 shutdown(ctx_ptr->socket, SD_BOTH);
                 if (0 != closesocket(ctx_ptr->socket)) {
-                    DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
-                            << last_err);
+                    DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " << last_err);
                 }
                 ctx_ptr->socket = INVALID_SOCKET; 
                 HandleError(ctx_ptr, last_err);
@@ -642,14 +599,12 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
             std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock);  //need 
             if (ctx_ptr->socket == INVALID_SOCKET) {
                 delete per_io_ctx;
-                DBG_LOG("delete.sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " 
-                        << ctx_ptr->ref_cnt);
+                DBG_LOG("delete.sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
                 break;
             }
             ctx_ptr->ref_cnt--;
             ctx_ptr->posted_send_cnt--;
-            DBG_LOG("worker=" << worker_index << ",IO_SEND: sock=" << ctx_ptr->socket 
-                << ", ref_cnt =" << ctx_ptr->ref_cnt);
+            DBG_LOG("worker=" << worker_index << ",IO_SEND: sock=" << ctx_ptr->socket << ", ref_cnt =" << ctx_ptr->ref_cnt);
             //XXX per_io_ctx ==> dynamically allocated memory 
             per_io_ctx->sent_len += bytes_transferred;
             DBG_LOG("IO_SEND(sock=" << ctx_ptr->socket << ") : sent this time ="
@@ -661,16 +616,14 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                     //This is because the order of sending is important.
                     {//lock scope
                         std::lock_guard<std::mutex> lock(err_msg_lock_);
-                        err_msg_ = "partial send. and pending another send exists, "
-                            "abandon all. terminate client:";
+                        err_msg_ = "partial send. and pending another send exists, " "abandon all. terminate client:";
                         err_msg_ += std::to_string(ctx_ptr->socket);
                     }
                     delete per_io_ctx;
                     DBG_ELOG(err_msg_);
                     shutdown(ctx_ptr->socket, SD_BOTH);
                     if (0 != closesocket(ctx_ptr->socket)) {
-                        DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
-                                << WSAGetLastError());
+                        DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " << WSAGetLastError());
                     }
                     ctx_ptr->socket = INVALID_SOCKET; //XXX
                     continue;
@@ -678,42 +631,34 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                 //-----------------------------------
                 //now --> ctx_ptr->posted_send_cnt == 0 
                 //남은 부분 전송
-                DBG_LOG("socket (" << ctx_ptr->socket
-                    << ") send partially completed, total="
-                    << per_io_ctx->total_send_len
+                DBG_LOG("socket (" << ctx_ptr->socket << ") send partially completed, total=" << per_io_ctx->total_send_len
                     << ",partial= " << per_io_ctx->sent_len << ", send again");
                 WSABUF buff_send;
                 DWORD dw_flags = 0;
                 DWORD dw_send_bytes = 0;
                 buff_send.buf = per_io_ctx->send_buffer + per_io_ctx->sent_len;
-                buff_send.len = (ULONG)(per_io_ctx->total_send_len -
-                    per_io_ctx->sent_len);
+                buff_send.len = (ULONG)(per_io_ctx->total_send_len - per_io_ctx->sent_len);
                 per_io_ctx->io_type = EnumIOType::IO_SEND;
                 //----------------------------------------
-                int result = WSASend(ctx_ptr->socket, &buff_send, 1,
-                    &dw_send_bytes, dw_flags, &(per_io_ctx->overlapped),
-                    NULL);
-                if (result == SOCKET_ERROR &&
-                    (ERROR_IO_PENDING != WSAGetLastError())) {
+                int result = WSASend(ctx_ptr->socket, &buff_send, 1, &dw_send_bytes, dw_flags, &(per_io_ctx->overlapped), NULL);
+                if (result == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
                     delete per_io_ctx;
                     int last_err = WSAGetLastError();
                     BuildErrMsgString(last_err);
                     ELOG("WSASend() failed: " << err_msg_);
                     shutdown(ctx_ptr->socket, SD_BOTH);
                     if (0 != closesocket(ctx_ptr->socket)) {
-                        DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " 
-                                << last_err);
+                        DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " << last_err);
                     }
                     ctx_ptr->socket = INVALID_SOCKET; 
                     break;
                 }
                 ctx_ptr->ref_cnt++;
-                LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
+                //LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
                 DBG_LOG("sock=" << ctx_ptr->socket << ") ref_cnt =" << ctx_ptr->ref_cnt);
             } else {
                 DBG_LOG("socket (" << ctx_ptr->socket <<
-                    ") send all completed (" << per_io_ctx->sent_len
-                    << ") ==> delete per io ctx!!");
+                    ") send all completed (" << per_io_ctx->sent_len << ") ==> delete per io ctx!!");
                 delete per_io_ctx;
                 per_io_ctx = NULL;
             }
@@ -738,8 +683,7 @@ void ASock::HandleError(Context* ctx_ptr, int err) {
 void  ASock::TerminateClient( Context* ctx_ptr, bool is_graceful)
 {
     DBG_LOG(" sock=" << ctx_ptr->sock_id_copy <<", ref_cnt="
-        <<ctx_ptr->ref_cnt << ", connection closing ,graceful=" 
-        << (is_graceful ? "TRUE" : "FALSE"));
+        <<ctx_ptr->ref_cnt << ", connection closing ,graceful=" << (is_graceful ? "TRUE" : "FALSE"));
     ctx_ptr->is_connected = false;
     if (cb_on_client_connected_ != nullptr) {
         cb_on_client_disconnected_(ctx_ptr);
@@ -757,13 +701,11 @@ void  ASock::TerminateClient( Context* ctx_ptr, bool is_graceful)
             LINGER  linger_struct;
             linger_struct.l_onoff = 1;
             linger_struct.l_linger = 0;
-            setsockopt(ctx_ptr->socket, SOL_SOCKET, SO_LINGER,
-                (char*)&linger_struct, sizeof(linger_struct));
+            setsockopt(ctx_ptr->socket, SOL_SOCKET, SO_LINGER, (char*)&linger_struct, sizeof(linger_struct));
         }
         shutdown(ctx_ptr->socket, SD_BOTH);
         if (0 != closesocket(ctx_ptr->socket)) {
-            DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " 
-                << WSAGetLastError());
+            DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << WSAGetLastError());
         }
         ctx_ptr->socket = INVALID_SOCKET; 
         client_cnt_--;
@@ -811,8 +753,7 @@ Context* ASock::PopClientContextFromCache()
         if (!queue_client_cache_.empty()) {
             ctx_ptr = queue_client_cache_.front();
             queue_client_cache_.pop(); 
-            DBG_LOG("queue_client_cache not empty! -> "
-                <<"queue client cache size = " << queue_client_cache_.size());
+            DBG_LOG("queue_client_cache not empty! -> " <<"queue client cache size = " << queue_client_cache_.size());
             ReSetCtxPtr(ctx_ptr);
             return ctx_ptr;
         }
@@ -833,8 +774,7 @@ Context* ASock::PopClientContextFromCache()
         delete ctx_ptr;
         return nullptr;
     }
-    if (cumbuffer::OP_RSLT_OK != 
-                ctx_ptr->per_recv_io_ctx->cum_buffer.Init(max_data_len_) ) {
+    if (cumbuffer::OP_RSLT_OK != ctx_ptr->per_recv_io_ctx->cum_buffer.Init(max_data_len_) ) {
         std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = std::string("cumBuffer(recv) Init error : ") +
             std::string(ctx_ptr->per_recv_io_ctx->cum_buffer.GetErrMsg());
@@ -874,8 +814,7 @@ void ASock::ReSetCtxPtr(Context* ctx_ptr)
     ctx_ptr->per_recv_io_ctx->wsabuf.buf = ctx_ptr->per_recv_io_ctx->send_buffer;
     ctx_ptr->per_recv_io_ctx->wsabuf.len = sizeof(ctx_ptr->per_recv_io_ctx->send_buffer);
     ctx_ptr->per_recv_io_ctx->io_type = EnumIOType::IO_UNKNOWN;
-    memset(ctx_ptr->per_recv_io_ctx->send_buffer, 0x00, 
-            sizeof(ctx_ptr->per_recv_io_ctx->send_buffer));
+    memset(ctx_ptr->per_recv_io_ctx->send_buffer, 0x00, sizeof(ctx_ptr->per_recv_io_ctx->send_buffer));
     ctx_ptr->per_recv_io_ctx->total_send_len = 0;
     ctx_ptr->per_recv_io_ctx->complete_recv_len = 0;
     ctx_ptr->per_recv_io_ctx->sent_len = 0;
@@ -922,8 +861,7 @@ void ASock::BuildErrMsgString(int err_no)
 {
     LPVOID lpMsgBuf;
     FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-        NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPTSTR)&lpMsgBuf, 0, NULL);
+                NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)&lpMsgBuf, 0, NULL);
     std::lock_guard<std::mutex> lock(err_msg_lock_);
     err_msg_ = std::string("(") + std::to_string(err_no) + std::string(") ");
     err_msg_ += std::string((LPCTSTR)lpMsgBuf);
@@ -1028,11 +966,9 @@ bool ASock::ConnectToServer()
         return  false;
     }
     if (!is_buffer_init_) {
-        if (cumbuffer::OP_RSLT_OK != 
-                context_.per_recv_io_ctx->cum_buffer.Init(max_data_len_)) {
+        if (cumbuffer::OP_RSLT_OK != context_.per_recv_io_ctx->cum_buffer.Init(max_data_len_)) {
             std::lock_guard<std::mutex> lock(err_msg_lock_);
-            err_msg_ = std::string("cumBuffer Init error :") + 
-                    context_.per_recv_io_ctx->cum_buffer.GetErrMsg();
+            err_msg_ = std::string("cumBuffer Init error :") + context_.per_recv_io_ctx->cum_buffer.GetErrMsg();
             closesocket(context_.socket);
             context_.socket = INVALID_SOCKET;
             DBG_ELOG(err_msg_);
@@ -1046,8 +982,7 @@ bool ASock::ConnectToServer()
     struct timeval timeout_val;
     timeout_val.tv_sec  = connect_timeout_secs_;
     timeout_val.tv_usec = 0;
-    int result = connect(context_.socket,(SOCKADDR *)&tcp_server_addr_, 
-                        (SOCKLEN_T )sizeof(SOCKADDR_IN)) ;
+    int result = connect(context_.socket,(SOCKADDR *)&tcp_server_addr_, (SOCKLEN_T )sizeof(SOCKADDR_IN)) ;
     if ( result == SOCKET_ERROR) {
         int last_err = WSAGetLastError();
         if (last_err != WSAEWOULDBLOCK) {
@@ -1142,9 +1077,7 @@ void ASock::ClientThreadRoutine()
                     is_client_thread_running_ = false;
                     return;
                 }
-                int ret = recv( context_.socket, 
-                                context_.GetBuffer()->GetLinearAppendPtr(),
-                                (int) want_recv_len, 0);
+                int ret = recv( context_.socket, context_.GetBuffer()->GetLinearAppendPtr(), (int) want_recv_len, 0);
                 if (SOCKET_ERROR == ret) {
                     BuildErrMsgString(WSAGetLastError());
                     ELOG( err_msg_ ) ;
@@ -1215,8 +1148,7 @@ bool ASock:: SendToServer(const char* data, size_t len)
                 //DBG_LOG("all sent OK");
                 break;
             } else {
-                LOG("all sent failed --> send again : total= " << len 
-                        << ",sent=" <<sent_sum);
+                LOG("all sent failed --> send again : total= " << len << ",sent=" <<sent_sum);
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
             }
