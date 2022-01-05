@@ -27,8 +27,6 @@ SOFTWARE.
 //there is no concurrent send/recv per a socket.
 ///////////////////////////////////////////////////////////////////////////////
 //TODO per_io_ctx ==> 동적 할당된 메모리
-//TODO SOCK_USAGE_UDP_SERVER 
-//TODO SOCK_USAGE_UDP_CLIENT 
 //TODO SOCK_USAGE_IPC_SERVER 
 //TODO SOCK_USAGE_IPC_CLIENT 
 //TODO bool use_zero_byte_receive_ 
@@ -312,7 +310,7 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
         //iocp 는 멀티쓰레드 pool 로 처리되므로..
         //DBG_LOG("worker=" << worker_index << ",sock=" << ctx_ptr->sock_id_copy
         //    << ", recv issued cnt=" << ctx_ptr->recv_issued_cnt << " --> SKIP !");
-        std::this_thread::sleep_for(std::chrono::microseconds(1));
+        //std::this_thread::sleep_for(std::chrono::microseconds(1));
         return true;
     }
     //XXX cumbuffer 에 Append 가능할 만큼만 수신하게 해줘야함!!
