@@ -6,7 +6,7 @@ a simple, easy to use cross-platform c++ networking library.
 
 - linux, os x : tcp, udp, domain socket using epoll and kqueue.
 
-- windows : currently tcp supports using iocp(server) and wsapoll(client).
+- windows : currently tcp/udp supports.
 
 dependency : [CumBuffer](https://github.com/jeremyko/CumBuffer).
 
