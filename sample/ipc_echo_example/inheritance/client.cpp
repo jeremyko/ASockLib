@@ -61,8 +61,7 @@ int main(int argc, char* argv[])
     //connect timeout is 10 secs.
     //max message length is approximately 1024 bytes...
     if(!client.InitIpcClient(argv[1], 10, 1024)) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
         return 1;
     }
     std::cout << "client started" << "\n";
@@ -77,13 +76,11 @@ int main(int argc, char* argv[])
             //you don't need to send twice like this..
             if(! client.SendToServer(reinterpret_cast<char*>(&header), 
                                        sizeof(ST_MY_HEADER)) ) {
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.GetLastErrMsg() <<"\n"; 
+                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
             if(! client.SendToServer(user_msg.c_str(), msg_len) ) {
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.GetLastErrMsg() <<"\n"; 
+                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
         }

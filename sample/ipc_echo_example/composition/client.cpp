@@ -28,16 +28,12 @@ bool EchoClient::initialize_ipc_client(const char* ipc_sock_path)
     using std::placeholders::_1;
     using std::placeholders::_2;
     using std::placeholders::_3;
-    ipc_client_.SetCbOnCalculatePacketLen(std::bind(
-                       &EchoClient::OnCalculateDataLen, this, _1));
-    ipc_client_.SetCbOnRecvedCompletePacket(std::bind(
-                       &EchoClient::OnRecvedCompleteData, this, _1,_2,_3));
-    ipc_client_.SetCbOnDisconnectedFromServer(std::bind(
-                       &EchoClient::OnDisconnectedFromServer, this));
+    ipc_client_.SetCbOnCalculatePacketLen(std::bind( &EchoClient::OnCalculateDataLen, this, _1));
+    ipc_client_.SetCbOnRecvedCompletePacket(std::bind( &EchoClient::OnRecvedCompleteData, this, _1,_2,_3));
+    ipc_client_.SetCbOnDisconnectedFromServer(std::bind( &EchoClient::OnDisconnectedFromServer, this));
     //connect timeout is 10 secs, max message length is approximately 1024 bytes...
     if(!ipc_client_.InitIpcClient(ipc_sock_path) ) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< ipc_client_.GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< ipc_client_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -104,13 +100,11 @@ int main(int argc, char* argv[])
             //you don't need to send twice like this..
             if(! client.SendToServer( reinterpret_cast<char*>(&header), 
                                       sizeof(ST_MY_HEADER)) ) {
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.GetLastErrMsg() <<"\n"; 
+                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
             if(! client.SendToServer(user_msg.c_str(), msg_len) ) {
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.GetLastErrMsg() <<"\n"; 
+                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
         }

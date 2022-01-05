@@ -14,9 +14,8 @@ class UdpEchoServer
     bool    IsServerRunning(){return udp_server_.IsServerRunning();};
     std::string  GetLastErrMsg(){return  udp_server_.GetLastErrMsg() ; }
     static void sigint_handler(int signo);
-
-  private:
     asock::ASock udp_server_ ; //composite usage
+
     static  UdpEchoServer* this_instance_ ;
   private:
     bool    OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) ;
@@ -28,15 +27,11 @@ UdpEchoServer* UdpEchoServer::this_instance_ = nullptr;
 bool UdpEchoServer::initialize_udp_server()
 {
     //register callbacks
-    udp_server_.SetCbOnRecvedCompletePacket(std::bind( 
-                    &UdpEchoServer::OnRecvedCompleteData, this,
-                    std::placeholders::_1,
-                    std::placeholders::_2,
-                    std::placeholders::_3));
+    udp_server_.SetCbOnRecvedCompletePacket(std::bind( &UdpEchoServer::OnRecvedCompleteData, this,
+                    std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     //max message length is 1024 bytes, max client is 10000.
     if(!udp_server_.InitUdpServer("127.0.0.1", 9990, 1024 /*,default=10000*/)) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< udp_server_.GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< udp_server_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -52,14 +47,14 @@ bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_
     std::cout << "recved [" << packet << "]\n"; 
     //this is echo server
     if(! udp_server_.SendData(context_ptr, data_ptr, len) ) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+#if defined __APPLE__ || defined __linux__ 
 void UdpEchoServer::sigint_handler(int signo)
 {
     sigset_t sigset, oldset;
@@ -68,18 +63,40 @@ void UdpEchoServer::sigint_handler(int signo)
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< strerror(errno) <<"\n"; 
     }
     std::cout << "Stop Server! \n";
-    this_instance_->udp_server_.StopServer();
+    UdpEchoServer::this_instance_->udp_server_.StopServer();
 }
+#else
+BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
+{
+    switch (fdwCtrlType) {
+        // Handle the CTRL-C signal. 
+    case CTRL_C_EVENT:
+        LOG("Ctrl-C event");
+        UdpEchoServer::this_instance_->udp_server_.StopServer();
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
+#if defined __APPLE__ || defined __linux__ 
     std::signal(SIGINT,UdpEchoServer::sigint_handler);
+#else
+    if (0 == SetConsoleCtrlHandler(CtrlHandler, TRUE)) {
+        std::cout << "error: server exit...\n";
+        return 1;
+    }
+#endif
     UdpEchoServer echoserver; 
     echoserver.initialize_udp_server();
     std::cout << "server started" << "\n";
+    int count = 0;
     while( echoserver.IsServerRunning() ) {
-        sleep(1);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "server exit...\n";
     return 0;

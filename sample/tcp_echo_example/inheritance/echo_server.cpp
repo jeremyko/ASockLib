@@ -16,8 +16,7 @@ class EchoServer : public asock::ASock
   private:
     static  EchoServer* this_instance_ ;
     size_t  OnCalculateDataLen(asock::Context* context_ptr);
-    bool    OnRecvedCompleteData(asock::Context* context_ptr, 
-                                 char* data_ptr, size_t len ) ;
+    bool    OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len ) ;
     void    OnClientConnected(asock::Context* context_ptr) ; 
     void    OnClientDisconnected(asock::Context* context_ptr) ; 
 };
@@ -52,8 +51,7 @@ bool    EchoServer::OnRecvedCompleteData(asock::Context* context_ptr,
     std::cout << "recved [" << packet << "]\n"; 
     // this is echo server
     if(! SendData(context_ptr, data_ptr, len) ) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -95,8 +93,7 @@ int main(int argc, char* argv[])
     //max message length is approximately 1024 bytes...
     EchoServer echoserver; 
     if(!echoserver.InitTcpServer("127.0.0.1", 9990, 1024 /*,default=100000*/)) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
         return 1;
     }
     std::cout << "server started" << "\n";

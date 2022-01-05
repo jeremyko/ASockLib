@@ -28,16 +28,12 @@ bool EchoClient::initialize_tcp_client()
     using std::placeholders::_1;
     using std::placeholders::_2;
     using std::placeholders::_3;
-    tcp_client_.SetCbOnCalculatePacketLen(std::bind(
-                       &EchoClient::OnCalculateDataLen, this, _1));
-    tcp_client_.SetCbOnRecvedCompletePacket(std::bind(
-                       &EchoClient::OnRecvedCompleteData, this, _1,_2,_3));
-    tcp_client_.SetCbOnDisconnectedFromServer(std::bind(
-                       &EchoClient::OnDisconnectedFromServer, this));
+    tcp_client_.SetCbOnCalculatePacketLen(std::bind(&EchoClient::OnCalculateDataLen, this, _1));
+    tcp_client_.SetCbOnRecvedCompletePacket(std::bind(&EchoClient::OnRecvedCompleteData, this, _1, _2, _3));
+    tcp_client_.SetCbOnDisconnectedFromServer(std::bind(&EchoClient::OnDisconnectedFromServer, this));
     //connect timeout is 10 secs, max message length is approximately 1024 bytes...
     if(!tcp_client_.InitTcpClient("127.0.0.1", 9990, 10, 1024 ) ) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< tcp_client_.GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< tcp_client_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -102,13 +98,11 @@ int main(int argc, char* argv[])
             //as you invoke InitTcpClient with max. 1024 bytes.
             if(! client.SendToServer( reinterpret_cast<char*>(&header), 
                                       sizeof(ST_MY_HEADER)) ) {
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.GetLastErrMsg() <<"\n"; 
+                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
             if(! client.SendToServer(user_msg.c_str(), user_msg.length()) ) {
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.GetLastErrMsg() <<"\n"; 
+                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
         }

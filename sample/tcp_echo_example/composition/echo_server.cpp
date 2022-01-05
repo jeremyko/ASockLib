@@ -37,18 +37,13 @@ bool EchoServer::initialize_tcp_server()
     using std::placeholders::_1;
     using std::placeholders::_2;
     using std::placeholders::_3;
-    tcp_server_.SetCbOnCalculatePacketLen  (std::bind(
-                       &EchoServer::OnCalculateDataLen, this, _1));
-    tcp_server_.SetCbOnRecvedCompletePacket(std::bind(
-                       &EchoServer::OnRecvedCompleteData, this, _1,_2,_3));
-    tcp_server_.SetCbOnClientConnected      (std::bind(
-                       &EchoServer::OnClientConnected, this, _1));
-    tcp_server_.SetCbOnClientDisconnected   (std::bind(
-                       &EchoServer::OnClientDisconnected, this, _1));
+    tcp_server_.SetCbOnCalculatePacketLen  (std::bind( &EchoServer::OnCalculateDataLen, this, _1));
+    tcp_server_.SetCbOnRecvedCompletePacket(std::bind( &EchoServer::OnRecvedCompleteData, this, _1,_2,_3));
+    tcp_server_.SetCbOnClientConnected     (std::bind( &EchoServer::OnClientConnected, this, _1));
+    tcp_server_.SetCbOnClientDisconnected  (std::bind( &EchoServer::OnClientDisconnected, this, _1));
     //max client is 10000, max message length is approximately 1024 bytes...
     if(!tcp_server_.InitTcpServer("127.0.0.1", 9990, 1024 /*,default=10000*/)) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< tcp_server_.GetLastErrMsg() <<"\n"; 
+        std::cerr<< "error! " << tcp_server_.GetLastErrMsg() <<"\n";
         return false;
     }
     return true;
@@ -82,8 +77,7 @@ bool    EchoServer::OnRecvedCompleteData(asock::Context* context_ptr,
     std::cout << "recved [" << packet << "]\n"; 
     
     if(! tcp_server_.SendData(context_ptr, data_ptr, len) ) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;

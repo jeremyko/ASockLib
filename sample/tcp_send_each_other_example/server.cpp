@@ -38,18 +38,13 @@ bool STEO_Server::InitializeTcpServer()
     using std::placeholders::_1;
     using std::placeholders::_2;
     using std::placeholders::_3;
-    tcp_server_.SetCbOnCalculatePacketLen  (std::bind(
-                       &STEO_Server::OnCalculateDataLen, this, _1));
-    tcp_server_.SetCbOnRecvedCompletePacket(std::bind(
-                       &STEO_Server::OnRecvedCompleteData, this, _1,_2,_3));
-    tcp_server_.SetCbOnClientConnected      (std::bind(
-                       &STEO_Server::OnClientConnected, this, _1));
-    tcp_server_.SetCbOnClientDisconnected   (std::bind(
-                       &STEO_Server::OnClientDisconnected, this, _1));
+    tcp_server_.SetCbOnCalculatePacketLen  (std::bind( &STEO_Server::OnCalculateDataLen, this, _1));
+    tcp_server_.SetCbOnRecvedCompletePacket(std::bind( &STEO_Server::OnRecvedCompleteData, this, _1,_2,_3));
+    tcp_server_.SetCbOnClientConnected      (std::bind( &STEO_Server::OnClientConnected, this, _1));
+    tcp_server_.SetCbOnClientDisconnected   (std::bind( &STEO_Server::OnClientDisconnected, this, _1));
     //max client is 10000, max message length is approximately 1024 bytes...
     if(!tcp_server_.InitTcpServer("127.0.0.1", 9990, 1024 /*,default=10000*/)) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< tcp_server_.GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< tcp_server_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -79,8 +74,7 @@ void STEO_Server::SendThread(asock::Context* ctx_ptr)
         }
         */
         //---------------------------------------- send 2 times
-        if(! tcp_server_.SendData(ctx_ptr, reinterpret_cast<char*>(&header), 
-                    sizeof(ST_MY_HEADER)) ) {
+        if(! tcp_server_.SendData(ctx_ptr, reinterpret_cast<char*>(&header), sizeof(ST_MY_HEADER)) ) {
             std::cerr <<"error! "<< tcp_server_.GetLastErrMsg() <<"\n";
             return ;
         }
@@ -128,8 +122,7 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
     char send_msg[256];
     memcpy(&send_msg, &header, sizeof(header));
     memcpy(send_msg + sizeof(ST_MY_HEADER), data.c_str(), data.length());
-    if (!tcp_server_.SendData(  ctx_ptr, send_msg, 
-                                sizeof(ST_MY_HEADER) + data.length())) {
+    if (!tcp_server_.SendData(  ctx_ptr, send_msg, sizeof(ST_MY_HEADER) + data.length())) {
         std::cerr <<  "error! "<< tcp_server_.GetLastErrMsg() ; 
         return false;
     }

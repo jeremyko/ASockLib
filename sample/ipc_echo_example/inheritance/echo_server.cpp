@@ -51,8 +51,7 @@ bool    EchoServer::OnRecvedCompleteData(asock::Context* context_ptr,
     std::cout << "recved [" << packet << "]\n"; 
     // this is echo server
     if(! SendData(context_ptr, data_ptr, len) ) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -94,8 +93,7 @@ int main(int argc, char* argv[])
     //max message length is approximately 1024 bytes...
     EchoServer echoserver; 
     if(!echoserver.InitIpcServer(argv[1])) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
         exit(1);
     }std::cout << "server started" << "\n";
     while( echoserver.IsServerRunning() ) {

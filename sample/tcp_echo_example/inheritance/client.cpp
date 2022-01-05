@@ -70,15 +70,12 @@ int main(int argc, char* argv[])
             ST_MY_HEADER header;
             snprintf(header.msg_len, sizeof(header.msg_len), "%d", msg_len );
             //you don't need to send twice like this..
-            if(! client.SendToServer(reinterpret_cast<char*>(&header), 
-                                     sizeof(ST_MY_HEADER)) ) {
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.GetLastErrMsg() <<"\n"; 
+            if(! client.SendToServer(reinterpret_cast<char*>(&header), sizeof(ST_MY_HEADER)) ) {
+                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
             if(! client.SendToServer(user_msg.c_str(), user_msg.length()) ) {
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.GetLastErrMsg() <<"\n"; 
+                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
                 return 1;
             }
         }

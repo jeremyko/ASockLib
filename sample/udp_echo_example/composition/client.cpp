@@ -17,23 +17,18 @@ class UdpEchoClient
 
   private:
     asock::ASock   udp_client_ ; //composite usage
-    bool    OnRecvedCompleteData(asock::Context* context_ptr, 
-                                 char* data_ptr, size_t len); 
+    bool    OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len); 
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 bool UdpEchoClient::initialize_udp_client()
 {
     //register callbacks
-    udp_client_.SetCbOnRecvedCompletePacket(std::bind(
-                &UdpEchoClient::OnRecvedCompleteData, this, 
-                std::placeholders::_1,
-                std::placeholders::_2,
-                std::placeholders::_3));
+    udp_client_.SetCbOnRecvedCompletePacket(std::bind(&UdpEchoClient::OnRecvedCompleteData, this,
+                                            std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     //max message length is approximately 1024 bytes...
     if(!udp_client_.InitUdpClient("127.0.0.1", 9990, 1024 ) ) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< udp_client_.GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< udp_client_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -67,20 +62,20 @@ int main(int argc, char* argv[])
     while( client.IsConnected() ) {
         std::cin.clear();
         getline(std::cin, user_msg);
-        int msg_len = user_msg.length();
+        size_t msg_len = user_msg.length();
         if(msg_len>0) {
             ST_MY_HEADER header;
-            snprintf(header.msg_len, sizeof(header.msg_len), "%d", msg_len );
+            snprintf(header.msg_len, sizeof(header.msg_len), "%zu", msg_len );
             char* complete_packet_data = new  char [1024] ;
             memcpy(complete_packet_data, (char*)&header,  sizeof(ST_MY_HEADER));
             memcpy(complete_packet_data+sizeof(ST_MY_HEADER), user_msg.c_str(),user_msg.length() );
-            int total_len = sizeof(ST_MY_HEADER)+  user_msg.length();
+            size_t total_len = sizeof(ST_MY_HEADER)+  user_msg.length();
             if(! client.SendToServer(complete_packet_data ,total_len) ) {
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.GetLastErrMsg() <<"\n"; 
+                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
                 delete [] complete_packet_data;
                 return 1;
             }
+            std::cout << "SendToServer ends\n";
             delete [] complete_packet_data;
         }
     } //while

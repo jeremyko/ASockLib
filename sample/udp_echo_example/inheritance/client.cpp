@@ -30,8 +30,7 @@ int main(int argc, char* argv[])
     EchoClient client;
     //max message length is approximately 1024 bytes...
     if(!client.InitUdpClient("127.0.0.1", 9990, 1024 ) ) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
         return 1;
     }
     std::cout << "client started" << "\n";
@@ -47,8 +46,7 @@ int main(int argc, char* argv[])
             memcpy(complete_packet_data, (char*)&header,  sizeof(ST_MY_HEADER));
             memcpy(complete_packet_data+sizeof(ST_MY_HEADER), user_msg.c_str(),user_msg.length() );
             if(! client.SendToServer(complete_packet_data ,sizeof(ST_MY_HEADER)+  user_msg.length()) ) {
-                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "
-                          << client.GetLastErrMsg() <<"\n"; 
+                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
                 delete [] complete_packet_data;
                 return 1;
             }

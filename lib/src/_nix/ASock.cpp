@@ -558,6 +558,7 @@ bool ASock::RunServer()
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::StopServer()
 {
+    close(listen_socket_);
     is_need_server_run_ = false;
 }
 

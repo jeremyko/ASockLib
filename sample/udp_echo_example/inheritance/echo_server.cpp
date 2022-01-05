@@ -29,8 +29,7 @@ bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_
     std::cout << "recved [" << packet << "]\n"; 
     // this is echo server
     if(! SendData(context_ptr, data_ptr, len) ) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -56,8 +55,7 @@ int main(int argc, char* argv[])
     //max message length is approximately 1024 bytes...
     UdpEchoServer echoserver; 
     if(!echoserver.InitUdpServer("127.0.0.1", 9990, 1024 /*,default=100000*/)) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
         return 1;
     }
     std::cout << "server started" << "\n";

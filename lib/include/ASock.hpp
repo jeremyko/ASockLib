@@ -190,6 +190,7 @@ namespace asock {
             return & (per_recv_io_ctx->cum_buffer);
         }
         bool         is_connected {false}; 
+        SOCKADDR_IN     udp_remote_addr ; //for udp
     } Context ;
 #endif //WIN32
 
@@ -264,9 +265,10 @@ class ASock
 #ifdef WIN32
     bool InitWinsock();
 	void StartWorkerThreads();
-	bool StartAcceptThread();
+    bool StartServer();
     void BuildErrMsgString(int err_no);
 	bool RecvData(size_t worker_id, Context* ctx_ptr, DWORD bytes_transferred);
+	bool RecvfromData(size_t worker_id, Context* ctx_ptr, DWORD bytes_transferred); //udp
     void ReSetCtxPtr(Context* ctx_ptr);
     void HandleError(Context* ctx_ptr, int err);
 #endif
@@ -304,11 +306,11 @@ class ASock
                        int         connect_timeout_secs=10, 
                        size_t  max_data_len = asock::DEFAULT_PACKET_SIZE);
 
-#if defined __APPLE__ || defined __linux__ 
     bool InitUdpClient(const char* server_ip, 
                        unsigned short  server_port, 
                        size_t  max_data_len = asock::DEFAULT_PACKET_SIZE);
 
+#if defined __APPLE__ || defined __linux__ 
     bool InitIpcClient(const char* sock_path, 
                        int         connect_timeout_secs=10,
                        size_t  max_data_len=asock::DEFAULT_PACKET_SIZE); 
@@ -372,12 +374,12 @@ class ASock
                          size_t  max_data_len=asock::DEFAULT_PACKET_SIZE,
                          size_t  max_client=asock::DEFAULT_MAX_CLIENT);
 
-#if defined __APPLE__ || defined __linux__ 
     bool  InitUdpServer (const char* bind_ip, 
                          size_t      bind_port, 
                          size_t  max_data_len=asock::DEFAULT_PACKET_SIZE,
                          size_t  max_client=asock::DEFAULT_MAX_CLIENT);
 
+#if defined __APPLE__ || defined __linux__ 
     bool  InitIpcServer (const char* sock_path, 
                          size_t  max_data_len=asock::DEFAULT_PACKET_SIZE,
                          size_t  max_client=asock::DEFAULT_MAX_CLIENT );
@@ -418,6 +420,7 @@ class ASock
 
 #ifdef WIN32
     void        AcceptThreadRoutine();
+    void        UdpServerThreadRoutine();
     void        WorkerThreadRoutine(size_t worker_index) ; //IOCP 
 
     //if you want to maximum concurrent connections TODO

@@ -34,18 +34,13 @@ using std::placeholders::_3;
 bool EchoServer::initialize_ipc_server(const char* ipc_sock_path)
 {
     //register callbacks
-    ipc_server_.SetCbOnCalculatePacketLen  (std::bind(
-                       &EchoServer::OnCalculateDataLen, this, _1));
-    ipc_server_.SetCbOnRecvedCompletePacket(std::bind(
-                       &EchoServer::OnRecvedCompleteData, this, _1,_2,_3));
-    ipc_server_.SetCbOnClientConnected      (std::bind(
-                       &EchoServer::OnClientConnected, this, _1));
-    ipc_server_.SetCbOnClientDisconnected   (std::bind(
-                       &EchoServer::OnClientDisconnected, this, _1));
+    ipc_server_.SetCbOnCalculatePacketLen  (std::bind( &EchoServer::OnCalculateDataLen, this, _1));
+    ipc_server_.SetCbOnRecvedCompletePacket(std::bind( &EchoServer::OnRecvedCompleteData, this, _1,_2,_3));
+    ipc_server_.SetCbOnClientConnected      (std::bind( &EchoServer::OnClientConnected, this, _1));
+    ipc_server_.SetCbOnClientDisconnected   (std::bind( &EchoServer::OnClientDisconnected, this, _1));
     //max client is 100000, max message length is approximately 1024 bytes...
     if(!ipc_server_.InitIpcServer(ipc_sock_path)) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< ipc_server_.GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< ipc_server_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -75,8 +70,7 @@ bool    EchoServer::OnRecvedCompleteData(asock::Context* context_ptr,
     packet[len-CHAT_HEADER_SIZE] = '\0';
     std::cout << "recved [" << packet << "]\n"; 
     if(! ipc_server_.SendData(context_ptr, data_ptr, len) ) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
-                  <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
