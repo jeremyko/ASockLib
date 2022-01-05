@@ -74,8 +74,7 @@ int main(int argc, char* argv[])
                 std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
                 delete [] complete_packet_data;
                 return 1;
-            }
-            std::cout << "SendToServer ends\n";
+            }            
             delete [] complete_packet_data;
         }
     } //while
