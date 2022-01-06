@@ -7,6 +7,7 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 //Send To Each Other Server
+// An example in which the server and the client randomly exchange data with each other.
 ///////////////////////////////////////////////////////////////////////////////
 class STEO_Server 
 {
@@ -56,7 +57,7 @@ void STEO_Server::SendThread(asock::Context* ctx_ptr)
     LOG("Send Thread starts.......");
     size_t cnt = 0;
     while(ctx_ptr->is_connected) {
-        std::string data = "server sending this....";
+        std::string data = "from server message ";
         data += std::to_string(cnt);
         ST_MY_HEADER header;
         snprintf(header.msg_len, sizeof(header.msg_len), "%zu", data.length());
@@ -65,14 +66,13 @@ void STEO_Server::SendThread(asock::Context* ctx_ptr)
         char send_msg[256];
         memcpy(&send_msg, &header, sizeof(header));
         memcpy(send_msg+sizeof(ST_MY_HEADER), data.c_str(), data.length());
-        //DBG_LOG( "send msg ["<< send_msg <<"], len=" 
-        //         << sizeof(ST_MY_HEADER) + data.length());
         if(! tcp_server_.SendData(  ctx_ptr, send_msg, 
                                     sizeof(ST_MY_HEADER)+data.length())) {
             //DBG_ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
             return ;
         }
         */
+        //LOG( "send to client ["<< send_msg <<"], len=" << sizeof(ST_MY_HEADER) + data.length());
         //---------------------------------------- send 2 times
         if(! tcp_server_.SendData(ctx_ptr, reinterpret_cast<char*>(&header), sizeof(ST_MY_HEADER)) ) {
             std::cerr <<"error! "<< tcp_server_.GetLastErrMsg() <<"\n";
@@ -82,9 +82,10 @@ void STEO_Server::SendThread(asock::Context* ctx_ptr)
             std::cerr <<  "error! "<< tcp_server_.GetLastErrMsg() << "\n";
             return ;
         }
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        //std::this_thread::sleep_for(std::chrono::milliseconds(30));
         cnt++;
+        if(cnt >= 10){
+            break;
+        }
     }
 }
 
@@ -115,8 +116,7 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
     std::cout<<"recved [" << packet << "]\n"; 
     //---------------------------------------
     //this is echo server
-    std::string data = "server echo:";
-    data += std::string(packet);
+    std::string data = std::string(packet);
     ST_MY_HEADER header;
     snprintf(header.msg_len, sizeof(header.msg_len), "%zu", data.length());
     char send_msg[256];

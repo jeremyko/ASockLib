@@ -597,6 +597,7 @@ void ASock::PushClientContextToCache(Context* ctx_ptr)
     ctx_ptr->socket = -1;
     ctx_ptr->is_packet_len_calculated = false;
     ctx_ptr->is_sent_pending = false;
+    ctx_ptr->is_connected = false;
     ctx_ptr->complete_packet_len = 0;
     while(!ctx_ptr->pending_send_deque.empty() ) {
         PENDING_SENT pending_sent= ctx_ptr->pending_send_deque.front();
@@ -658,6 +659,7 @@ bool ASock::AcceptNewClient()
             return false;
         }
         client_context_ptr->socket = client_fd;
+        client_context_ptr->is_connected = true;
 
         if(cb_on_client_connected_!=nullptr) {
             cb_on_client_connected_(client_context_ptr);

@@ -1,2 +1,6 @@
 * inheritance directory ==>> inheritance usage
 * composition directory ==>> composition usage
+
+
+* tcp_send_each_other_example 
+  ==>> An example in which the server and the client randomly exchange data with each other.
