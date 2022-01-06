@@ -94,7 +94,6 @@ int main(int argc, char* argv[])
     UdpEchoServer echoserver; 
     echoserver.initialize_udp_server();
     std::cout << "server started" << "\n";
-    int count = 0;
     while( echoserver.IsServerRunning() ) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
