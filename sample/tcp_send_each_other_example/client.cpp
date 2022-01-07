@@ -72,7 +72,7 @@ void STEO_Client::SendThread(size_t index)
             continue;
         }
     }
-    //DBG_LOG("Send Thread starts....... : "<< index);
+    LOG("Send Thread starts....... : "<< index);
     int sent_cnt =0;
     ST_MY_HEADER header;
     char send_msg[256];
@@ -96,7 +96,7 @@ void STEO_Client::SendThread(size_t index)
             return;
         }
         sent_cnt++ ;
-        if(sent_cnt >= 5){
+        if(sent_cnt >= 10){
             LOG("client " <<index << " completes send ");
             break;
         }
@@ -125,7 +125,7 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* context_ptr,
     char packet[asock::DEFAULT_PACKET_SIZE]; 
     memcpy(&packet, data_ptr+CHAT_HEADER_SIZE, len-CHAT_HEADER_SIZE);
     packet[len-CHAT_HEADER_SIZE] = '\0';
-    std::cout << "*** ["<< packet <<"]"<<", client_id =" << client_id_ << "\n";
+    std::cout << "received ["<< packet <<"]"<<", client_id =" << client_id_ << "\n";
 
     // Let's check if it matches what we sent.
     if (std::string(packet).compare(0,4,"from") == 0) {
@@ -157,8 +157,8 @@ void STEO_Client::OnDisconnectedFromServer() {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
-    size_t MAX_CLIENTS = 100;
-    size_t MAX_THREADS = 3;
+    size_t MAX_CLIENTS = 30;
+    size_t MAX_THREADS = 100;
     std::vector<std::thread>  vec_threads ;
     std::vector<STEO_Client*> vec_clients;
     std::cout << "client started\n";
@@ -185,30 +185,31 @@ int main(int argc, char* argv[])
             vec_threads.push_back(std::thread(&STEO_Client::SendThread, *it, j));
         }
     }
-    
-    std::cout <<"total clients = " << vec_clients.size();
-    std::cout << "total threads = " << vec_threads.size();
+
+    // wait for a while for all send and receive operations to complete.
+	std::this_thread::sleep_for(std::chrono::seconds(5));
+
     for(size_t i = 0; i < vec_threads.size(); i++) {
         if (vec_threads[i].joinable()) {
             vec_threads[i].join();
         }
     }
-
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
         (*it)->DisConnectTcpClient();
     }
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
         (*it)->WaitForClientLoopExit();
     }
-    std::cout << "==== all clients exiting : "<<vec_clients.size()<<"\n";
+
+	std::cout << "\n\n=================== all clients exiting ====================\n";
+    std::cout << "total clients = " << vec_clients.size() <<"\n";
+    std::cout << "total threads = " << vec_threads.size() << "\n\n";
     
     while (! vec_clients.empty()) {
         delete vec_clients.back();
         vec_clients.pop_back();
     }
     vec_clients.clear();
-    //std::cout << "press enter to exit : " <<  "\n";
-    //std::cin.get(); // no... windows defender 
 
     return 0;
 }

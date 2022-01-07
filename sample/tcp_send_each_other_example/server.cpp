@@ -52,36 +52,26 @@ bool STEO_Server::InitializeTcpServer()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Send 10 times to the connected client .
+// This is not an echo response. Server sends first.
 void STEO_Server::SendThread(asock::Context* ctx_ptr) 
 {
-    LOG("Send Thread starts.......");
+    //LOG("Send Thread starts.......");
     size_t cnt = 0;
+	char send_msg[256];
     while(ctx_ptr->is_connected) {
         std::string data = "from server message ";
         data += std::to_string(cnt);
         ST_MY_HEADER header;
         snprintf(header.msg_len, sizeof(header.msg_len), "%zu", data.length());
-        //---------------------------------------- send one buffer
-        /*
-        char send_msg[256];
         memcpy(&send_msg, &header, sizeof(header));
         memcpy(send_msg+sizeof(ST_MY_HEADER), data.c_str(), data.length());
         if(! tcp_server_.SendData(  ctx_ptr, send_msg, 
                                     sizeof(ST_MY_HEADER)+data.length())) {
-            //DBG_ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
+            ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
             return ;
         }
-        */
         //LOG( "send to client ["<< send_msg <<"], len=" << sizeof(ST_MY_HEADER) + data.length());
-        //---------------------------------------- send 2 times
-        if(! tcp_server_.SendData(ctx_ptr, reinterpret_cast<char*>(&header), sizeof(ST_MY_HEADER)) ) {
-            std::cerr <<"error! "<< tcp_server_.GetLastErrMsg() <<"\n";
-            return ;
-        }
-        if(! tcp_server_.SendData(ctx_ptr, data.c_str(), data.length()) ) {
-            std::cerr <<  "error! "<< tcp_server_.GetLastErrMsg() << "\n";
-            return ;
-        }
         cnt++;
         if(cnt >= 10){
             break;
