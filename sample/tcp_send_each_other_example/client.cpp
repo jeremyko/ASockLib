@@ -186,8 +186,12 @@ int main(int argc, char* argv[])
         }
     }
 
-    // wait for a while for all send and receive operations to complete.
-	std::this_thread::sleep_for(std::chrono::seconds(5));
+    // All send operations are done, but later server response can be received asynchronously. 
+    // In order to handle this properly, it is necessary to properly determine and process 
+    // the exit time. But this is a simple example, so keep it simple. wait long enough
+    // Perhaps, if you increase the total number of threads, etc., 
+    // you may have to wait a bit longer to avoid synchronization errors in the example.
+	std::this_thread::sleep_for(std::chrono::seconds(10));
 
     for(size_t i = 0; i < vec_threads.size(); i++) {
         if (vec_threads[i].joinable()) {
