@@ -76,7 +76,8 @@ void STEO_Server::SendThread(asock::Context* ctx_ptr)
         if(cnt >= 10){
             break;
         }
-    }
+    }//while
+    //LOG( "server send thread exit ");
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -122,10 +123,13 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Server::OnClientConnected(asock::Context* ctx_ptr) 
 {
-    std::cout <<"client connected : socket fd ["<< ctx_ptr->socket <<"]\n";
+    size_t MAX_THREADS = 10;
+    //std::cout <<"client connected : socket fd ["<< ctx_ptr->socket <<"]\n";
     //spawn new thread (server, client both sending each other)
-    std::thread send_thread (&STEO_Server::SendThread,this, ctx_ptr);
-    send_thread.detach();
+    for (size_t j = 0; j < MAX_THREADS; j++) {
+        std::thread send_thread(&STEO_Server::SendThread, this, ctx_ptr);
+        send_thread.detach();
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

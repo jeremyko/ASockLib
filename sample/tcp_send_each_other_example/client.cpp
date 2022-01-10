@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <cassert>
 #include <mutex> 
+#include <atomic>
 #include "ASock.hpp"
 #include "../msg_defines.h"
 
@@ -22,8 +23,9 @@ class STEO_Client
     void SendThread(size_t index) ;
     void WaitForClientLoopExit();
     std::string  GetLastErrMsg(){return  tcp_client_.GetLastErrMsg() ; }
-  private:
+    std::atomic<int> server_msg_cnt_ ; // Check that all server messages have arrived
     size_t client_id_;
+  private:
     asock::ASock   tcp_client_ ; //composite usage
     size_t  OnCalculateDataLen(asock::Context* context_ptr); 
     bool    OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, 
@@ -72,7 +74,7 @@ void STEO_Client::SendThread(size_t index)
             continue;
         }
     }
-    LOG("Send Thread starts....... : "<< index);
+    //LOG("Send Thread starts....... : "<< index);
     int sent_cnt =0;
     ST_MY_HEADER header;
     char send_msg[256];
@@ -97,11 +99,11 @@ void STEO_Client::SendThread(size_t index)
         }
         sent_cnt++ ;
         if(sent_cnt >= 10){
-            LOG("client " <<index << " completes send ");
+            //LOG("client " <<index << " completes send ");
             break;
         }
     }
-    LOG("send thread exiting : " << index);
+    //LOG("send thread exiting : " << index);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -129,7 +131,9 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* context_ptr,
 
     // Let's check if it matches what we sent.
     if (std::string(packet).compare(0,4,"from") == 0) {
-        //skip "from server message 0"
+        // skip "from server message 0"
+        // This is not an echo response, the data was sent by the server. -> just increment the count
+        server_msg_cnt_++;
     }else {
         bool found = false;
         std::lock_guard<std::mutex> lock(sent_chk_lock_);
@@ -157,8 +161,8 @@ void STEO_Client::OnDisconnectedFromServer() {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
-    size_t MAX_CLIENTS = 300;
-    size_t MAX_THREADS = 10;
+    size_t MAX_CLIENTS = 30;
+    size_t MAX_THREADS = 100;
     std::vector<std::thread>  vec_threads ;
     std::vector<STEO_Client*> vec_clients;
     std::cout << "client started\n";
@@ -172,11 +176,9 @@ int main(int argc, char* argv[])
             continue;
         }
         //spawn threads along with creating clients
-        /*
-        for (size_t j = 0; j < MAX_THREADS; j++) {
-            vec_threads.push_back(std::thread(&STEO_Client::SendThread, client, j));
-        }
-        */
+        //for (size_t j = 0; j < MAX_THREADS; j++) {
+        //    vec_threads.push_back(std::thread(&STEO_Client::SendThread, client, j));
+        //}
         vec_clients.push_back(client);
     }
     //spawn thread after all client starts..
@@ -208,6 +210,10 @@ int main(int argc, char* argv[])
 	std::cout << "\n\n=================== all clients exiting ====================\n";
     std::cout << "total clients = " << vec_clients.size() <<"\n";
     std::cout << "total threads = " << vec_threads.size() << "\n\n";
+    for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
+        std::cout << "server msg count : client -> " << (*it)->client_id_ 
+            << " , count =  " << (*it)->server_msg_cnt_ << "\n";
+    }
     
     while (! vec_clients.empty()) {
         delete vec_clients.back();
