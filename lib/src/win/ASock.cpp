@@ -205,15 +205,7 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
         DBG_ELOG("sock=" << ctx_ptr->sock_id_copy << ",invalid socket, failed.");
         return false;
     }
-    //std::cout << "sock="<<ctx_ptr->socket <<", bytes_transferred = " << bytes_transferred <<"\n";
     ctx_ptr->GetBuffer()->IncreaseData(bytes_transferred);
-    DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy<<",GetCumulatedLen = " 
-        << ctx_ptr->GetBuffer()->GetCumulatedLen() << ",ref_cnt=" << ctx_ptr->ref_cnt
-        << ",bytes_transferred=" << bytes_transferred );
-#ifdef DEBUG_PRINT
-    ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
-#endif
-    //DBG_LOG("GetCumulatedLen = " << ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen());
     while (ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()) {
         //XXX .. for client !!! =========== START TODO --> make better !
         if (ctx_ptr->socket == INVALID_SOCKET) {
@@ -221,10 +213,6 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
             return false;
         }
         //XXX .. for client !!! =========== END
-        DBG_LOG("worker="<<worker_index<<",sock=" << ctx_ptr->sock_id_copy 
-            << ",GetCumulatedLen = " << ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()
-            << ",ref_cnt=" << ctx_ptr->ref_cnt << ",bytes_transferred=" << bytes_transferred);
-        //invoke user specific implementation
         if (!ctx_ptr->per_recv_io_ctx->is_packet_len_calculated){ 
             //only when calculation is necessary
             if (cb_on_calculate_data_len_ != nullptr) {
@@ -234,35 +222,23 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
                 //invoke user specific implementation
                 ctx_ptr->per_recv_io_ctx->complete_recv_len = OnCalculateDataLen(ctx_ptr);
             }
-            DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy<<", whole length =" 
-                << ctx_ptr->per_recv_io_ctx->complete_recv_len);
-            
             ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = true;
         }
         if (ctx_ptr->per_recv_io_ctx->complete_recv_len == asock::MORE_TO_COME) {
             ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
             DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy<<": more to come" );
-            DBG_LOG("sock=" << ctx_ptr->sock_id_copy << ", cumbuffer debug=");
-#ifdef DEBUG_PRINT
-            ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
-#endif
             return true; //need to recv more
         } else if (ctx_ptr->per_recv_io_ctx->complete_recv_len > 
                    ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()) {
             DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy
                 <<",GetCumulatedLen = " << ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen() <<": more to come" );
-            DBG_LOG("sock=" << ctx_ptr->sock_id_copy << ", cumbuffer debug=");
-#ifdef DEBUG_PRINT
-            ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
-#endif
             return true; //need to recv more
         } else {
             //got complete packet 
             size_t alloc_len = ctx_ptr->per_recv_io_ctx->complete_recv_len;
-            DBG_LOG("alloc len=" << alloc_len);
             char* complete_packet_data = new (std::nothrow) char [alloc_len] ; //XXX 
             if(complete_packet_data == nullptr) {
-                DBG_ELOG("mem alloc failed");
+                ELOG("mem alloc failed");
                 exit(1);
             }
             if (cumbuffer::OP_RSLT_OK !=
@@ -279,8 +255,6 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
                 //exit(1);
                 return false;
             }
-            DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy
-                << ",ref_cnt=" << ctx_ptr->ref_cnt << ":got complete data [" << complete_packet_data <<"]"  ); 
             if (cb_on_recved_complete_packet_ != nullptr) {
                 //invoke user specific callback
                 cb_on_recved_complete_packet_(ctx_ptr, complete_packet_data, ctx_ptr->per_recv_io_ctx->complete_recv_len);
@@ -310,7 +284,6 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
         //iocp 는 멀티쓰레드 pool 로 처리되므로..
         //DBG_LOG("worker=" << worker_index << ",sock=" << ctx_ptr->sock_id_copy
         //    << ", recv issued cnt=" << ctx_ptr->recv_issued_cnt << " --> SKIP !");
-        //std::this_thread::sleep_for(std::chrono::microseconds(1));
         return true;
     }
     //XXX cumbuffer 에 Append 가능할 만큼만 수신하게 해줘야함!!
@@ -575,12 +548,16 @@ void ASock:: AcceptThreadRoutine()
         if (client_sock == INVALID_SOCKET) {
             int last_err = WSAGetLastError();
             if (WSAEWOULDBLOCK == last_err) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                //std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
             }
             BuildErrMsgString(last_err);
-            ELOG( err_msg_ ) ;
-            exit(1);
+            if (!is_need_server_run_) {
+                ELOG(err_msg_);
+                exit(1);
+            } else {
+                break;
+            }
         }
         DBG_LOG("**** accept returns...new client : sock="<<client_sock );
         client_cnt_++;
@@ -901,8 +878,8 @@ bool ASock::InitWinsock() {
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::StopServer()
 {
-    closesocket(listen_socket_);
     is_need_server_run_ = false; 
+    closesocket(listen_socket_);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1266,7 +1243,7 @@ void ASock::ClientThreadRoutine()
                 is_client_thread_running_ = false;
                 return;//no error.
             }
-            if (fdarray.revents & POLLRDNORM) {
+            if (fdarray.revents & POLLRDNORM) {  
                 //============================
                 size_t want_recv_len = max_data_len_;
                 //-------------------------------------
@@ -1338,6 +1315,7 @@ void ASock::ClientThreadRoutine()
                     }
                 }
             }
+            //TODO POLLWRNORM
         }
     } //while(true)
     is_client_thread_running_ = false;
@@ -1353,7 +1331,7 @@ bool ASock:: SendToServer(const char* data, size_t len)
         DBG_ELOG( err_msg_ ) ;
         return false;
     }
-    std::lock_guard<std::mutex> lock(context_.ctx_lock);
+    std::lock_guard<std::mutex> lock(context_.ctx_lock); // XXX lock
     if (context_.socket == INVALID_SOCKET) {
         err_msg_ = "not connected";
         DBG_ELOG(err_msg_);
@@ -1362,10 +1340,10 @@ bool ASock:: SendToServer(const char* data, size_t len)
     //TODO : async 
     if (sock_usage_ == SOCK_USAGE_UDP_CLIENT) {
         while (true) {
-            int result = sendto(context_.socket, data, int(len), 0, (SOCKADDR*) 0, int(sizeof(context_.udp_remote_addr)));
+            int result = sendto(context_.socket, data, int(len), 0, (SOCKADDR*)0, int(sizeof(context_.udp_remote_addr)));
             if (SOCKET_ERROR == result) {
                 if (WSAEWOULDBLOCK == WSAGetLastError()) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    //std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     continue;
                 } else {
                     BuildErrMsgString(WSAGetLastError());
@@ -1403,7 +1381,7 @@ bool ASock:: SendToServer(const char* data, size_t len)
                 }
                 else {
                     LOG("all sent failed --> send again : total= " << len << ",sent=" << sent_sum);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    //std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     continue;
                 }
             }

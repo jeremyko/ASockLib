@@ -157,8 +157,8 @@ void STEO_Client::OnDisconnectedFromServer() {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
-    size_t MAX_CLIENTS = 30;
-    size_t MAX_THREADS = 100;
+    size_t MAX_CLIENTS = 300;
+    size_t MAX_THREADS = 10;
     std::vector<std::thread>  vec_threads ;
     std::vector<STEO_Client*> vec_clients;
     std::cout << "client started\n";
@@ -188,9 +188,9 @@ int main(int argc, char* argv[])
 
     // All send operations are done, but later server response can be received asynchronously. 
     // In order to handle this properly, it is necessary to properly determine and process 
-    // the exit time. But this is a simple example, so keep it simple. wait long enough
-    // Perhaps, if you increase the total number of threads, etc., 
-    // you may have to wait a bit longer to avoid synchronization errors in the example.
+    // the exit time. By the way, this is a simple example, so keep it simple. wait long enough. :-)
+    // if you increase the total number of threads, etc., 
+    // you may have to wait a bit longer to avoid synchronization errors in this example.
 	std::this_thread::sleep_for(std::chrono::seconds(10));
 
     for(size_t i = 0; i < vec_threads.size(); i++) {

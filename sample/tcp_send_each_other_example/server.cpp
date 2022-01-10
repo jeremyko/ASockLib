@@ -122,7 +122,7 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Server::OnClientConnected(asock::Context* ctx_ptr) 
 {
-    std::cout <<"client connected : socket fd ["<< ctx_ptr->socket <<"]";
+    std::cout <<"client connected : socket fd ["<< ctx_ptr->socket <<"]\n";
     //spawn new thread (server, client both sending each other)
     std::thread send_thread (&STEO_Server::SendThread,this, ctx_ptr);
     send_thread.detach();
@@ -131,7 +131,7 @@ void STEO_Server::OnClientConnected(asock::Context* ctx_ptr)
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Server::OnClientDisconnected(asock::Context* ctx_ptr) 
 {
-    std::cout << "client disconnected \n";
+    std::cout <<"client disconnected : socket fd ["<< ctx_ptr->socket <<"]\n";
 }
 
 ///////////////////////////////////////////////////////////////////////////////
