@@ -771,14 +771,14 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                     //남은 부분 전송
                     DBG_LOG("socket (" << ctx_ptr->socket << ") send partially completed, total=" << per_io_ctx->total_send_len
                             << ",partial= " << per_io_ctx->sent_len << ", send again");
-                    WSABUF buff_send;
+                    SecureZeroMemory((PVOID)&per_io_ctx->overlapped, sizeof(WSAOVERLAPPED));
                     DWORD dw_flags = 0;
                     DWORD dw_send_bytes = 0;
-                    buff_send.buf = per_io_ctx->send_buffer + per_io_ctx->sent_len;
-                    buff_send.len = (ULONG)(per_io_ctx->total_send_len - per_io_ctx->sent_len);
+                    per_io_ctx->wsabuf.buf += bytes_transferred;
+                    per_io_ctx->wsabuf.len -= bytes_transferred;
                     per_io_ctx->io_type = EnumIOType::IO_SEND;
                     //----------------------------------------
-                    int result = WSASend(ctx_ptr->socket, &buff_send, 1, &dw_send_bytes, dw_flags, &(per_io_ctx->overlapped), NULL);
+                    int result = WSASend(ctx_ptr->socket, &per_io_ctx->wsabuf, 1, &dw_send_bytes, dw_flags, &(per_io_ctx->overlapped), NULL);
                     if (result == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
                         delete per_io_ctx;
                         int last_err = WSAGetLastError();
