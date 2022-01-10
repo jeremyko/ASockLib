@@ -213,7 +213,7 @@ bool ASock::RecvData(Context* ctx_ptr)
                 return true; //need to recv more
             } else {
                 //got complete packet 
-                char* complete_packet_data = new (std::nothrow) char [max_data_len_] ; //XXX 
+                char* complete_packet_data = new (std::nothrow) char [ctx_ptr->complete_packet_len] ; //XXX 
                 if(complete_packet_data == NULL) {
                     err_msg_ = "memory alloc failed!";
                     return false;
