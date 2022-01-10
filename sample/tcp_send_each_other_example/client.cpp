@@ -193,7 +193,7 @@ int main(int argc, char* argv[])
     // the exit time. By the way, this is a simple example, so keep it simple. wait long enough. :-)
     // if you increase the total number of threads, etc., 
     // you may have to wait a bit longer to avoid synchronization errors in this example.
-	std::this_thread::sleep_for(std::chrono::seconds(10));
+	std::this_thread::sleep_for(std::chrono::seconds(60));
 
     for(size_t i = 0; i < vec_threads.size(); i++) {
         if (vec_threads[i].joinable()) {
