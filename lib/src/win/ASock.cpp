@@ -26,12 +26,10 @@ SOFTWARE.
 //for windows, ipcp(server), wsapoll(client) is used.
 //there is no concurrent send/recv per a socket.
 ///////////////////////////////////////////////////////////////////////////////
-//TODO per_io_ctx ==> 동적 할당된 메모리
 //TODO SOCK_USAGE_IPC_SERVER 
 //TODO SOCK_USAGE_IPC_CLIENT 
 //TODO bool use_zero_byte_receive_ 
 //TODO one header file only ? if possible..
-//202011 encoding to utf-8
 #include "ASock.hpp"
 
 using namespace asock;

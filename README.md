@@ -6,7 +6,7 @@ a simple, easy to use cross-platform c++ networking library.
 
 - linux, os x : tcp, udp, domain socket using epoll and kqueue.
 
-- windows : currently tcp/udp supports.
+- windows : tcp, udp using winsock.
 
 dependency : [CumBuffer](https://github.com/jeremyko/CumBuffer).
 
@@ -87,10 +87,7 @@ bool EchoClient:: OnRecvedCompleteData(asock::Context* context_ptr,
                                        size_t          len) 
 {
     //user specific : - your whole data has arrived.
-    char packet[asock::DEFAULT_PACKET_SIZE]; 
-    memcpy(&packet, data_ptr, len);
-    packet[lenE] = '\0';
-    std::cout <<   "\n* server response ["<< packet <<"]\n";
+    std::cout<<"server response  [" << data_ptr + CHAT_HEADER_SIZE << "]\n";
     return true;
 }
 

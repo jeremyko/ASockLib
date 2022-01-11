@@ -65,10 +65,7 @@ bool    EchoServer::OnRecvedCompleteData(asock::Context* context_ptr,
 {
     //user specific : your whole data has arrived.
     // this is echo server
-    char packet[asock::DEFAULT_PACKET_SIZE];
-    memcpy(&packet, data_ptr+CHAT_HEADER_SIZE, len-CHAT_HEADER_SIZE);
-    packet[len-CHAT_HEADER_SIZE] = '\0';
-    std::cout << "recved [" << packet << "]\n"; 
+    std::cout<<"recved [" << data_ptr + CHAT_HEADER_SIZE << "]\n";
     if(! ipc_server_.SendData(context_ptr, data_ptr, len) ) {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
