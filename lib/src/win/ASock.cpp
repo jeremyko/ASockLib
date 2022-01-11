@@ -51,6 +51,7 @@ ASock::~ASock()
                 sock_usage_ == SOCK_USAGE_UDP_SERVER ||
                 sock_usage_ == SOCK_USAGE_IPC_SERVER) {
         ClearClientCache();
+        ClearPerIoDataCache();
     }
     WSACleanup();
 }
@@ -60,8 +61,6 @@ ASock::~ASock()
 //server use
 bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len) 
 {
-    std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock);  
-    //XXX  recv에서 연결 종료 판단되었을 수 있음!!!
     if (ctx_ptr->socket == INVALID_SOCKET) {
         ELOG("invalid socket, failed.");
         return false;
@@ -72,8 +71,8 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
     }
     //ex)multi thread 가 동일한 소켓에 대해 각각 보내는 경우...
     //buffer 가 각각 필요함(전송 여부 비동기 통지, 중첩)
-    PER_IO_DATA* per_send_ctx = new (std::nothrow) asock::PER_IO_DATA;
-    if (per_send_ctx == nullptr) {
+    PER_IO_DATA* per_send_io_data = PopPerIoDataFromCache();
+    if (per_send_io_data == nullptr) {
         ELOG("mem alloc failed");
         shutdown(ctx_ptr->socket, SD_BOTH);
         if (0 != closesocket(ctx_ptr->socket)) {
@@ -82,29 +81,30 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
         ctx_ptr->socket = INVALID_SOCKET; //XXX
         exit(1);
     }
-    SecureZeroMemory((PVOID)&per_send_ctx->overlapped, sizeof(WSAOVERLAPPED));
     DWORD dw_flags = 0;
     DWORD dw_send_bytes = 0;
-    memcpy(per_send_ctx->send_buffer, data_ptr, len); //XXX
-    per_send_ctx->wsabuf.buf = per_send_ctx->send_buffer;
-    per_send_ctx->wsabuf.len = (ULONG)len;
-    per_send_ctx->io_type = EnumIOType::IO_SEND;
-    per_send_ctx->total_send_len = len;
-    per_send_ctx->sent_len = 0;
+    char* send_buffer = new char[len]; //XXX alloc
+    memcpy(send_buffer, data_ptr, len); //XXX
+    per_send_io_data->wsabuf.buf = send_buffer ;
+    per_send_io_data->wsabuf.len = (ULONG)len;
+    per_send_io_data->io_type = EnumIOType::IO_SEND;
+    per_send_io_data->total_send_len = len;
+    per_send_io_data->sent_len = 0;
     int result = 0;
 
     if (sock_usage_ == SOCK_USAGE_UDP_SERVER) {
-        result = WSASendTo(ctx_ptr->socket, &(per_send_ctx->wsabuf), 1, &dw_send_bytes, dw_flags,
+        result = WSASendTo(ctx_ptr->socket, &(per_send_io_data->wsabuf), 1, &dw_send_bytes, dw_flags,
                            (SOCKADDR*)&ctx_ptr->udp_remote_addr, sizeof(SOCKADDR_IN)
-                           , &(per_send_ctx->overlapped), NULL);
+                           , &(per_send_io_data->overlapped), NULL);
     }
     else if (sock_usage_ == SOCK_USAGE_UDP_CLIENT) {
-        result = WSASendTo(ctx_ptr->socket, &(per_send_ctx->wsabuf), 1, &dw_send_bytes, dw_flags,
+        result = WSASendTo(ctx_ptr->socket, &(per_send_io_data->wsabuf), 1, &dw_send_bytes, dw_flags,
                            (SOCKADDR*)&ctx_ptr->udp_remote_addr, sizeof(SOCKADDR_IN)
-                           , &(per_send_ctx->overlapped), NULL);
+                           , &(per_send_io_data->overlapped), NULL);
     }
     else {
-        result = WSASend(ctx_ptr->socket, &(per_send_ctx->wsabuf), 1, &dw_send_bytes, dw_flags, &(per_send_ctx->overlapped), NULL);
+        result = WSASend(ctx_ptr->socket, &(per_send_io_data->wsabuf), 1, &dw_send_bytes, dw_flags, 
+                         &(per_send_io_data->overlapped), NULL);
     }
     if (result == 0) {
         //no error occurs and the send operation has completed immediately
@@ -116,7 +116,7 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
             int last_err = WSAGetLastError();
             BuildErrMsgString(last_err);
             DBG_ELOG(err_msg_ << " : " << ctx_ptr->socket);
-            delete per_send_ctx; 
+            PushPerIoDataToCache(per_send_io_data);
             shutdown(ctx_ptr->socket, SD_BOTH);
             if (0 != closesocket(ctx_ptr->socket)) {
                 DBG_ELOG("sock="<<ctx_ptr->socket<<",close socket error! : " << last_err);
@@ -125,7 +125,6 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
             return false;
         }
     }
-    ctx_ptr->posted_send_cnt++;
     ctx_ptr->ref_cnt++;
     DBG_LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt=" << ctx_ptr->ref_cnt);
     return true;
@@ -185,8 +184,8 @@ bool ASock::RecvfromData(size_t worker_index, Context* ctx_ptr, DWORD bytes_tran
     }
     //XXX UDP 이므로 받는 버퍼를 초기화해서, linear free space를 초기화 상태로 
     ctx_ptr->GetBuffer()->ReSet(); //this is udp. all data has arrived!
-    DBG_LOG("worker=" << worker_index << ",sock=" << ctx_ptr->sock_id_copy
-            << ",ref_cnt=" << ctx_ptr->ref_cnt << ":got complete data [" << complete_packet_data << "]");
+    DBG_LOG("worker=" << worker_index << ",sock=" << ctx_ptr->sock_id_copy << 
+            ",ref_cnt=" << ctx_ptr->ref_cnt << ":got complete data [" << complete_packet_data << "]");
     if (cb_on_recved_complete_packet_ != nullptr) {
         //invoke user specific callback
         cb_on_recved_complete_packet_(ctx_ptr, complete_packet_data, bytes_transferred ); //udp
@@ -226,12 +225,9 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
         }
         if (ctx_ptr->per_recv_io_ctx->complete_recv_len == asock::MORE_TO_COME) {
             ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
-            DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy<<": more to come" );
             return true; //need to recv more
         } else if (ctx_ptr->per_recv_io_ctx->complete_recv_len > 
                    ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()) {
-            DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy
-                <<",GetCumulatedLen = " << ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen() <<": more to come" );
             return true; //need to recv more
         } else {
             //got complete packet 
@@ -251,7 +247,6 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
                 }
                 ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
                 delete[] complete_packet_data; //XXX
-                DBG_ELOG("error! ");
                 //exit(1);
                 return false;
             }
@@ -278,7 +273,6 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
         return false;
     }
     //XXX cumbuffer 에 Append 가능할 만큼만 수신하게 해줘야함!!
-    //TODO 0 byte 수신을 고려?? 
     size_t want_recv_len = max_data_len_;
     //-------------------------------------
     if (max_data_len_ > ctx_ptr->GetBuffer()->GetLinearFreeSpace()) { 
@@ -390,6 +384,7 @@ bool ASock::RunServer()
     StartWorkerThreads();
     //--------------------------
 
+    is_need_server_run_ = true;
     if (!StartServer()) {
         return false;
     }
@@ -401,10 +396,9 @@ void ASock::StartWorkerThreads()
 {
     SYSTEM_INFO system_info;
     GetSystemInfo(&system_info);
-    int max_worker_cnt = system_info.dwNumberOfProcessors * 2;
-    DBG_LOG("(server) worker cnt = " << max_worker_cnt);
-    is_need_server_run_ = true;
-    for (size_t i = 0; i < max_worker_cnt; i++) {
+    max_worker_cnt_ = system_info.dwNumberOfProcessors * 2;
+    DBG_LOG("(server) worker cnt = " << max_worker_cnt_);
+    for (size_t i = 0; i < max_worker_cnt_ ; i++) {
         std::thread worker_thread(&ASock::WorkerThreadRoutine, this, i); 
         worker_thread.detach();
     }
@@ -480,6 +474,12 @@ bool ASock::StartServer()
             ELOG(err_msg_);
             return false;
         }
+    }
+    if (!BuildClientContextCache()) {
+        return false;
+    }
+    if (!BuildPerIoDataCache()) {
+        return false;
     }
     //XXX start server thread
     if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
@@ -586,7 +586,6 @@ void ASock:: AcceptThreadRoutine()
         }
     } //while
     DBG_LOG("exiting");
-    is_need_server_run_ = false;
     is_server_running_ = false;
 }
 
@@ -598,7 +597,7 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
     Context*    ctx_ptr = NULL ;
     LPWSAOVERLAPPED lp_overlapped = NULL;
     PER_IO_DATA*    per_io_ctx = NULL;
-    while (is_need_server_run_) {
+    while (true) {
         bytes_transferred = 0;
         ctx_ptr = NULL ;
         lp_overlapped = NULL;
@@ -623,8 +622,10 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                 per_io_ctx = (PER_IO_DATA*)lp_overlapped;
                 if (per_io_ctx->io_type == EnumIOType::IO_SEND) {
                     //XXX per_io_ctx ==> 동적 할당된 메모리임!!!  XXX
-                    delete per_io_ctx;
-                    per_io_ctx = NULL;
+                    //delete [] per_io_ctx->wsabuf.buf;
+                    //delete per_io_ctx;
+                    //per_io_ctx = NULL;
+                    PushPerIoDataToCache(per_io_ctx);
                 }
                 if (bytes_transferred == 0) {
                     //graceful disconnect.
@@ -709,43 +710,23 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
         {
             if (ctx_ptr->socket == INVALID_SOCKET) {
                 LOG("INVALID_SOCKET : delete.sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
-                delete per_io_ctx;
+                //delete [] per_io_ctx->wsabuf.buf;
+                //delete per_io_ctx;
+                PushPerIoDataToCache(per_io_ctx);
                 break;
             }
             ctx_ptr->ref_cnt--;
-            ctx_ptr->posted_send_cnt--;
             DBG_LOG("worker=" << worker_index << ",IO_SEND: sock=" << ctx_ptr->socket << ", ref_cnt =" << ctx_ptr->ref_cnt);
             //XXX per_io_ctx ==> dynamically allocated memory 
             per_io_ctx->sent_len += bytes_transferred;
             DBG_LOG("IO_SEND(sock=" << ctx_ptr->socket << ") : sent this time ="
-                    << bytes_transferred << ",total sent =" << per_io_ctx->sent_len
-                    << ",ctx_ptr->posted_send_cnt =" << ctx_ptr->posted_send_cnt);
+                    << bytes_transferred << ",total sent =" << per_io_ctx->sent_len );
 
             if (sock_usage_ == SOCK_USAGE_UDP_SERVER || sock_usage_ == SOCK_USAGE_UDP_CLIENT) {
                 //do nothing : udp , no partial send
             } else {
                 // non udp
                 if (per_io_ctx->sent_len < per_io_ctx->total_send_len) {
-                    if (ctx_ptr->posted_send_cnt != 0) {
-                        //Abandon the rest of the pending transfer. 
-                        //This is because the order of sending is important.
-                        {//lock scope
-                            std::lock_guard<std::mutex> lock(err_msg_lock_);
-                            err_msg_ = "partial send. and pending another send exists, " "abandon all. terminate client:";
-                            err_msg_ += std::to_string(ctx_ptr->socket);
-                        }
-                        delete per_io_ctx;
-                        DBG_ELOG(err_msg_);
-                        std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock);
-                        shutdown(ctx_ptr->socket, SD_BOTH);
-                        if (0 != closesocket(ctx_ptr->socket)) {
-                            DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << WSAGetLastError());
-                        }
-                        ctx_ptr->socket = INVALID_SOCKET; //XXX
-                        continue;
-                    }
-                    //-----------------------------------
-                    //now --> ctx_ptr->posted_send_cnt == 0 
                     //남은 부분 전송
                     DBG_LOG("socket (" << ctx_ptr->socket << ") send partially completed, total=" << per_io_ctx->total_send_len
                             << ",partial= " << per_io_ctx->sent_len << ", send again");
@@ -756,9 +737,12 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                     per_io_ctx->wsabuf.len -= bytes_transferred;
                     per_io_ctx->io_type = EnumIOType::IO_SEND;
                     //----------------------------------------
-                    int result = WSASend(ctx_ptr->socket, &per_io_ctx->wsabuf, 1, &dw_send_bytes, dw_flags, &(per_io_ctx->overlapped), NULL);
+                    int result = WSASend(ctx_ptr->socket, &per_io_ctx->wsabuf, 1, 
+                                         &dw_send_bytes, dw_flags, &(per_io_ctx->overlapped), NULL);
                     if (result == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-                        delete per_io_ctx;
+                        //delete [] per_io_ctx->wsabuf.buf;
+                        //delete per_io_ctx;
+                        PushPerIoDataToCache(per_io_ctx);
                         int last_err = WSAGetLastError();
                         BuildErrMsgString(last_err);
                         DBG_ELOG("WSASend() failed: " << err_msg_);
@@ -771,21 +755,26 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                         break;
                     }
                     ctx_ptr->ref_cnt++;
-                    //LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
-                    DBG_LOG("sock=" << ctx_ptr->socket << ") ref_cnt =" << ctx_ptr->ref_cnt);
                 } else {
                     DBG_LOG("socket (" << ctx_ptr->socket <<
                             ") send all completed (" << per_io_ctx->sent_len << ") ==> delete per io ctx!!");
-                    delete per_io_ctx;
-                    per_io_ctx = NULL;
+                    //delete [] per_io_ctx->wsabuf.buf;
+                    //delete per_io_ctx;
+                    //per_io_ctx = NULL;
+                    PushPerIoDataToCache(per_io_ctx);
                 }
             }
         }
         break;
+        //======================================================= IO_RECV
+        case EnumIOType::IO_QUIT :
+        {
+            DBG_LOG( "IO_QUIT "); 
+            return;
+        }
+        break;
         }//switch
     } //while
-    DBG_LOG( "exiting "); 
-    is_server_running_ = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -856,10 +845,148 @@ bool ASock::InitWinsock() {
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::StopServer()
 {
-    is_need_server_run_ = false; 
+    is_need_server_run_ = false;
     closesocket(listen_socket_);
+    for (size_t i = 0; i < max_worker_cnt_; i++) {
+        DBG_LOG("PostQueuedCompletionStatus");
+        DWORD       bytes_transferred = 0;
+        Context* ctx_ptr = PopClientContextFromCache();
+        ctx_ptr->per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
+        if (nullptr == ctx_ptr->per_recv_io_ctx) {
+            ELOG("memory alloc failed");
+            return;
+        }
+        SecureZeroMemory((PVOID)&ctx_ptr->per_recv_io_ctx->overlapped, sizeof(WSAOVERLAPPED));
+        ctx_ptr->per_recv_io_ctx->io_type = EnumIOType::IO_QUIT;
+        if (!PostQueuedCompletionStatus(handle_completion_port_, bytes_transferred,
+                                        (ULONG_PTR)ctx_ptr,
+                                        (LPOVERLAPPED) & (ctx_ptr->per_recv_io_ctx->overlapped))) {
+            BuildErrMsgString(WSAGetLastError());
+            ELOG(err_msg_);
+        }
+    }
 }
 
+///////////////////////////////////////////////////////////////////////////////
+PER_IO_DATA* ASock::PopPerIoDataFromCache() {
+    PER_IO_DATA* per_io_data_ptr = nullptr;
+    { //lock scope
+        std::lock_guard<std::mutex> lock(per_io_data_cache_lock_);
+        if (!queue_per_io_data_cache_.empty()) {
+            per_io_data_ptr = queue_per_io_data_cache_.front();
+            queue_per_io_data_cache_.pop();
+            DBG_LOG("queue_per_io_data_cache_ not empty! -> " <<"queue_per_io_data_cache_ client cache size = " 
+                    << queue_per_io_data_cache_.size());
+            return per_io_data_ptr;
+        }
+    }
+    //alloc new !!!
+    DBG_LOG("queue_per_io_data_cache_ empty! alloc new !");
+    std::lock_guard<std::mutex> lock(per_io_data_cache_lock_);
+    if (!BuildPerIoDataCache()) {
+        return nullptr;
+    }
+    PER_IO_DATA* rtn_per_io_data_ptr = queue_per_io_data_cache_.front();
+    queue_per_io_data_cache_.pop();
+    return rtn_per_io_data_ptr;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ASock::PushPerIoDataToCache(PER_IO_DATA* per_io_data_ptr) {
+    std::lock_guard<std::mutex> lock(per_io_data_cache_lock_);
+    delete [] per_io_data_ptr->wsabuf.buf;
+    SecureZeroMemory((PVOID)&per_io_data_ptr->overlapped, sizeof(WSAOVERLAPPED));
+    per_io_data_ptr->wsabuf.buf = NULL;
+    per_io_data_ptr->wsabuf.len = 0;
+    per_io_data_ptr->io_type = EnumIOType::IO_UNKNOWN;
+    per_io_data_ptr->total_send_len = 0;
+    per_io_data_ptr->complete_recv_len = 0;
+    per_io_data_ptr->sent_len = 0;
+    per_io_data_ptr->cum_buffer.ReSet();
+    queue_per_io_data_cache_.push(per_io_data_ptr);
+    DBG_LOG("queue_per_io_data_cache_ client cache size = " << queue_per_io_data_cache_.size());
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void ASock::ClearPerIoDataCache() {
+    LOG("queue_per_io_data_cache_ size =" << queue_per_io_data_cache_.size());
+    std::lock_guard<std::mutex> lock(per_io_data_cache_lock_);
+    while (!queue_per_io_data_cache_.empty()) {
+        PER_IO_DATA* per_io_data_ptr = queue_per_io_data_cache_.front();
+        if (per_io_data_ptr->wsabuf.buf != NULL) {
+            delete [] per_io_data_ptr->wsabuf.buf;
+        }
+        delete per_io_data_ptr;
+        queue_per_io_data_cache_.pop();
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::BuildPerIoDataCache() {
+    PER_IO_DATA* per_io_data_ptr = nullptr;
+    for (int i = 0; i < max_client_limit_ * 2; i++) { // 최대 예상 client 의 2배로 시작
+        per_io_data_ptr = new (std::nothrow) PER_IO_DATA;
+        if (nullptr == per_io_data_ptr) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+            err_msg_ = "per_io_data alloc failed !";
+            DBG_ELOG(err_msg_);
+            return false;
+        }
+        if (cumbuffer::OP_RSLT_OK != per_io_data_ptr->cum_buffer.Init(max_data_len_)) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+            err_msg_ = std::string("cumBuffer(recv) Init error : ") +
+                std::string(per_io_data_ptr->cum_buffer.GetErrMsg());
+            DBG_ELOG(err_msg_);
+            delete per_io_data_ptr;
+            return false;
+        }
+        per_io_data_ptr->wsabuf.buf = NULL;
+        per_io_data_ptr->wsabuf.len = 0 ;
+        per_io_data_ptr->io_type = EnumIOType::IO_UNKNOWN;
+        per_io_data_ptr->total_send_len = 0;
+        per_io_data_ptr->complete_recv_len = 0;
+        per_io_data_ptr->sent_len = 0;
+        per_io_data_ptr->is_packet_len_calculated = false;
+        SecureZeroMemory((PVOID)&per_io_data_ptr->overlapped, sizeof(WSAOVERLAPPED));
+        queue_per_io_data_cache_.push(per_io_data_ptr);
+    }
+    DBG_LOG("current queue_per_io_data_cache_ size =" << queue_per_io_data_cache_.size());
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool ASock::BuildClientContextCache() {
+    Context* ctx_ptr = nullptr;
+    for (int i = 0; i < max_client_limit_; i++) {
+        ctx_ptr = new (std::nothrow) Context();
+        if (nullptr == ctx_ptr) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+            err_msg_ = "Context alloc failed !";
+            return false;
+        }
+        ctx_ptr->per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
+        if (nullptr == ctx_ptr->per_recv_io_ctx) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+            err_msg_ = "per_io_ctx alloc failed !";
+            DBG_ELOG(err_msg_);
+            delete ctx_ptr;
+            return false;
+        }
+        if (cumbuffer::OP_RSLT_OK != ctx_ptr->per_recv_io_ctx->cum_buffer.Init(max_data_len_)) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+            err_msg_ = std::string("cumBuffer(recv) Init error : ") +
+                std::string(ctx_ptr->per_recv_io_ctx->cum_buffer.GetErrMsg());
+            DBG_ELOG(err_msg_);
+            delete ctx_ptr->per_recv_io_ctx;
+            delete ctx_ptr;
+            return false;
+        }
+        ReSetCtxPtr(ctx_ptr);
+        queue_client_cache_.push(ctx_ptr);
+    }
+    DBG_LOG("current queue_client_cache_ size =" << queue_client_cache_.size());
+    return true;
+}
 ///////////////////////////////////////////////////////////////////////////////
 Context* ASock::PopClientContextFromCache() 
 {
@@ -876,31 +1003,14 @@ Context* ASock::PopClientContextFromCache()
     }
     //alloc new !!!
     DBG_LOG("queue_client_cache empty! alloc new !");
-    ctx_ptr = new (std::nothrow) Context();
-    if (nullptr==ctx_ptr) {
-        std::lock_guard<std::mutex> lock(err_msg_lock_);
-        err_msg_ = "Context alloc failed !";
+    std::lock_guard<std::mutex> lock(cache_lock_);
+    if (!BuildClientContextCache()) {
         return nullptr;
     }
-    ctx_ptr->per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
-    if (nullptr == ctx_ptr->per_recv_io_ctx) {
-        std::lock_guard<std::mutex> lock(err_msg_lock_);
-        err_msg_ = "per_io_ctx alloc failed !";
-        DBG_ELOG(err_msg_);
-        delete ctx_ptr;
-        return nullptr;
-    }
-    if (cumbuffer::OP_RSLT_OK != ctx_ptr->per_recv_io_ctx->cum_buffer.Init(max_data_len_) ) {
-        std::lock_guard<std::mutex> lock(err_msg_lock_);
-        err_msg_ = std::string("cumBuffer(recv) Init error : ") +
-            std::string(ctx_ptr->per_recv_io_ctx->cum_buffer.GetErrMsg());
-        DBG_ELOG(err_msg_);
-        delete ctx_ptr->per_recv_io_ctx;
-        delete ctx_ptr;
-        return nullptr;
-    }
-    ReSetCtxPtr(ctx_ptr);
-    return ctx_ptr;
+    Context* rtn_ctx_ptr = queue_client_cache_.front();
+    queue_client_cache_.pop();
+    ReSetCtxPtr(rtn_ctx_ptr);
+    return rtn_ctx_ptr ;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -909,11 +1019,10 @@ void ASock::PushClientContextToCache(Context* ctx_ptr)
     std::lock_guard<std::mutex> lock(cache_lock_);
     {
         //reset all
-        DBG_LOG("sock=" << ctx_ptr->socket << ",sock=" << ctx_ptr->sock_id_copy);
+        DBG_LOG("sock=" << ctx_ptr->sock_id_copy);
         ReSetCtxPtr(ctx_ptr);
     }
     queue_client_cache_.push(ctx_ptr);
-    //std::cout << "queue client cache size = " << queue_client_cache_.size() <<"\n";
     DBG_LOG("queue client cache size = " << queue_client_cache_.size());
 }
 ///////////////////////////////////////////////////////////////////////////////
@@ -924,12 +1033,10 @@ void ASock::ReSetCtxPtr(Context* ctx_ptr)
     ctx_ptr->per_recv_io_ctx->cum_buffer.ReSet();
     ctx_ptr->socket = INVALID_SOCKET;
     ctx_ptr->sock_id_copy = -1;
-    ctx_ptr->posted_send_cnt = 0;
     ctx_ptr->ref_cnt = 0;
-    ctx_ptr->per_recv_io_ctx->wsabuf.buf = ctx_ptr->per_recv_io_ctx->send_buffer;
-    ctx_ptr->per_recv_io_ctx->wsabuf.len = sizeof(ctx_ptr->per_recv_io_ctx->send_buffer);
+    ctx_ptr->per_recv_io_ctx->wsabuf.buf = NULL;
+    ctx_ptr->per_recv_io_ctx->wsabuf.len = 0;
     ctx_ptr->per_recv_io_ctx->io_type = EnumIOType::IO_UNKNOWN;
-    memset(ctx_ptr->per_recv_io_ctx->send_buffer, 0x00, sizeof(ctx_ptr->per_recv_io_ctx->send_buffer));
     ctx_ptr->per_recv_io_ctx->total_send_len = 0;
     ctx_ptr->per_recv_io_ctx->complete_recv_len = 0;
     ctx_ptr->per_recv_io_ctx->sent_len = 0;
@@ -939,14 +1046,13 @@ void ASock::ReSetCtxPtr(Context* ctx_ptr)
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::ClearClientCache()
 {
-    LOG("======= clear all cache ========");
+    DBG_LOG("======= clear all cache ========");
     std::lock_guard<std::mutex> lock(cache_lock_);
     while (!queue_client_cache_.empty()) {
         Context* ctx_ptr = queue_client_cache_.front();
         delete ctx_ptr;
         queue_client_cache_.pop();
     }
-    DBG_LOG("debug ...... ");
 }
 
 ///////////////////////////////////////////////////////////////////////////////

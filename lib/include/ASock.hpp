@@ -170,7 +170,6 @@ namespace asock {
         OVERLAPPED	overlapped ;
         WSABUF      wsabuf;
 		EnumIOType  io_type;
-        char        send_buffer[DEFAULT_PACKET_SIZE];  //for sending 
         CumBuffer   cum_buffer;
         size_t      total_send_len {0} ;
         size_t      complete_recv_len {0} ;
@@ -183,7 +182,6 @@ namespace asock {
         int          sock_id_copy{ -1 };
         PER_IO_DATA* per_recv_io_ctx { NULL };
         std::mutex   ctx_lock ; 
-        std::atomic<int>  posted_send_cnt {0};
         std::atomic<int>  ref_cnt{ 0 }; //send, recv both  
         CumBuffer* GetBuffer() {
             return & (per_recv_io_ctx->cum_buffer);
@@ -397,9 +395,12 @@ class ASock
     std::atomic<bool> is_server_running_  {false};
     SOCKET_T          listen_socket_     ;
     size_t            max_client_limit_  {0};
+    int               max_worker_cnt_{ 0 };
 
     std::queue<Context*> queue_client_cache_;
+    std::queue<PER_IO_DATA*> queue_per_io_data_cache_;
     std::mutex           cache_lock_ ; 
+    std::mutex           per_io_data_cache_lock_ ; 
 #if defined __APPLE__ || defined __linux__ 
     Context*  listen_context_ptr_ {nullptr};
 #endif
@@ -412,10 +413,16 @@ class ASock
     void        ServerThreadRoutine();
     void        ServerThreadUdpRoutine();
 #endif
+    bool        BuildClientContextCache();
     void        PushClientContextToCache(Context* ctx_ptr);
     void        ClearClientCache();
     bool        AcceptNewClient();
     Context*    PopClientContextFromCache();
+
+    bool         BuildPerIoDataCache();
+    PER_IO_DATA* PopPerIoDataFromCache();
+    void         PushPerIoDataToCache(PER_IO_DATA* per_io_data_ptr);
+    void         ClearPerIoDataCache();
 
 #ifdef WIN32
     void        AcceptThreadRoutine();

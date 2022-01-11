@@ -161,8 +161,8 @@ void STEO_Client::OnDisconnectedFromServer() {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
-    size_t MAX_CLIENTS = 30;
-    size_t MAX_THREADS = 100;
+    size_t MAX_CLIENTS = 20;
+    size_t MAX_THREADS = 5;
     std::vector<std::thread>  vec_threads ;
     std::vector<STEO_Client*> vec_clients;
     std::cout << "client started\n";
@@ -187,19 +187,18 @@ int main(int argc, char* argv[])
             vec_threads.push_back(std::thread(&STEO_Client::SendThread, *it, j));
         }
     }
-
-    // All send operations are done, but later server response can be received asynchronously. 
-    // In order to handle this properly, it is necessary to properly determine and process 
-    // the exit time. By the way, this is a simple example, so keep it simple. wait long enough. :-)
-    // if you increase the total number of threads, etc., 
-    // you may have to wait a bit longer to avoid synchronization errors in this example.
-	std::this_thread::sleep_for(std::chrono::seconds(60));
-
     for(size_t i = 0; i < vec_threads.size(); i++) {
         if (vec_threads[i].joinable()) {
             vec_threads[i].join();
         }
     }
+    // All send operations are done, but later server response can be received asynchronously. 
+    // In order to handle this properly, it is necessary to properly determine and process 
+    // the exit time. By the way, this is a simple example, so keep it simple. wait long enough. :-)
+    // if you increase the total number of threads, etc., 
+    // you may have to wait a bit longer to avoid synchronization errors in this example.
+	std::this_thread::sleep_for(std::chrono::seconds(10));
+
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
         (*it)->DisConnectTcpClient();
     }
