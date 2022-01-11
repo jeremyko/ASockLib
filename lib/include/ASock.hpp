@@ -398,14 +398,14 @@ class ASock
     int               max_worker_cnt_{ 0 };
 
     std::queue<Context*> queue_client_cache_;
-    std::queue<PER_IO_DATA*> queue_per_io_data_cache_;
     std::mutex           cache_lock_ ; 
-    std::mutex           per_io_data_cache_lock_ ; 
 #if defined __APPLE__ || defined __linux__ 
     Context*  listen_context_ptr_ {nullptr};
 #endif
 #ifdef WIN32
     bool use_zero_byte_receive_{ false };
+    std::queue<PER_IO_DATA*> queue_per_io_data_cache_;
+    std::mutex           per_io_data_cache_lock_ ; 
 #endif
 
   private :
@@ -419,12 +419,11 @@ class ASock
     bool        AcceptNewClient();
     Context*    PopClientContextFromCache();
 
+#ifdef WIN32
     bool         BuildPerIoDataCache();
     PER_IO_DATA* PopPerIoDataFromCache();
     void         PushPerIoDataToCache(PER_IO_DATA* per_io_data_ptr);
     void         ClearPerIoDataCache();
-
-#ifdef WIN32
     void        AcceptThreadRoutine();
     void        UdpServerThreadRoutine();
     void        WorkerThreadRoutine(size_t worker_index) ; //IOCP 
