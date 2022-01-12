@@ -23,7 +23,9 @@ UdpEchoServer* UdpEchoServer::this_instance_ = nullptr;
 bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) 
 {
     //user specific : - your whole data has arrived.
-    std::cout<<"recved [" << data_ptr + CHAT_HEADER_SIZE << "]\n";
+    std::string response = data_ptr + CHAT_HEADER_SIZE;
+    response.replace(len- CHAT_HEADER_SIZE, 1, 1, '\0');
+    std::cout<<"recved  [" << response.c_str() << "]\n";
     // this is echo server
     if(! SendData(context_ptr, data_ptr, len) ) {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 

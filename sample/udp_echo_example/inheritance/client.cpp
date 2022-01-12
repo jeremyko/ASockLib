@@ -17,7 +17,9 @@ class EchoClient : public asock::ASock
 bool EchoClient:: OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) 
 {
     //user specific : - your whole data has arrived.
-    std::cout<<"server response  [" << data_ptr + CHAT_HEADER_SIZE << "]\n";
+    std::string response = data_ptr + CHAT_HEADER_SIZE;
+    response.replace(len- CHAT_HEADER_SIZE, 1, 1, '\0');
+    std::cout<<"server response  [" << response.c_str() << "]\n";
     return true;
 }
 

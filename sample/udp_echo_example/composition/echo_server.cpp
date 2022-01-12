@@ -41,7 +41,9 @@ bool UdpEchoServer::initialize_udp_server()
 bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) 
 {
     //user specific : your whole data has arrived. 
-    std::cout<<"recved [" << data_ptr + CHAT_HEADER_SIZE << "]\n";
+    std::string response = data_ptr + CHAT_HEADER_SIZE;
+    response.replace(len- CHAT_HEADER_SIZE, 1, 1, '\0');
+    std::cout<<"recved  [" << response.c_str() << "]\n";
     //this is echo server
     if(! udp_server_.SendData(context_ptr, data_ptr, len) ) {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
@@ -68,7 +70,7 @@ BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
     switch (fdwCtrlType) {
         // Handle the CTRL-C signal. 
     case CTRL_C_EVENT:
-        LOG("Ctrl-C event");
+        DBG_LOG("Ctrl-C event");
         UdpEchoServer::this_instance_->udp_server_.StopServer();
         return TRUE;
     default:

@@ -124,13 +124,12 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* context_ptr,
                                        char* data_ptr, size_t len) 
 {
     //user specific : your whole data has arrived.
-    char packet[asock::DEFAULT_PACKET_SIZE]; 
-    memcpy(&packet, data_ptr+CHAT_HEADER_SIZE, len-CHAT_HEADER_SIZE);
-    packet[len-CHAT_HEADER_SIZE] = '\0';
-    std::cout << "received ["<< packet <<"]"<<", client_id =" << client_id_ << "\n";
+    std::string response = data_ptr + CHAT_HEADER_SIZE;
+    response.replace(len- CHAT_HEADER_SIZE, 1, 1, '\0');
+    std::cout<<"server response  [" << response.c_str() << "]\n";
 
     // Let's check if it matches what we sent.
-    if (std::string(packet).compare(0,4,"from") == 0) {
+    if (response.compare(0,4,"from") == 0) {
         // skip "from server message 0"
         // This is not an echo response, the data was sent by the server. -> just increment the count
         server_msg_cnt_++;
@@ -138,7 +137,7 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* context_ptr,
         bool found = false;
         std::lock_guard<std::mutex> lock(sent_chk_lock_);
         for (auto it = vec_sent_strings_.begin(); it != vec_sent_strings_.end(); ++it) {
-            if (it->compare(std::string(packet))==0){
+            if (it->compare(response.c_str())==0){
                 //std::cout <<"got complete data from server -------- \n";
                 found = true;
                 break;
@@ -146,7 +145,7 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* context_ptr,
         }
         if (!found) {
             std::this_thread::sleep_for(std::chrono::seconds(2));
-            std::cerr << "data anomaly !!! --> [" << packet <<"]\n";
+            std::cerr << "data anomaly !!! --> [" << response <<"]\n";
             exit(1);
         }
     }
