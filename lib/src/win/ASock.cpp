@@ -622,24 +622,24 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                 }
                 if (bytes_transferred == 0) {
                     //graceful disconnect.
-                    LOG("sock="<<ctx_ptr->sock_id_copy <<", 0 recved --> gracefully disconnected : " << ctx_ptr->sock_id_copy);
+                    DBG_LOG("sock="<<ctx_ptr->sock_id_copy <<", 0 recved --> gracefully disconnected : " << ctx_ptr->sock_id_copy);
                     TerminateClient(ctx_ptr);
                     continue;
                 } else {
                     if (err == ERROR_NETNAME_DELETED) { // --> 64
                         //client hard close --> not an error
-                        LOG("worker=" << worker_index << ",sock=" << ctx_ptr->sock_id_copy << " : client hard close. ERROR_NETNAME_DELETED ");
+                        DBG_LOG("worker=" << worker_index << ",sock=" << ctx_ptr->sock_id_copy << " : client hard close. ERROR_NETNAME_DELETED ");
                         TerminateClient(ctx_ptr, false); //force close
                         continue;
                     } else {
                         //error 
-                        ELOG(" GetQueuedCompletionStatus failed  :" << err_msg_);
+                        DBG_ELOG(" GetQueuedCompletionStatus failed  :" << err_msg_);
                         TerminateClient(ctx_ptr, false); //force close
                         continue;
                     }
                 }
             } else {
-                ELOG("GetQueuedCompletionStatus failed..err="<< err);
+                DBG_ELOG("GetQueuedCompletionStatus failed..err="<< err);
                 TerminateClient(ctx_ptr, false); //force close
                 continue;
             }
@@ -659,7 +659,7 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
             //# recv #---------- 
             if (bytes_transferred == 0) {
                 //graceful disconnect.
-                LOG("0 recved --> gracefully disconnected : " << ctx_ptr->sock_id_copy);
+                DBG_LOG("0 recved --> gracefully disconnected : " << ctx_ptr->sock_id_copy);
                 std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); 
                 TerminateClient(ctx_ptr);
                 break;
@@ -702,7 +702,7 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
         case EnumIOType::IO_SEND:
         {
             if (ctx_ptr->socket == INVALID_SOCKET) {
-                LOG("INVALID_SOCKET : delete.sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
+                DBG_LOG("INVALID_SOCKET : delete.sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
                 PushPerIoDataToCache(per_io_ctx);
                 break;
             }
@@ -803,7 +803,7 @@ void  ASock::TerminateClient( Context* ctx_ptr, bool is_graceful)
         DBG_LOG("close socket : " << ctx_ptr->socket  << ", ref_cnt = " << ctx_ptr->ref_cnt );
         shutdown(ctx_ptr->socket, SD_BOTH);
         if (0 != closesocket(ctx_ptr->socket)) {
-            ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << WSAGetLastError());
+            DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << WSAGetLastError());
         }
         ctx_ptr->socket = INVALID_SOCKET; 
         client_cnt_--;
@@ -852,7 +852,7 @@ void ASock::StopServer()
                                         (ULONG_PTR)ctx_ptr,
                                         (LPOVERLAPPED) & (ctx_ptr->per_recv_io_ctx->overlapped))) {
             BuildErrMsgString(WSAGetLastError());
-            ELOG(err_msg_);
+            DBG_ELOG(err_msg_);
         }
     }
     if (sock_usage_ == SOCK_USAGE_TCP_SERVER) {
