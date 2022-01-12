@@ -19,44 +19,120 @@ dependency : [CumBuffer](https://github.com/jeremyko/CumBuffer).
 //See the sample folder for all examples. 
 //this is an inheritance usage. 
 //you can find composition usage and udp, domain socket example too.
+```
 
-class EchoServer : public ASock
+
+```cpp
+// msg_defines.h
+
+// user specific data
+typedef struct _ST_MY_CHAT_HEADER_
 {
+    char msg_len[10+1];
+
+} ST_MY_HEADER ;
+#define CHAT_HEADER_SIZE sizeof(ST_MY_HEADER)
+```
+
+
+```cpp
+// echo_server.cpp
+
+#include <iostream>
+#include <cassert>
+#include <csignal>
+
+#include "ASock.hpp"
+#include "../../msg_defines.h"
+
+class EchoServer : public asock::ASock
+{
+  public:
+    EchoServer(){this_instance_ = this; }
+#if defined __APPLE__ || defined __linux__ 
+    static void sigint_handler(int signo);
+#endif
   private:
+    static  EchoServer* this_instance_ ;
     size_t  OnCalculateDataLen(asock::Context* context_ptr);
-    bool    OnRecvedCompleteData(asock::Context* context_ptr, 
-                                 char*  data_ptr, size_t len ) ;
+    bool    OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len ) ;
+    void    OnClientConnected(asock::Context* context_ptr) ; 
+    void    OnClientDisconnected(asock::Context* context_ptr) ; 
 };
+
+EchoServer* EchoServer::this_instance_ = nullptr;
 
 size_t EchoServer::OnCalculateDataLen(asock::Context* context_ptr)
 {
+    //---------------------------------------------------
+    //user specific : 
     //calculate your complete packet length here using buffer data.
-    return context_ptr->recvBuffer_.GetCumulatedLen() ; //just echo 
+    //---------------------------------------------------
+    if(context_ptr->recv_buffer.GetCumulatedLen() < (int)CHAT_HEADER_SIZE ) {
+        return asock::MORE_TO_COME ; //more to come 
+    }
+    ST_MY_HEADER header ;
+    context_ptr->recv_buffer.PeekData(CHAT_HEADER_SIZE, (char*)&header); 
+    size_t supposed_total_len = std::atoi(header.msg_len) + CHAT_HEADER_SIZE;
+    assert(supposed_total_len<=context_ptr->recv_buffer.GetCapacity());
+    return supposed_total_len ;
 }
 
-bool   EchoServer::OnRecvedCompleteData(asock::Context* context_ptr, 
-                                         char*           data_ptr, 
-                                         size_t          len ) 
+bool    EchoServer::OnRecvedCompleteData(asock::Context* context_ptr, 
+                                         char* data_ptr, size_t len ) 
 {
     //user specific : - your whole data has arrived.
-    SendData(context_ptr, data_ptr, len) ){ //this is simple echo server
-        ELOG("error! "<< GetLastErrMsg() ); 
+    std::string response = data_ptr + CHAT_HEADER_SIZE;
+    response.replace(len- CHAT_HEADER_SIZE, 1, 1, '\0');
+    std::cout<<"recved  [" << response.c_str() << "]\n";
+    // this is echo server
+    if(! SendData(context_ptr, data_ptr, len) ) {
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
 }
 
+void EchoServer::OnClientConnected(asock::Context* context_ptr) 
+{
+    std::cout << "client connected : socket fd ["<< context_ptr->socket <<"]\n";
+}
+
+void EchoServer::OnClientDisconnected(asock::Context* context_ptr) 
+{
+    std::cout << "client disconnected : socket fd ["<< context_ptr->socket <<"]\n";
+}
+
+#if defined __APPLE__ || defined __linux__ 
+void EchoServer::sigint_handler(int signo)
+{
+    sigset_t sigset, oldset;
+    sigfillset(&sigset);
+    if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0) {
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< strerror(errno) <<"\n"; 
+    }
+    std::cout << "Stop Server! \n";
+    this_instance_->StopServer();
+}
+#endif
+
 int main(int argc, char* argv[])
 {
-    //max client is 100000, max message length is approximately 300 bytes...
+#if defined __APPLE__ || defined __linux__ 
+    std::signal(SIGINT,EchoServer::sigint_handler);
+#endif
+    //max client is 100000, 
+    //max message length is approximately 1024 bytes...
     EchoServer echoserver; 
-    if(!echoserver.InitTcpServer("127.0.0.1", 9990, 100000, 300)) {
-        ELOG"error! "<< echoserver.GetLastErrMsg()); 
-        return -1;
+    if(!echoserver.InitTcpServer("127.0.0.1", 9990, 1024 /*,default=100000*/)) {
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< echoserver.GetLastErrMsg() <<"\n"; 
+        return 1;
     }
+    std::cout << "server started" << "\n";
     while( echoserver.IsServerRunning() ) {
-        sleep(1);
+		std::this_thread::sleep_for(std::chrono::seconds(1));
     }
+    std::cout << "server exit...\n";
     return 0;
 }
 
@@ -65,51 +141,81 @@ int main(int argc, char* argv[])
 #### tcp echo client ####
 
 ```cpp
-
+#include <iostream>
+#include <string>
+#include <cstdlib>
+#include <stdio.h>
+#include <cassert>
 #include "ASock.hpp"
-class EchoClient : public ASock
+#include "../../msg_defines.h"
+
+class EchoClient : public asock::ASock
 {
   private:
     size_t  OnCalculateDataLen(asock::Context* context_ptr); 
     bool    OnRecvedCompleteData(asock::Context* context_ptr, 
-                                 char*           data_ptr, 
-                                 size_t          len); 
-    void    on_disconnected_from_server() ; 
+                                 char* data_ptr, size_t len); 
+    void    OnDisconnectedFromServer() ; 
 };
 
 size_t EchoClient::OnCalculateDataLen(asock::Context* context_ptr)
 {
-    //calculate your complete packet length here using buffer data.
-    return context_ptr->recvBuffer_.GetCumulatedLen() ; //just simple echo for example
+    //user specific : calculate your complete packet length 
+    if( context_ptr->recv_buffer.GetCumulatedLen() < (int)CHAT_HEADER_SIZE ) {
+        return asock::MORE_TO_COME ; //more to come 
+    }
+    ST_MY_HEADER header ;
+    context_ptr->recv_buffer.PeekData(CHAT_HEADER_SIZE, (char*)&header);  
+    size_t supposed_total_len = std::atoi(header.msg_len) + CHAT_HEADER_SIZE;
+    assert(supposed_total_len<=context_ptr->recv_buffer.GetCapacity());
+    return supposed_total_len ;
 }
 
 bool EchoClient:: OnRecvedCompleteData(asock::Context* context_ptr, 
-                                       char*           data_ptr, 
-                                       size_t          len) 
+                                       char* data_ptr, size_t len) 
 {
     //user specific : - your whole data has arrived.
-    std::cout<<"server response  [" << data_ptr << "]\n";
+    std::string response = data_ptr + CHAT_HEADER_SIZE;
+    response.replace(len- CHAT_HEADER_SIZE, 1, 1, '\0');
+    std::cout<<"server response  [" << response.c_str() << "]\n";
     return true;
+}
+
+void EchoClient::OnDisconnectedFromServer() 
+{
+    std::cout << "* server disconnected ! \n";
+    exit(1);
 }
 
 int main(int argc, char* argv[])
 {
     EchoClient client;
     //connect timeout is 10 secs.
-    //max message length is approximately 300 bytes...
-    if(!client.InitTcpClient("127.0.0.1", 9990, 10, 300 ) )
-    {
-        ELOG("error! "<< client.GetLastErrMsg()); 
-        return -1;
+    //max message length is approximately 1024 bytes...
+    if(!client.InitTcpClient("127.0.0.1", 9990, 10, 1024 ) ) {
+        std::cerr <<"["<< __func__ <<"-"<<__LINE__ 
+                  <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
+        return 1;
     }
-    std::string user_msg = "hello"; 
-    while( client.is_connected() ) {
-        if(! client.SendToServer(user_msg.c_str(), user_msg.length()) ) {
-            ELOG("error! " << client.GetLastErrMsg()); 
-            return -1;
+    std::string user_msg  {""}; 
+    while( client.IsConnected() ) {
+        std::cin.clear();
+        getline(std::cin, user_msg); 
+        int msg_len = user_msg.length();
+        if(msg_len>0) {
+            ST_MY_HEADER header;
+            snprintf(header.msg_len, sizeof(header.msg_len), "%d", (int)msg_len );
+            char* complete_packet_data = new  char [1024] ;
+            memcpy(complete_packet_data, (char*)&header,  sizeof(ST_MY_HEADER));
+            memcpy(complete_packet_data+sizeof(ST_MY_HEADER), user_msg.c_str(),user_msg.length() );
+            if(! client.SendToServer(complete_packet_data ,sizeof(ST_MY_HEADER)+  user_msg.length()) ) {
+                std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! " << client.GetLastErrMsg() <<"\n"; 
+                delete [] complete_packet_data;
+                return 1;
+            }
+            delete [] complete_packet_data;
         }
-        sleep(1);
-    }
+    } //while
     return 0;
 }
 
