@@ -16,7 +16,8 @@ dependency : [CumBuffer](https://github.com/jeremyko/CumBuffer).
 #### tcp echo server ####
 
 ```cpp
-//see sample directory. this is an tcp inheritance usage. 
+//See the sample folder for all examples. 
+//this is an inheritance usage. 
 //you can find composition usage and udp, domain socket example too.
 
 class EchoServer : public ASock
@@ -38,7 +39,7 @@ bool   EchoServer::OnRecvedCompleteData(asock::Context* context_ptr,
                                          size_t          len ) 
 {
     //user specific : - your whole data has arrived.
-    SendData(context_ptr, data_ptr, len) ){ //this is echo server
+    SendData(context_ptr, data_ptr, len) ){ //this is simple echo server
         ELOG("error! "<< GetLastErrMsg() ); 
         return false;
     }
@@ -79,7 +80,7 @@ class EchoClient : public ASock
 size_t EchoClient::OnCalculateDataLen(asock::Context* context_ptr)
 {
     //calculate your complete packet length here using buffer data.
-    return context_ptr->recvBuffer_.GetCumulatedLen() ; //just echo for example
+    return context_ptr->recvBuffer_.GetCumulatedLen() ; //just simple echo for example
 }
 
 bool EchoClient:: OnRecvedCompleteData(asock::Context* context_ptr, 
@@ -87,9 +88,7 @@ bool EchoClient:: OnRecvedCompleteData(asock::Context* context_ptr,
                                        size_t          len) 
 {
     //user specific : - your whole data has arrived.
-    std::string response = data_ptr + CHAT_HEADER_SIZE;
-    response.replace(len- CHAT_HEADER_SIZE, 1, 1, '\0');
-    std::cout<<"server response  [" << response.c_str() << "]\n";
+    std::cout<<"server response  [" << data_ptr << "]\n";
     return true;
 }
 
