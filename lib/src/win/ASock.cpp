@@ -326,7 +326,6 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
         }
     }
     ctx_ptr->ref_cnt++;
-    ctx_ptr->recv_issued_cnt++;
     //LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
 #ifdef DEBUG_PRINT
     ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
@@ -664,7 +663,6 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
         case EnumIOType::IO_RECV:
         {
             ctx_ptr->ref_cnt--;
-            ctx_ptr->recv_issued_cnt--;
             DBG_LOG("worker=" << worker_index << ",IO_RECV: sock=" << ctx_ptr->sock_id_copy
                 << ", ref_cnt =" << ctx_ptr->ref_cnt << ", recved bytes =" << bytes_transferred);
             //# recv #---------- 
@@ -1038,7 +1036,6 @@ void ASock::ReSetCtxPtr(Context* ctx_ptr)
     ctx_ptr->socket = INVALID_SOCKET;
     ctx_ptr->sock_id_copy = -1;
     ctx_ptr->ref_cnt = 0;
-    ctx_ptr->recv_issued_cnt = 0;
     ctx_ptr->per_recv_io_ctx->wsabuf.buf = NULL;
     ctx_ptr->per_recv_io_ctx->wsabuf.len = 0;
     ctx_ptr->per_recv_io_ctx->io_type = EnumIOType::IO_UNKNOWN;
