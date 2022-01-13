@@ -21,8 +21,8 @@ size_t MAX_CLIENTS        = 100;
 size_t THREADS_PER_CLIENT = 10;
 size_t SEND_PER_THREAD    = 100;
 size_t TOTAL_EXPECTED_SERVER_RESPONSE_CNT = (MAX_CLIENTS * THREADS_PER_CLIENT * SEND_PER_THREAD);
-std::atomic<int> g_responsed_cnt{ 0 };
-std::atomic<int> g_server_msg_cnt ; 
+std::atomic<size_t> g_responsed_cnt{ 0 };
+std::atomic<size_t> g_server_msg_cnt ; 
 
 class STEO_Client 
 {
@@ -84,7 +84,7 @@ void STEO_Client::SendThread(size_t index)
         }
     }
     //LOG("Send Thread starts....... : "<< index);
-    int sent_cnt =0;
+    size_t sent_cnt =0;
     ST_MY_HEADER header;
     char send_msg[256];
     while(IsConnected()){
