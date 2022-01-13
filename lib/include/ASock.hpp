@@ -183,6 +183,7 @@ namespace asock {
         PER_IO_DATA* per_recv_io_ctx { NULL }; //XXX TODO multiple wasrecv
         std::mutex   ctx_lock ; 
         std::atomic<int>  ref_cnt{ 0 }; //send, recv both  
+        std::atomic<int> recv_issued_cnt{ 0 };
         CumBuffer* GetBuffer() {
             return & (per_recv_io_ctx->cum_buffer);
         }

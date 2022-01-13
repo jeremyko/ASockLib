@@ -71,9 +71,10 @@ bool    EchoServer::OnRecvedCompleteData(asock::Context* context_ptr,
 {
     //user specific : your whole data has arrived.
     // this is echo server
-    std::string response = data_ptr + CHAT_HEADER_SIZE;
-    response.replace(len- CHAT_HEADER_SIZE, 1, 1, '\0');
-    std::cout<<"recved  [" << response.c_str() << "]\n";
+    char packet[asock::DEFAULT_PACKET_SIZE];
+    memcpy(&packet, data_ptr + CHAT_HEADER_SIZE, len - CHAT_HEADER_SIZE);
+    packet[len - CHAT_HEADER_SIZE] = '\0';
+    std::cout << "recved [" << packet << "]\n";
     
     if(! tcp_server_.SendData(context_ptr, data_ptr, len) ) {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
