@@ -9,6 +9,11 @@
 //Send To Each Other Server
 // An example in which the server and the client randomly exchange data with each other.
 ///////////////////////////////////////////////////////////////////////////////
+// 
+// server creates SERVER_SEND_THREADS_PER_CLIENT message sending threads when a client connects, 
+// and each thread sends SERVER_MSG_PER_CLIENT_THREAD message.
+size_t SERVER_SEND_THREADS_PER_CLIENT = 10; // 서버가 클라이언트 접속되면 생성하는 전송 thread 개수
+size_t SERVER_MSG_PER_CLIENT_THREAD   = 10; // 클라이언트 전송 thread 별로 보내는 건수(echo 아닌)
 class STEO_Server 
 {
   public:
@@ -73,7 +78,7 @@ void STEO_Server::SendThread(asock::Context* ctx_ptr)
         }
         //LOG( "send to client ["<< send_msg <<"], len=" << sizeof(ST_MY_HEADER) + data.length());
         cnt++;
-        if(cnt >= 10){
+        if(cnt >= SERVER_MSG_PER_CLIENT_THREAD){
             break;
         }
     }//while
@@ -101,10 +106,11 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
                                          char* data_ptr, size_t len ) 
 {
     //user specific : your whole data has arrived.
-    char packet[asock::DEFAULT_PACKET_SIZE];
-    memcpy(&packet, data_ptr + CHAT_HEADER_SIZE, len - CHAT_HEADER_SIZE);
-    packet[len - CHAT_HEADER_SIZE] = '\0';
-    std::cout << "recved [" << packet << "]\n";
+    
+    //char packet[asock::DEFAULT_PACKET_SIZE];
+    //memcpy(&packet, data_ptr + CHAT_HEADER_SIZE, len - CHAT_HEADER_SIZE);
+    //packet[len - CHAT_HEADER_SIZE] = '\0';
+    //std::cout << "recved [" << packet << "]\n";
 
     //---------------------------------------
     //this is echo server
@@ -118,10 +124,10 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Server::OnClientConnected(asock::Context* ctx_ptr) 
 {
-    size_t MAX_THREADS = 10;
     std::cout <<"client connected : socket fd ["<< ctx_ptr->socket <<"]\n";
+
     //spawn new thread (server, client both sending each other)
-    for (size_t j = 0; j < MAX_THREADS; j++) {
+    for (size_t j = 0; j < SERVER_SEND_THREADS_PER_CLIENT; j++) {
         std::thread send_thread(&STEO_Server::SendThread, this, ctx_ptr);
         send_thread.detach();
     }

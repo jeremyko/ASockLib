@@ -133,7 +133,7 @@ namespace asock {
 
     typedef struct _PENDING_SENT_ {
         char*       pending_sent_data ; 
-        int         pending_sent_len  ;
+        size_t      pending_sent_len  ;
         SOCKADDR_IN udp_remote_addr   ; //for udp pending sent 
     } PENDING_SENT ;
 
@@ -187,7 +187,9 @@ namespace asock {
             return & (per_recv_io_ctx->cum_buffer);
         }
         bool         is_connected {false}; 
-        SOCKADDR_IN     udp_remote_addr ; //for udp
+        SOCKADDR_IN  udp_remote_addr ; //for udp
+        std::deque<PENDING_SENT> pending_send_deque ; 
+        bool         is_sent_pending {false}; 
     } Context ;
 #endif //WIN32
 
@@ -268,6 +270,7 @@ class ASock
 	bool RecvfromData(size_t worker_id, Context* ctx_ptr, DWORD bytes_transferred); //udp
     void ReSetCtxPtr(Context* ctx_ptr);
     void HandleError(Context* ctx_ptr, int err);
+    bool SendPendingData(); //client only
 #endif
 #if defined __APPLE__ || defined __linux__ 
     bool RecvData(Context* ctx_ptr);

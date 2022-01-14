@@ -17,12 +17,17 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 CondVar     g_all_done_cond_var;
-size_t MAX_CLIENTS        = 100;
+size_t MAX_CLIENTS        = 1000;
 size_t THREADS_PER_CLIENT = 10;
 size_t SEND_PER_THREAD    = 100;
-size_t TOTAL_EXPECTED_SERVER_RESPONSE_CNT = (MAX_CLIENTS * THREADS_PER_CLIENT * SEND_PER_THREAD);
+
+size_t SERVER_SEND_THREADS_PER_CLIENT = 10; // 서버가 클라이언트 접속되면 생성하는 전송 thread 개수
+size_t SERVER_MSG_PER_CLIENT_THREAD   = 10; // 클라이언트 전송 thread 별로 보내는 건수(echo 아닌)
+
+size_t TOTAL_EXPECTED_SERVER_MSG_CNT  = (MAX_CLIENTS * SERVER_SEND_THREADS_PER_CLIENT * SERVER_MSG_PER_CLIENT_THREAD);
+size_t TOTAL_EXPECTED_SERVER_ECHO_CNT = (MAX_CLIENTS * THREADS_PER_CLIENT * SEND_PER_THREAD);
 std::atomic<int> g_responsed_cnt{ 0 };
-std::atomic<int> g_server_msg_cnt ; 
+std::atomic<int> g_server_msg_cnt{ 0 };
 
 class STEO_Client 
 {
@@ -133,10 +138,11 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* context_ptr,
                                        char* data_ptr, size_t len) 
 {
     //user specific : your whole data has arrived.
+
     char packet[asock::DEFAULT_PACKET_SIZE];
     memcpy(&packet, data_ptr + CHAT_HEADER_SIZE, len - CHAT_HEADER_SIZE);
     packet[len - CHAT_HEADER_SIZE] = '\0';
-    std::cout << "server response [" << packet << "]\n";
+    //std::cout << "server response [" << packet << "]\n";
     std::string response = packet;
 
     // Let's check if it matches what we sent.
@@ -161,10 +167,15 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* context_ptr,
             exit(1);
         }
     }
+    if (g_responsed_cnt >0 && g_responsed_cnt % 10000 == 0) {
+        LOG("client id =" << client_id_ << " : " << g_responsed_cnt);
+    }
     // - client : after connecting to the server, the client starts THREADS_PER_CLIENT threads, 
     //            sends a message 10 times per thread, and receives an echo response.
-    // - server : sends a message 100 times for each connecting client.
-    if (g_server_msg_cnt == (MAX_CLIENTS* 100) && g_responsed_cnt == TOTAL_EXPECTED_SERVER_RESPONSE_CNT ) {
+    // - server : creates SERVER_SEND_THREADS_PER_CLIENT message sending threads when a client connects, 
+    //            and each thread sends SERVER_MSG_PER_CLIENT_THREAD message.
+    if (g_server_msg_cnt == TOTAL_EXPECTED_SERVER_MSG_CNT && 
+        g_responsed_cnt  == TOTAL_EXPECTED_SERVER_ECHO_CNT) {
         DBG_LOG("all done :" << 
             "server_msg_cnt_="<< g_server_msg_cnt <<", responsed_cnt="<< g_responsed_cnt);
         g_all_done_cond_var.NotifyOne();
@@ -233,7 +244,6 @@ int main(int argc, char* argv[])
     std::cout << "total clients               = " << MAX_CLIENTS <<"\n";
     std::cout << "threads per client          = " << THREADS_PER_CLIENT << "\n";
     std::cout << "send per thread             = " << SEND_PER_THREAD << "\n";
-    std::cout << "total server response count = " << TOTAL_EXPECTED_SERVER_RESPONSE_CNT << "\n";
     int elapsed_hour = (int)elapsed_time / (60 * 60 * 1000);
     int elapsed_min = (int)elapsed_time / (60 * 1000);
     int elapsed_sec = (int)elapsed_time / 1000;
@@ -241,7 +251,10 @@ int main(int argc, char* argv[])
     snprintf(elapsed_fmt,sizeof(elapsed_fmt), "%02d:%02d:%02d.%d", elapsed_hour , 
          (int)elapsed_min -(elapsed_hour * 60) , (int)elapsed_sec -(elapsed_min * 60)  , 
          (int)elapsed_time - (1000 * elapsed_sec) );
+    std::cout << "total server response count = " << TOTAL_EXPECTED_SERVER_ECHO_CNT << "\n";
+    std::cout << "total server sent msg count = " << TOTAL_EXPECTED_SERVER_MSG_CNT << "\n";
     std::cout << "elapsed                     = " <<  elapsed_fmt << " / " <<elapsed_time <<"ms\n\n";
+
     return 0;
 }
 

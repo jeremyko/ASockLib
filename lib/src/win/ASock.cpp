@@ -984,6 +984,7 @@ bool ASock::BuildClientContextCache() {
             delete ctx_ptr;
             return false;
         }
+        ctx_ptr->pending_send_deque.clear();
         ReSetCtxPtr(ctx_ptr);
         queue_client_cache_.push(ctx_ptr);
     }
@@ -1044,6 +1045,11 @@ void ASock::ReSetCtxPtr(Context* ctx_ptr)
     ctx_ptr->per_recv_io_ctx->sent_len = 0;
     ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
     ctx_ptr->is_connected = false;
+    while(!ctx_ptr->pending_send_deque.empty() ) {
+        PENDING_SENT pending_sent= ctx_ptr->pending_send_deque.front();
+        delete [] pending_sent.pending_sent_data;
+        ctx_ptr->pending_send_deque.pop_front();
+    }
 }
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::ClearClientCache()
@@ -1052,6 +1058,11 @@ void ASock::ClearClientCache()
     std::lock_guard<std::mutex> lock(cache_lock_);
     while (!queue_client_cache_.empty()) {
         Context* ctx_ptr = queue_client_cache_.front();
+        while(!ctx_ptr->pending_send_deque.empty() ) {
+            PENDING_SENT pending_sent= ctx_ptr->pending_send_deque.front();
+            delete [] pending_sent.pending_sent_data;
+            ctx_ptr->pending_send_deque.pop_front();
+        }
         delete ctx_ptr;
         queue_client_cache_.pop();
     }
@@ -1270,10 +1281,10 @@ bool ASock::ConnectToServer()
     WSASetLastError(0);
     //wait for connected
     int wait_timeout_ms = connect_timeout_secs_ * 1000 ;
-    WSAPOLLFD fdarray = { 0 };
-    fdarray.fd = context_.socket;
-    fdarray.events = POLLWRNORM;
-    result = WSAPoll(&fdarray, 1, wait_timeout_ms);
+    WSAPOLLFD fdArray = { 0 };
+    fdArray.fd = context_.socket;
+    fdArray.events = POLLWRNORM;
+    result = WSAPoll(&fdArray, 1, wait_timeout_ms);
     DBG_LOG("connect WSAPoll returns....: result ="<<result);
     if (SOCKET_ERROR == result) {
         BuildErrMsgString(WSAGetLastError());
@@ -1281,7 +1292,7 @@ bool ASock::ConnectToServer()
         return false;
     }
     if (result) {
-        if (fdarray.revents & POLLWRNORM) {
+        if (fdArray.revents & POLLWRNORM) {
             DBG_LOG("Established connection");
         } else {
             std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -1298,27 +1309,28 @@ bool ASock::ConnectToServer()
 void ASock::ClientThreadRoutine()
 {
     is_client_thread_running_ = true;
-    int wait_timeout_ms = 1 * 1000 ;
-    WSAPOLLFD fdarray = { 0 };
+    int wait_timeout_ms = 1 * 100 ;
     while (is_connected_) { 
+        WSAPOLLFD fdArray = { 0 };
         if (context_.socket == INVALID_SOCKET) {
             DBG_ELOG( "INVALID_SOCKET" ) ;
             is_client_thread_running_ = false;
             return;
         }
-        fdarray.fd = context_.socket;
+        fdArray.fd = context_.socket;
+        fdArray.revents = 0;
         int result = -1;
-        //fdarray.events = POLLWRNORM;
-        //Call WSAPoll for readability on connected socket
-        fdarray.events = POLLRDNORM;
-        result = WSAPoll(&fdarray, 1, wait_timeout_ms);
+        //================================== 
+        //fdArray.events = POLLRDNORM | POLLWRNORM; // XXX 이런식으로 하면 안됨? 
+        fdArray.events = POLLRDNORM ;
+        result = WSAPoll(&fdArray, 1, wait_timeout_ms);
         if (SOCKET_ERROR == result) {
             is_client_thread_running_ = false;
             if (!is_connected_) { 
                 return;//no error.
             }
             BuildErrMsgString(WSAGetLastError());
-            ELOG( err_msg_ ) ;
+            LOG( err_msg_ ) ;
             return ;
         }
         if (result == 0) {
@@ -1328,7 +1340,7 @@ void ASock::ClientThreadRoutine()
                 is_client_thread_running_ = false;
                 return;//no error.
             }
-            if (fdarray.revents & POLLRDNORM) {  
+            if (fdArray.revents & POLLRDNORM) {  
                 //============================
                 size_t want_recv_len = max_data_len_;
                 //-------------------------------------
@@ -1364,15 +1376,16 @@ void ASock::ClientThreadRoutine()
                 }
                 if (SOCKET_ERROR == ret) {
                     BuildErrMsgString(WSAGetLastError());
-                    ELOG( err_msg_ ) ;
+                    DBG_ELOG( err_msg_ ) ;
                     is_client_thread_running_ = false;
                     return;
                 } else {
-                    //DBG_LOG("client recved : " << ret <<" bytes");
+                    DBG_LOG("client recved : " << ret <<" bytes");
                     if (ret == 0) {
                         DBG_LOG("disconnected : sock=" << context_.socket);
                         shutdown(context_.socket, SD_BOTH);
                         closesocket(context_.socket);
+                        is_connected_ = false;
                         OnDisconnectedFromServer();
                         context_.socket = INVALID_SOCKET; //XXX
                         is_client_thread_running_ = false;
@@ -1392,88 +1405,184 @@ void ASock::ClientThreadRoutine()
                         if (0 != closesocket(context_.socket)) {
                             DBG_ELOG("close socket error! : " << WSAGetLastError());
                         }
+                        is_connected_ = false;
                         context_.socket = INVALID_SOCKET;
                         OnDisconnectedFromServer();
                         is_client_thread_running_ = false;
                         return;
                     }
                 }
+            } else if (fdArray.revents & POLLHUP) {
+                LOG("POLLHUP");
+                shutdown(context_.socket, SD_BOTH);
+                if (0 != closesocket(context_.socket)) {
+                    DBG_ELOG("close socket error! : " << WSAGetLastError());
+                }
+                is_connected_ = false;
+                context_.socket = INVALID_SOCKET;
+                OnDisconnectedFromServer();
+                is_client_thread_running_ = false;
+                return;
             }
-            //TODO POLLWRNORM
         }
+        //================================== send pending if any
+        fdArray.fd = context_.socket;
+        fdArray.revents = 0;
+        fdArray.events = POLLWRNORM;
+        result = WSAPoll(&fdArray, 1, 0);
+        if (SOCKET_ERROR == result) {
+            is_client_thread_running_ = false;
+            if (!is_connected_) { 
+                return;//no error.
+            }
+            BuildErrMsgString(WSAGetLastError());
+            LOG( err_msg_ ) ;
+            return ;
+        }
+        if (result == 0) {
+            //timeout
+        } else{
+             if (fdArray.revents & POLLWRNORM) {
+                if (!SendPendingData()) {
+                    is_client_thread_running_ = false;
+                    return; //error!
+                }
+            }
+        }
+        //================================== 
     } //while(true)
     is_client_thread_running_ = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-//client use
-bool ASock:: SendToServer(const char* data, size_t len)
+bool ASock::SendPendingData()
 {
+    std::lock_guard<std::mutex> guard(context_.ctx_lock);
+    while(!context_.pending_send_deque.empty()) {
+        DBG_LOG("pending exists");
+        PENDING_SENT pending_sent = context_.pending_send_deque.front();
+        int sent_len = 0;
+         if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
+            //XXX UDP : all or nothing . no partial sent!
+            sent_len = sendto(context_.socket,  pending_sent.pending_sent_data, (int)pending_sent.pending_sent_len,
+                              0, (SOCKADDR*)&udp_server_addr_, int(sizeof(udp_server_addr_)));
+        } else {
+            sent_len = send(context_.socket, pending_sent.pending_sent_data, (int)pending_sent.pending_sent_len, 0) ;
+        }
+        if( sent_len > 0 ) {
+            if(sent_len == pending_sent.pending_sent_len) {
+                delete [] pending_sent.pending_sent_data;
+                context_.pending_send_deque.pop_front();
+                if(context_.pending_send_deque.empty()) {
+                    //sent all data
+                    context_.is_sent_pending = false;
+                    DBG_LOG("all pending is sent");
+                    break;
+                }
+            } else {
+                //TCP : partial sent ---> 남은 부분을 다시 제일 처음으로
+                DBG_LOG("partial pending is sent, retry next time");
+                PENDING_SENT partial_pending_sent;
+                size_t alloc_len = pending_sent.pending_sent_len - sent_len;
+                partial_pending_sent.pending_sent_data = new char [alloc_len]; 
+                partial_pending_sent.pending_sent_len  = alloc_len;
+                memcpy( partial_pending_sent.pending_sent_data, 
+                        pending_sent.pending_sent_data+sent_len, alloc_len);
+                //remove first.
+                delete [] pending_sent.pending_sent_data;
+                context_.pending_send_deque.pop_front();
+                //push_front
+                context_.pending_send_deque.push_front(partial_pending_sent);
+                break; //next time
+            }
+        } else if( sent_len == SOCKET_ERROR ) {
+            if (WSAEWOULDBLOCK == WSAGetLastError()) {
+                break; //next time
+            } else {
+                {//lock scope
+                    std::lock_guard<std::mutex> lock(err_msg_lock_);
+                    err_msg_ = "send error ["  + std::string(strerror(errno)) + "]";
+                }
+                BuildErrMsgString(WSAGetLastError());
+                DBG_ELOG(err_msg_);
+                OnDisconnectedFromServer();
+                shutdown(context_.socket, SD_BOTH);
+                if (0 != closesocket(context_.socket)) {
+                    DBG_ELOG("close socket error! : " << WSAGetLastError());
+                }
+                context_.socket = INVALID_SOCKET;
+                return false; 
+            } 
+        } 
+    } //while
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//client use
+bool ASock:: SendToServer(const char* data_ptr, size_t len)
+{
+    std::lock_guard<std::mutex> lock(context_.ctx_lock); // XXX lock
+    char* data_position_ptr = const_cast<char*>(data_ptr) ;   
+    size_t total_sent = 0;           
     if ( !is_connected_ ) {
         std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "not connected";
         DBG_ELOG( err_msg_ ) ;
         return false;
     }
-    std::lock_guard<std::mutex> lock(context_.ctx_lock); // XXX lock
     if (context_.socket == INVALID_SOCKET) {
         err_msg_ = "not connected";
         DBG_ELOG(err_msg_);
         return false;
     }
-    if (sock_usage_ == SOCK_USAGE_UDP_CLIENT) {
-        while (true) {
-            int result = sendto(context_.socket, data, int(len), 0, 
+
+    //if sent is pending, just push to queue. 
+    if(context_.is_sent_pending){
+        DBG_LOG("pending. just queue.");
+        PENDING_SENT pending_sent;
+        pending_sent.pending_sent_data = new char [len]; 
+        pending_sent.pending_sent_len  = len;
+        memcpy(pending_sent.pending_sent_data, data_ptr, len);
+        context_.pending_send_deque.push_back(pending_sent);
+        return true;
+    }
+    while( total_sent < len ) {
+        int sent_len =0;
+        if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
+            //XXX UDP : all or nothing. no partial sent!
+            sent_len = sendto(context_.socket, data_ptr, int(len), 0,
                                 (SOCKADDR*)&udp_server_addr_, int(sizeof(udp_server_addr_)));
-            if (SOCKET_ERROR == result) {
-                if (WSAEWOULDBLOCK == WSAGetLastError()) {
-                    //std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                    continue;
-                } else {
-                    BuildErrMsgString(WSAGetLastError());
-                    DBG_ELOG(err_msg_);
-                    shutdown(context_.socket, SD_BOTH);
-                    if (0 != closesocket(context_.socket)) {
-                        DBG_ELOG("close socket error! : " << WSAGetLastError());
-                    }
-                    context_.socket = INVALID_SOCKET;
-                    return false;
-                }
-            }
-            break;
-        } // while
-    }
-    else {
-        size_t sent_sum = 0;
-        while (true) {
-            int result = send(context_.socket, data + sent_sum, (int)(len - sent_sum), 0);
-            if (SOCKET_ERROR == result ) {
-                if (WSAEWOULDBLOCK == WSAGetLastError()) {
-                    continue;
-                }
-                else {
-                    BuildErrMsgString(WSAGetLastError());
-                    DBG_ELOG(err_msg_);
-                    shutdown(context_.socket, SD_BOTH);
-                    if (0 != closesocket(context_.socket)) {
-                        DBG_ELOG("close socket error! : " << WSAGetLastError());
-                    }
-                    context_.socket = INVALID_SOCKET;
-                    return false;
-                }
+        } else {
+            sent_len = send(context_.socket, data_position_ptr, (int)(len-total_sent), 0);
+        }
+
+        if(sent_len > 0) {
+            total_sent += sent_len ;  
+            data_position_ptr += sent_len ;      
+        } else if( sent_len == SOCKET_ERROR ) {
+            if (WSAEWOULDBLOCK == WSAGetLastError()) {
+                //send later
+                PENDING_SENT pending_sent;
+                pending_sent.pending_sent_data = new char [len-total_sent]; 
+                pending_sent.pending_sent_len  = len-total_sent;
+                memcpy(pending_sent.pending_sent_data, data_position_ptr, len-total_sent);
+                context_.pending_send_deque.push_back(pending_sent);
+                context_.is_sent_pending = true;
+                return true;
             } else {
-                sent_sum += result;
-                if (sent_sum == len) {
-                    //DBG_LOG("all sent OK");
-                    break;
-                } else {
-                    LOG("all sent failed --> send again : total= " << len << ",sent=" << sent_sum);
-                    //std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                    continue;
+                BuildErrMsgString(WSAGetLastError());
+                DBG_ELOG(err_msg_);
+                shutdown(context_.socket, SD_BOTH);
+                if (0 != closesocket(context_.socket)) {
+                    DBG_ELOG("close socket error! : " << WSAGetLastError());
                 }
+                context_.socket = INVALID_SOCKET;
+                return false;
             }
-        }//while
-    }
+        }
+    }//while
+
     return true;
 }
 
