@@ -260,7 +260,6 @@ class ASock
 
   protected :
     bool SetSockoptSndRcvBufUdp(SOCKET_T socket);
-    bool SendPendingData(Context* ctx_ptr);
 #ifdef WIN32
     bool InitWinsock();
 	void StartWorkerThreads();
@@ -273,6 +272,7 @@ class ASock
     bool SendPendingData(); //client only
 #endif
 #if defined __APPLE__ || defined __linux__ 
+    bool SendPendingData(Context* ctx_ptr);
     bool RecvData(Context* ctx_ptr);
     bool RecvfromData(Context* ctx_ptr) ; //udp
 #endif
