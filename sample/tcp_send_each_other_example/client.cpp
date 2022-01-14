@@ -17,9 +17,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 CondVar     g_all_done_cond_var;
-size_t MAX_CLIENTS        = 1000;
+size_t MAX_CLIENTS        = 200;
 size_t THREADS_PER_CLIENT = 10;
-size_t SEND_PER_THREAD    = 100;
+size_t SEND_PER_THREAD    = 200;
 
 size_t SERVER_SEND_THREADS_PER_CLIENT = 10; // 서버가 클라이언트 접속되면 생성하는 전송 thread 개수
 size_t SERVER_MSG_PER_CLIENT_THREAD   = 10; // 클라이언트 전송 thread 별로 보내는 건수(echo 아닌)

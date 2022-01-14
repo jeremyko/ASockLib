@@ -442,12 +442,6 @@ bool ASock::StartServer()
         if(!SetSockoptSndRcvBufUdp(listen_socket_)) {
             return false;
         }
-    } else {
-        if (setsockopt(listen_socket_, SOL_SOCKET, SO_SNDBUF, (char*)&opt_zero, sizeof(opt_zero)) == SOCKET_ERROR) {
-            BuildErrMsgString(WSAGetLastError());
-            ELOG(err_msg_);
-            return false;
-        }
     }
     int opt_on = 1;
     if (setsockopt(listen_socket_, SOL_SOCKET, SO_REUSEADDR, (char*)&opt_on, sizeof(opt_on)) == SOCKET_ERROR) {
@@ -1309,7 +1303,7 @@ bool ASock::ConnectToServer()
 void ASock::ClientThreadRoutine()
 {
     is_client_thread_running_ = true;
-    int wait_timeout_ms = 1 * 100 ;
+    int wait_timeout_ms =  10 ;
     while (is_connected_) { 
         WSAPOLLFD fdArray = { 0 };
         if (context_.socket == INVALID_SOCKET) {
