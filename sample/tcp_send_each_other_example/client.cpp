@@ -89,7 +89,7 @@ void STEO_Client::SendThread(size_t index)
         }
     }
     //LOG("Send Thread starts....... : "<< index);
-    int sent_cnt =0;
+    size_t sent_cnt =0;
     ST_MY_HEADER header;
     char send_msg[256];
     while(IsConnected()){
