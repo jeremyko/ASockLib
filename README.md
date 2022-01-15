@@ -2,8 +2,6 @@
 
 ### What ###
 
-a simple, easy to use cross-platform c++ networking library.
-
 A simple and easy cross-platform c++ socket server/client framework especially convenient for handling TCP fixed-length header and variable-length body. Of course, it also supports udp and domain socket.
 
 - The framework calls the user-specified callback.
