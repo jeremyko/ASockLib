@@ -832,7 +832,7 @@ bool ASock::SendPendingData(Context* ctx_ptr)
             sent_len = send(ctx_ptr->socket, pending_sent.pending_sent_data, pending_sent.pending_sent_len, 0) ;
         }
         if( sent_len > 0 ) {
-            if(sent_len == pending_sent.pending_sent_len) {
+            if(sent_len == (int)pending_sent.pending_sent_len) {
                 delete [] pending_sent.pending_sent_data;
                 ctx_ptr->pending_send_deque.pop_front();
                 if(ctx_ptr->pending_send_deque.empty()) {
