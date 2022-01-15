@@ -4,8 +4,11 @@
 
 a simple, easy to use cross-platform c++ networking library.
 
-- linux, os x : tcp, udp, domain socket using epoll and kqueue.
+A simple and easy cross-platform c++ socket server/client framework especially convenient for handling TCP fixed-length header and variable-length body. Of course, it also supports udp and domain socket.
 
+- The framework calls the user-specified callback.
+- For TCP, the total size of user data is passed to the framework via a callback, and the framework does TCP buffering automatically.
+- linux, os x : tcp, udp, domain socket using epoll and kqueue.
 - windows : tcp, udp using winsock.
 
 dependency : [CumBuffer](https://github.com/jeremyko/CumBuffer).
