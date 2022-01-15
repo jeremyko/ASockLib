@@ -26,8 +26,8 @@ size_t SERVER_MSG_PER_CLIENT_THREAD   = 10; // 클라이언트 전송 thread 별로 보내�
 
 size_t TOTAL_EXPECTED_SERVER_MSG_CNT  = (MAX_CLIENTS * SERVER_SEND_THREADS_PER_CLIENT * SERVER_MSG_PER_CLIENT_THREAD);
 size_t TOTAL_EXPECTED_SERVER_ECHO_CNT = (MAX_CLIENTS * THREADS_PER_CLIENT * SEND_PER_THREAD);
-std::atomic<int> g_responsed_cnt{ 0 };
-std::atomic<int> g_server_msg_cnt{ 0 };
+std::atomic<size_t> g_responsed_cnt{ 0 };
+std::atomic<size_t> g_server_msg_cnt{ 0 };
 
 class STEO_Client 
 {
@@ -44,7 +44,7 @@ class STEO_Client
     size_t  OnCalculateDataLen(asock::Context* context_ptr); 
     bool    OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, 
                                  size_t len); 
-    void    OnDisconnectedFromServer() ; 
+    //void    OnDisconnectedFromServer() ; 
     std::vector<std::string> vec_sent_strings_ ;
     std::mutex  sent_chk_lock_ ; // XXX vec_sent_strings_ is used by multiple threads.
 };
@@ -59,7 +59,7 @@ bool STEO_Client::InitializeTcpClient(size_t client_id)
     using std::placeholders::_3;
     tcp_client_.SetCbOnCalculatePacketLen(std::bind( &STEO_Client::OnCalculateDataLen, this, _1));
     tcp_client_.SetCbOnRecvedCompletePacket(std::bind( &STEO_Client::OnRecvedCompleteData, this, _1,_2,_3));
-    tcp_client_.SetCbOnDisconnectedFromServer(std::bind( &STEO_Client::OnDisconnectedFromServer, this));
+    //tcp_client_.SetCbOnDisconnectedFromServer(std::bind( &STEO_Client::OnDisconnectedFromServer, this));
     //connect timeout is 3 secs, max message length is approximately 1024 bytes...
     if(!tcp_client_.InitTcpClient("127.0.0.1", 9990, 3, 1024 ) ) {
         ELOG("error : "<< tcp_client_.GetLastErrMsg() ); 
@@ -184,9 +184,9 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* context_ptr,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void STEO_Client::OnDisconnectedFromServer() {
-    std::cout << "* server disconnected ! \n";
-}
+//void STEO_Client::OnDisconnectedFromServer() {
+//    std::cout << "* server disconnected ! \n";
+//}
 
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
@@ -234,6 +234,7 @@ int main(int argc, char* argv[])
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
         (*it)->WaitForClientLoopExit();
     }
+
     while (! vec_clients.empty()) {
         delete vec_clients.back();
         vec_clients.pop_back();
@@ -251,8 +252,8 @@ int main(int argc, char* argv[])
     snprintf(elapsed_fmt,sizeof(elapsed_fmt), "%02d:%02d:%02d.%d", elapsed_hour , 
          (int)elapsed_min -(elapsed_hour * 60) , (int)elapsed_sec -(elapsed_min * 60)  , 
          (int)elapsed_time - (1000 * elapsed_sec) );
-    std::cout << "total server response count = " << TOTAL_EXPECTED_SERVER_ECHO_CNT << "\n";
-    std::cout << "total server sent msg count = " << TOTAL_EXPECTED_SERVER_MSG_CNT << "\n";
+    std::cout << "total server response count = " << g_responsed_cnt << "\n";
+    std::cout << "total server sent msg count = " << g_server_msg_cnt << "\n";
     std::cout << "elapsed                     = " <<  elapsed_fmt << " / " <<elapsed_time <<"ms\n\n";
 
     return 0;
