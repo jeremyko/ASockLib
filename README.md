@@ -6,6 +6,7 @@ A simple and easy cross-platform c++ socket server/client framework especially c
 
 - The framework calls the user-specified callback.
 - For TCP, the total size of user data is passed to the framework via a callback, and the framework does TCP buffering automatically.
+- No repeat send calls until all are sent. When send returns WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent later.
 - linux, os x : tcp, udp, domain socket using epoll and kqueue.
 - windows : tcp, udp using winsock.
 
