@@ -99,13 +99,7 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
         result = WSASendTo(ctx_ptr->socket, &(per_send_io_data->wsabuf), 1, &dw_send_bytes, dw_flags,
                            (SOCKADDR*)&ctx_ptr->udp_remote_addr, sizeof(SOCKADDR_IN)
                            , &(per_send_io_data->overlapped), NULL);
-    }
-    else if (sock_usage_ == SOCK_USAGE_UDP_CLIENT) {
-        result = WSASendTo(ctx_ptr->socket, &(per_send_io_data->wsabuf), 1, &dw_send_bytes, dw_flags,
-                           (SOCKADDR*)&ctx_ptr->udp_remote_addr, sizeof(SOCKADDR_IN)
-                           , &(per_send_io_data->overlapped), NULL);
-    }
-    else {
+    } else {
         result = WSASend(ctx_ptr->socket, &(per_send_io_data->wsabuf), 1, &dw_send_bytes, dw_flags, 
                          &(per_send_io_data->overlapped), NULL);
     }
@@ -714,8 +708,11 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
             DBG_LOG("IO_SEND(sock=" << ctx_ptr->socket << ") : sent this time ="
                     << bytes_transferred << ",total sent =" << per_io_ctx->sent_len );
 
-            if (sock_usage_ == SOCK_USAGE_UDP_SERVER || sock_usage_ == SOCK_USAGE_UDP_CLIENT) {
-                //do nothing : udp , no partial send
+            if (sock_usage_ == SOCK_USAGE_UDP_SERVER) {
+                // udp , no partial send
+                DBG_LOG("socket (" << ctx_ptr->socket <<
+                        ") send all completed (" << per_io_ctx->sent_len << ") ==> delete per io ctx!!");
+                PushPerIoDataToCache(per_io_ctx);
             } else {
                 // non udp
                 if (per_io_ctx->sent_len < per_io_ctx->total_send_len) {
