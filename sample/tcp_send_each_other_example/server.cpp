@@ -115,7 +115,7 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
     //---------------------------------------
     //this is echo server
     if (!tcp_server_.SendData(  ctx_ptr, data_ptr, len)) {
-        std::cerr <<  "error! "<< tcp_server_.GetLastErrMsg() ; 
+        ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
         return false;
     }
     return true;
@@ -181,7 +181,9 @@ int main(int argc, char* argv[])
     echoserver.InitializeTcpServer();
     std::cout << "server started\n";
     while( echoserver.IsServerRunning() ) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::cout << "*   client total = " << echoserver.tcp_server_.GetCountOfClients() << 
+                     "    client cash = " << echoserver.tcp_server_.GetCountOfClientCashQueue() << "\n";
     }
     std::cout << "server exit...\n";
     return 0;

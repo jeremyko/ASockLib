@@ -65,11 +65,11 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
     // on the same stream-oriented socket.
     std::lock_guard<std::mutex> lock(context_.ctx_lock); //멀티쓰레드에서 호출 가능하므로 동기화 필요
     if (ctx_ptr->socket == INVALID_SOCKET) {
-        ELOG("invalid socket, failed.");
+        DBG_ELOG("invalid socket, failed.");
         return false;
     }
     if (!ctx_ptr->is_connected) {
-        ELOG("diconnected socket, failed.");
+        DBG_ELOG("diconnected socket, failed.");
         return false;
     }
     //ex)multi thread 가 동일한 소켓에 대해 각각 보내는 경우...
@@ -112,7 +112,6 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
         } else {
             int last_err = WSAGetLastError();
             BuildErrMsgString(last_err);
-            DBG_ELOG(err_msg_ << " : " << ctx_ptr->socket);
             PushPerIoDataToCache(per_send_io_data);
             shutdown(ctx_ptr->socket, SD_BOTH);
             if (0 != closesocket(ctx_ptr->socket)) {
@@ -122,8 +121,8 @@ bool ASock::SendData(Context* ctx_ptr, const char* data_ptr, size_t len)
             return false;
         }
     }
-    ctx_ptr->ref_cnt++;
-    DBG_LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt=" << ctx_ptr->ref_cnt);
+    ctx_ptr->send_ref_cnt++;
+    DBG_LOG("sock=" << ctx_ptr->sock_id_copy << ", send_ref_cnt=" << ctx_ptr->send_ref_cnt);
     return true;
 }
 
@@ -152,13 +151,9 @@ void ASock:: WaitForClientLoopExit()
 ///////////////////////////////////////////////////////////////////////////////
 bool ASock::RecvfromData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transferred )
 {
-    if (ctx_ptr->socket == INVALID_SOCKET) {
-        DBG_ELOG("sock=" << ctx_ptr->sock_id_copy << ",invalid socket, failed.");
-        return false;
-    }
     ctx_ptr->GetBuffer()->IncreaseData(bytes_transferred);
     DBG_LOG("worker="<<worker_index<<",sock="<<ctx_ptr->sock_id_copy<<",GetCumulatedLen = " 
-        << ctx_ptr->GetBuffer()->GetCumulatedLen() << ",ref_cnt=" << ctx_ptr->ref_cnt
+        << ctx_ptr->GetBuffer()->GetCumulatedLen() << ",recv_ref_cnt=" << ctx_ptr->recv_ref_cnt
         << ",bytes_transferred=" << bytes_transferred );
     //DBG_LOG("GetCumulatedLen = " << ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen());
     char* complete_packet_data = new (std::nothrow) char[bytes_transferred]; //XXX TODO !!!
@@ -182,7 +177,7 @@ bool ASock::RecvfromData(size_t worker_index, Context* ctx_ptr, DWORD bytes_tran
     //XXX UDP 이므로 받는 버퍼를 초기화해서, linear free space를 초기화 상태로 
     ctx_ptr->GetBuffer()->ReSet(); //this is udp. all data has arrived!
     DBG_LOG("worker=" << worker_index << ",sock=" << ctx_ptr->sock_id_copy << 
-            ",ref_cnt=" << ctx_ptr->ref_cnt << ":got complete data [" << complete_packet_data << "]");
+            ",recv_ref_cnt=" << ctx_ptr->recv_ref_cnt << ":got complete data [" << complete_packet_data << "]");
     if (cb_on_recved_complete_packet_ != nullptr) {
         //invoke user specific callback
         cb_on_recved_complete_packet_(ctx_ptr, complete_packet_data, bytes_transferred ); //udp
@@ -197,18 +192,8 @@ bool ASock::RecvfromData(size_t worker_index, Context* ctx_ptr, DWORD bytes_tran
 //XXX server, client use this
 bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transferred )
 {
-    if (ctx_ptr->socket == INVALID_SOCKET) {
-        DBG_ELOG("sock=" << ctx_ptr->sock_id_copy << ",invalid socket, failed.");
-        return false;
-    }
     ctx_ptr->GetBuffer()->IncreaseData(bytes_transferred);
     while (ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()) {
-        //XXX .. for client !!! =========== START TODO --> make better !
-        if (ctx_ptr->socket == INVALID_SOCKET) {
-            DBG_ELOG("sock=" << ctx_ptr->sock_id_copy << ",invalid socket, failed.");
-            return false;
-        }
-        //XXX .. for client !!! =========== END
         if (!ctx_ptr->per_recv_io_ctx->is_packet_len_calculated){ 
             //only when calculation is necessary
             if (cb_on_calculate_data_len_ != nullptr) {
@@ -241,11 +226,11 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
                 {
                     std::lock_guard<std::mutex> lock(err_msg_lock_);
                     err_msg_ = ctx_ptr->per_recv_io_ctx->cum_buffer.GetErrMsg();
+                    ELOG(err_msg_);
                 }
                 ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
                 delete[] complete_packet_data; //XXX
                 //exit(1);
-                ELOG(err_msg_);
                 exit(1);
             }
             if (cb_on_recved_complete_packet_ != nullptr) {
@@ -267,6 +252,9 @@ bool ASock::RecvData(size_t worker_index, Context* ctx_ptr, DWORD bytes_transfer
 bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
 {
     //--------------------------------------------------------
+    // wsarecv 를 호출해놓고 데이터 수신을 기다린다. 
+    // client 가 보내거나 연결을 종료할때만 GetQueuedCompletionStatus 로 통지된다.
+    // -------------------------------------------------------
     // 현재는 socket 별로 수신 후 1번만 IssueRecv 호출하게 되어 있어서 lock 은 불필요
     // 만약, 중첩되게 WSARecv 를 호출하게 되는 경우에 lock 필요 
     // MSDN :
@@ -275,10 +263,6 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
     // std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); //XXX --- !!!
     //--------------------------------------------------------
 
-    if (ctx_ptr->socket == INVALID_SOCKET) {
-        DBG_ELOG("sock=" << ctx_ptr->sock_id_copy << ",invalid socket, failed.");
-        return false;
-    }
     //XXX cumbuffer 에 Append 가능할 만큼만 수신하게 해줘야함!!
     size_t want_recv_len = max_data_len_;
     //-------------------------------------
@@ -289,6 +273,11 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
         std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "no linear free space left ";
         DBG_ELOG(err_msg_);
+        shutdown(ctx_ptr->socket, SD_BOTH);
+        if (0 != closesocket(ctx_ptr->socket)) {
+            DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << last_err);
+        }
+        ctx_ptr->socket = INVALID_SOCKET;
         return false;
     }
     DWORD dw_flags = 0;
@@ -315,12 +304,17 @@ bool ASock::IssueRecv(size_t worker_index, Context* ctx_ptr)
     if (SOCKET_ERROR == result) {
         if (WSAGetLastError() != WSA_IO_PENDING) {
             BuildErrMsgString(WSAGetLastError());
-            ELOG("sock=" << ctx_ptr->sock_id_copy << ", " <<err_msg_);
+            shutdown(ctx_ptr->socket, SD_BOTH);
+            if (0 != closesocket(ctx_ptr->socket)) {
+                DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << last_err);
+            }
+            ctx_ptr->socket = INVALID_SOCKET;
+            DBG_ELOG("sock=" << ctx_ptr->sock_id_copy << ", " <<err_msg_ << ", recv_ref_cnt =" << ctx_ptr->recv_ref_cnt);
             return false;
         }
     }
-    ctx_ptr->ref_cnt++;
-    //LOG("sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
+    ctx_ptr->recv_ref_cnt++;
+    //LOG("sock=" << ctx_ptr->sock_id_copy << ", recv_ref_cnt= " << ctx_ptr->recv_ref_cnt);
 #ifdef DEBUG_PRINT
     ctx_ptr->GetBuffer()->DebugPos(ctx_ptr->sock_id_copy);
 #endif
@@ -372,7 +366,6 @@ bool ASock::RunServer()
 {
     DBG_LOG( "Run Server..."); 
     if(is_server_running_ ) { 
-        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "error [server is already running]";
         ELOG("error! " << err_msg_); 
         return false;
@@ -382,7 +375,6 @@ bool ASock::RunServer()
     }
     handle_completion_port_ = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
     if(max_data_len_ <0) {
-        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "init error [packet length is negative]";
         DBG_ELOG(err_msg_);
         return  false;
@@ -504,14 +496,17 @@ bool ASock::StartServer()
         // Start receiving.
         if (!IssueRecv(99999, ctx_ptr)) { // worker_index 99999 is for debugging.
             int last_err = WSAGetLastError();
-            DBG_ELOG("sock=" << ctx_ptr->socket << ",ref_cnt=" << ctx_ptr->ref_cnt << ", error! : " << WSAGetLastError());
+            DBG_ELOG("sock=" << ctx_ptr->socket <<  ", error! : " << last_err);
             shutdown(ctx_ptr->socket, SD_BOTH);
             if (0 != closesocket(ctx_ptr->socket)) {
-                DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << WSAGetLastError());
+                DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << last_err);
             }
             LOG("delete ctx_ptr , sock=" << ctx_ptr->socket);
             ctx_ptr->socket = INVALID_SOCKET; //XXX
-            HandleError(ctx_ptr, last_err);
+            if (last_err == WSAECONNRESET) {
+                DBG_ELOG("invoke PuchClientContextToCache.. sock=" << ctx_ptr->sock_id_copy);
+                PushClientContextToCache(ctx_ptr);
+            }
             exit(1);
         }
     }
@@ -574,15 +569,9 @@ void ASock:: AcceptThreadRoutine()
         }
         // Start receiving.
         if (!IssueRecv(99999, ctx_ptr)) {  // worker_index 99999 is for debugging. 
-            int last_err = WSAGetLastError();
-            DBG_ELOG("sock=" << ctx_ptr->socket << ",ref_cnt=" << ctx_ptr->ref_cnt << ", error! : " << WSAGetLastError());
-            shutdown(ctx_ptr->socket, SD_BOTH);
-            if (0 != closesocket(ctx_ptr->socket)) {
-                DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << WSAGetLastError());
-            }
-            DBG_LOG("delete ctx_ptr , sock=" << ctx_ptr->socket);
-            ctx_ptr->socket = INVALID_SOCKET; //XXX
-            HandleError(ctx_ptr, last_err);
+            client_cnt_--;
+            DBG_ELOG("sock=" << ctx_ptr->socket <<  ", error! : " << err_msg_);
+            PushClientContextToCache(ctx_ptr);
             continue;
         }
     } //while
@@ -602,6 +591,8 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
         ctx_ptr = NULL ;
         lp_overlapped = NULL;
         per_io_ctx = NULL;
+        // wsarecv 를 호출한 경우,
+        // client 가 보내거나 연결을 종료할때만 GetQueuedCompletionStatus 로 통지된다.
         if (FALSE == GetQueuedCompletionStatus( handle_completion_port_, 
                                             & bytes_transferred, (PULONG_PTR) & ctx_ptr, 
                                             (LPOVERLAPPED*) &lp_overlapped, INFINITE )) {
@@ -611,20 +602,29 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                 return;
             }
             BuildErrMsgString(err);
-            std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); 
-            ctx_ptr->ref_cnt--;
+            //std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); 
             if (lp_overlapped != NULL) {
                 //===================== lock
                 DBG_ELOG("worker=" << worker_index << ", sock=" << ctx_ptr->sock_id_copy << ", GetQueuedCompletionStatus failed.."
-                    << ", bytes = " << bytes_transferred << ", err=" << err << ", ref_cnt =" << ctx_ptr->ref_cnt);
+                    << ", bytes = " << bytes_transferred << ", err=" << err );
                 per_io_ctx = (PER_IO_DATA*)lp_overlapped;
                 if (per_io_ctx->io_type == EnumIOType::IO_SEND) {
+                    ctx_ptr->send_ref_cnt--;
                     PushPerIoDataToCache(per_io_ctx); //XXX per_io_ctx => 동적 할당된 메모리
+                } else if (per_io_ctx->io_type == EnumIOType::IO_RECV) {
+                    ctx_ptr->recv_ref_cnt--;
                 }
                 if (bytes_transferred == 0) {
                     //graceful disconnect.
-                    DBG_LOG("sock="<<ctx_ptr->sock_id_copy <<", 0 recved --> gracefully disconnected : " << ctx_ptr->sock_id_copy);
-                    TerminateClient(ctx_ptr);
+                    DBG_LOG("sock="<<ctx_ptr->sock_id_copy <<", 0 recved --> gracefully disconnected : " << ctx_ptr->recv_ref_cnt);
+                    if (per_io_ctx->io_type == EnumIOType::IO_RECV) {
+                        if (ctx_ptr->recv_ref_cnt == 0) { // 중첩된 wsarecv 등을 고려한다
+                            TerminateClient(ctx_ptr);
+                        }
+                    }
+                    else if (per_io_ctx->io_type == EnumIOType::IO_SEND) {
+                        TerminateClient(ctx_ptr);
+                    }
                 } else {
                     if (err == ERROR_NETNAME_DELETED) { // --> 64
                         //client hard close --> not an error
@@ -633,11 +633,25 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                         //error 
                         DBG_ELOG(" GetQueuedCompletionStatus failed  :" << err_msg_);
                     }
-                    TerminateClient(ctx_ptr, false); //force close
+                    if (per_io_ctx->io_type == EnumIOType::IO_RECV) {
+                        if (ctx_ptr->recv_ref_cnt == 0) { // 중첩된 wsarecv 등을 고려한다
+                            TerminateClient(ctx_ptr, false); //force close
+                        }
+                    }
+                    else if (per_io_ctx->io_type == EnumIOType::IO_SEND) {
+                        TerminateClient(ctx_ptr, false); //force close
+                    }
                 }
             } else {
                 DBG_ELOG("GetQueuedCompletionStatus failed..err="<< err);
-                TerminateClient(ctx_ptr, false); //force close
+                if (per_io_ctx->io_type == EnumIOType::IO_RECV) {
+                    if (ctx_ptr->recv_ref_cnt == 0) { // 중첩된 wsarecv 등을 고려한다
+                        TerminateClient(ctx_ptr, false); //force close
+                    }
+                }
+                else if (per_io_ctx->io_type == EnumIOType::IO_SEND) {
+                    TerminateClient(ctx_ptr, false); //force close
+                }
             }
             continue;
         }
@@ -650,45 +664,34 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
         //======================================================= IO_RECV
         case EnumIOType::IO_RECV:
         {
-            ctx_ptr->ref_cnt--;
+            ctx_ptr->recv_ref_cnt--;
             DBG_LOG("worker=" << worker_index << ",IO_RECV: sock=" << ctx_ptr->sock_id_copy
-                << ", ref_cnt =" << ctx_ptr->ref_cnt << ", recved bytes =" << bytes_transferred);
+                << ", recv_ref_cnt =" << ctx_ptr->recv_ref_cnt << ", recved bytes =" << bytes_transferred);
             //# recv #---------- 
             if (bytes_transferred == 0) {
                 //graceful disconnect.
-                DBG_LOG("0 recved --> gracefully disconnected : " << ctx_ptr->sock_id_copy);
-                std::lock_guard<std::mutex> lock(ctx_ptr->ctx_lock); 
-                TerminateClient(ctx_ptr);
+                DBG_LOG("0 recved --> gracefully disconnected : " << ctx_ptr->recv_ref_cnt);
+                if (ctx_ptr->recv_ref_cnt == 0) { // 중첩된 wsarecv 등을 고려한다
+                    TerminateClient(ctx_ptr);
+                }
                 break;
             }
             bool result = false;
             if (sock_usage_ == SOCK_USAGE_UDP_SERVER || sock_usage_ == SOCK_USAGE_UDP_CLIENT) {
-                result = RecvfromData(worker_index, ctx_ptr, bytes_transferred);
+                RecvfromData(worker_index, ctx_ptr, bytes_transferred);
             }
             else {
-                result = RecvData(worker_index, ctx_ptr, bytes_transferred);
-            }
-            if (!result) {
-                int last_err = WSAGetLastError();
-                DBG_ELOG("error" << last_err);
-                shutdown(ctx_ptr->socket, SD_BOTH);
-                if (0 != closesocket(ctx_ptr->socket)) {
-                    DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << last_err);
-                }
-                ctx_ptr->socket = INVALID_SOCKET;
-                HandleError(ctx_ptr, last_err);
-                break;
+                RecvData(worker_index, ctx_ptr, bytes_transferred);
             }
             // Continue to receive messages.
-            if (!IssueRecv(worker_index, ctx_ptr)) {  // worker_index 99999 is for debugging.
-                int last_err = WSAGetLastError();
-                DBG_ELOG("error" << last_err);
-                shutdown(ctx_ptr->socket, SD_BOTH);
-                if (0 != closesocket(ctx_ptr->socket)) {
-                    DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << last_err);
+            if (!IssueRecv(worker_index, ctx_ptr)) {  
+                if (ctx_ptr->recv_ref_cnt == 0) { // 중첩된 wsarecv 등을 고려한다
+                    client_cnt_--;
+                    PushClientContextToCache(ctx_ptr);
                 }
-                ctx_ptr->socket = INVALID_SOCKET;
-                HandleError(ctx_ptr, last_err);
+                else {
+                    ELOG("XXX issue recv error : recv ref count =" << ctx_ptr->recv_ref_cnt);
+                }
                 break;
             }
         }
@@ -696,13 +699,13 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
         //======================================================= IO_SEND
         case EnumIOType::IO_SEND:
         {
+            ctx_ptr->send_ref_cnt--;
             if (ctx_ptr->socket == INVALID_SOCKET) {
-                DBG_LOG("INVALID_SOCKET : delete.sock=" << ctx_ptr->sock_id_copy << ", ref_cnt= " << ctx_ptr->ref_cnt);
+                DBG_LOG("INVALID_SOCKET : delete.sock=" << ctx_ptr->sock_id_copy << ", send_ref_cnt= " << ctx_ptr->send_ref_cnt);
                 PushPerIoDataToCache(per_io_ctx);
                 break;
             }
-            ctx_ptr->ref_cnt--;
-            DBG_LOG("worker=" << worker_index << ",IO_SEND: sock=" << ctx_ptr->socket << ", ref_cnt =" << ctx_ptr->ref_cnt);
+            DBG_LOG("worker=" << worker_index << ",IO_SEND: sock=" << ctx_ptr->socket << ", send_ref_cnt =" << ctx_ptr->send_ref_cnt);
             //XXX per_io_ctx ==> dynamically allocated memory 
             per_io_ctx->sent_len += bytes_transferred;
             DBG_LOG("IO_SEND(sock=" << ctx_ptr->socket << ") : sent this time ="
@@ -735,6 +738,7 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                     int result = WSASend(ctx_ptr->socket, &per_io_ctx->wsabuf, 1, 
                                          &dw_send_bytes, dw_flags, &(per_io_ctx->overlapped), NULL);
                     if (result == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
+                        client_cnt_--;
                         PushPerIoDataToCache(per_io_ctx);
                         int last_err = WSAGetLastError();
                         BuildErrMsgString(last_err);
@@ -746,7 +750,7 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
                         ctx_ptr->socket = INVALID_SOCKET;
                         break;
                     }
-                    ctx_ptr->ref_cnt++;
+                    ctx_ptr->send_ref_cnt++;
                 } else {
                     DBG_LOG("socket (" << ctx_ptr->socket <<
                             ") send all completed (" << per_io_ctx->sent_len << ") ==> delete per io ctx!!");
@@ -771,19 +775,16 @@ void ASock:: WorkerThreadRoutine(size_t worker_index) {
     } //while
 }
 
-///////////////////////////////////////////////////////////////////////////////
-void ASock::HandleError(Context* ctx_ptr, int err) {
-    if (err == WSAECONNRESET) {
-        DBG_ELOG("invoke PuchClientContextToCache.. sock="<<ctx_ptr->sock_id_copy);
-        PushClientContextToCache(ctx_ptr);
-    }
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 void  ASock::TerminateClient( Context* ctx_ptr, bool is_graceful)
 {
-    DBG_LOG(" sock=" << ctx_ptr->sock_id_copy <<", ref_cnt="
-        <<ctx_ptr->ref_cnt << ", connection closing ,graceful=" << (is_graceful ? "TRUE" : "FALSE"));
+    client_cnt_--;
+    DBG_LOG(" sock=" << ctx_ptr->sock_id_copy
+            << ", send_ref_cnt=" << ctx_ptr->send_ref_cnt
+            << ", recv_ref_cnt=" << ctx_ptr->recv_ref_cnt
+            << ", connection closing ,graceful="
+            << (is_graceful ? "TRUE" : "FALSE"));
     ctx_ptr->is_connected = false;
     if (cb_on_client_connected_ != nullptr) {
         cb_on_client_disconnected_(ctx_ptr);
@@ -792,9 +793,7 @@ void  ASock::TerminateClient( Context* ctx_ptr, bool is_graceful)
     }
     if(ctx_ptr->socket == INVALID_SOCKET){
         DBG_LOG(" sock=" << ctx_ptr->sock_id_copy << ", already closed");
-        if (ctx_ptr->ref_cnt <= 0 ) { //XXX
-            PushClientContextToCache(ctx_ptr);
-        }
+        PushClientContextToCache(ctx_ptr);
     } else {
         if (!is_graceful) {
             // force the subsequent closesocket to be abortative.
@@ -803,17 +802,15 @@ void  ASock::TerminateClient( Context* ctx_ptr, bool is_graceful)
             linger_struct.l_linger = 0;
             setsockopt(ctx_ptr->socket, SOL_SOCKET, SO_LINGER, (char*)&linger_struct, sizeof(linger_struct));
         }
-        DBG_LOG("close socket : " << ctx_ptr->socket  << ", ref_cnt = " << ctx_ptr->ref_cnt );
+        DBG_LOG("close socket : " << ctx_ptr->socket  
+                << ", send_ref_cnt = " << ctx_ptr->send_ref_cnt 
+                << ", recv_ref_cnt = " << ctx_ptr->recv_ref_cnt );
         shutdown(ctx_ptr->socket, SD_BOTH);
         if (0 != closesocket(ctx_ptr->socket)) {
             DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " << WSAGetLastError());
         }
         ctx_ptr->socket = INVALID_SOCKET; 
-        client_cnt_--;
-        DBG_LOG("* client total = " << client_cnt_);
-        if (ctx_ptr->ref_cnt <= 0 ) { //XXX
-            PushClientContextToCache(ctx_ptr);
-        } 
+        PushClientContextToCache(ctx_ptr);
     }
 }
 
@@ -828,7 +825,6 @@ bool ASock::InitWinsock() {
         return false;
     }
     if (LOBYTE(wsa_data.wVersion) != 2 || HIBYTE(wsa_data.wVersion) != 2) {
-        std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = "Could not find a usable version of Winsock.dll";
         DBG_ELOG(err_msg_);
         WSACleanup();
@@ -1027,7 +1023,8 @@ void ASock::ReSetCtxPtr(Context* ctx_ptr)
     ctx_ptr->per_recv_io_ctx->cum_buffer.ReSet();
     ctx_ptr->socket = INVALID_SOCKET;
     ctx_ptr->sock_id_copy = -1;
-    ctx_ptr->ref_cnt = 0;
+    ctx_ptr->send_ref_cnt = 0;
+    ctx_ptr->recv_ref_cnt = 0;
     ctx_ptr->per_recv_io_ctx->wsabuf.buf = NULL;
     ctx_ptr->per_recv_io_ctx->wsabuf.len = 0;
     ctx_ptr->per_recv_io_ctx->io_type = EnumIOType::IO_UNKNOWN;

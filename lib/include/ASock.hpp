@@ -182,7 +182,8 @@ namespace asock {
         int          sock_id_copy{ -1 };
         PER_IO_DATA* per_recv_io_ctx { NULL }; //XXX TODO multiple wasrecv
         std::mutex   ctx_lock ; 
-        std::atomic<int>  ref_cnt{ 0 }; //send, recv both  
+        std::atomic<int>  recv_ref_cnt{ 0 }; 
+        std::atomic<int>  send_ref_cnt{ 0 }; 
         CumBuffer* GetBuffer() {
             return & (per_recv_io_ctx->cum_buffer);
         }
@@ -268,7 +269,6 @@ class ASock
 	bool RecvData(size_t worker_id, Context* ctx_ptr, DWORD bytes_transferred);
 	bool RecvfromData(size_t worker_id, Context* ctx_ptr, DWORD bytes_transferred); //udp
     void ReSetCtxPtr(Context* ctx_ptr);
-    void HandleError(Context* ctx_ptr, int err);
     bool SendPendingData(); //client only
 #endif
 #if defined __APPLE__ || defined __linux__ 
@@ -388,6 +388,10 @@ class ASock
     void  StopServer();
     size_t  GetMaxClientLimit(){return max_client_limit_ ; }
     int   GetCountOfClients(){ return client_cnt_ ; }
+    size_t  GetCountOfClientCashQueue(){ 
+        std::lock_guard<std::mutex> lock(per_io_data_cache_lock_);
+        return queue_client_cache_.size(); 
+    }
 
   private :
     std::string       server_ip_   ;
