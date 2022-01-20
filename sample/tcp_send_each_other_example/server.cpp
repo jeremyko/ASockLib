@@ -181,7 +181,7 @@ int main(int argc, char* argv[])
     echoserver.InitializeTcpServer();
     std::cout << "server started\n";
     while( echoserver.IsServerRunning() ) {
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::this_thread::sleep_for(std::chrono::seconds(5));
         std::cout << "*   client total = " << echoserver.tcp_server_.GetCountOfClients() << 
                      "    client cash = " << echoserver.tcp_server_.GetCountOfClientCashQueue() << "\n";
     }

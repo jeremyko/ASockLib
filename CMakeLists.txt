@@ -16,7 +16,7 @@ SET(CMAKE_BUILD_TYPE Release)
 if(WIN32)
    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /nologo /W3 /Gy /EHsc")
    SET(CMAKE_CXX_FLAGS_DEBUG           " /MTd /ZI /Od ")
-   SET(CMAKE_CXX_FLAGS_RELEASE         " /MT  ")
+   SET(CMAKE_CXX_FLAGS_RELEASE         " /MT /O2 ")
 
    link_libraries(ws2_32 wsock32)   
    add_library (ASockLib lib/src/win/ASock.cpp ${INCS} )
