@@ -388,10 +388,12 @@ class ASock
     void  StopServer();
     size_t  GetMaxClientLimit(){return max_client_limit_ ; }
     int   GetCountOfClients(){ return client_cnt_ ; }
+#ifdef WIN32
     size_t  GetCountOfClientCashQueue(){ 
         std::lock_guard<std::mutex> lock(per_io_data_cache_lock_);
         return queue_client_cache_.size(); 
     }
+#endif
 
   private :
     std::string       server_ip_   ;
