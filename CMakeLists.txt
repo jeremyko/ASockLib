@@ -12,6 +12,7 @@ SET(CMAKE_BUILD_TYPE Release)
 
 #XXX for terminal debugging
 #ADD_DEFINITIONS ( -DDEBUG_PRINT )
+SET (CMAKE_VERBOSE_MAKEFILE true)
 
 if(WIN32)
    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /nologo /W3 /Gy /EHsc")
