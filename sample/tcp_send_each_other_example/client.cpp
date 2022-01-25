@@ -61,7 +61,7 @@ bool STEO_Client::InitializeTcpClient(size_t client_id)
     tcp_client_.SetCbOnRecvedCompletePacket(std::bind( &STEO_Client::OnRecvedCompleteData, this, _1,_2,_3));
     //tcp_client_.SetCbOnDisconnectedFromServer(std::bind( &STEO_Client::OnDisconnectedFromServer, this));
     //connect timeout is 3 secs, max message length is approximately 1024 bytes...
-    if(!tcp_client_.InitTcpClient("127.0.0.1", 9990, 3, 1024 ) ) {
+    if(!tcp_client_.InitTcpClient("127.0.0.1", 9990, 3, 40960 ) ) {
         ELOG("error : "<< tcp_client_.GetLastErrMsg() ); 
         return false;
     }
@@ -249,7 +249,7 @@ int main(int argc, char* argv[])
     int elapsed_min = (int)elapsed_time / (60 * 1000);
     int elapsed_sec = (int)elapsed_time / 1000;
     char elapsed_fmt[100];
-    snprintf(elapsed_fmt,sizeof(elapsed_fmt), "%02d:%02d:%02d.%d", elapsed_hour , 
+    snprintf(elapsed_fmt,sizeof(elapsed_fmt), "%02d:%02d:%02d.%03d", elapsed_hour , 
          (int)elapsed_min -(elapsed_hour * 60) , (int)elapsed_sec -(elapsed_min * 60)  , 
          (int)elapsed_time - (1000 * elapsed_sec) );
     std::cout << "total server response count = " << g_responsed_cnt << "\n";
