@@ -890,7 +890,7 @@ void ASock::PushPerIoDataToCache(PER_IO_DATA* per_io_data_ptr) {
     per_io_data_ptr->total_send_len = 0;
     per_io_data_ptr->complete_recv_len = 0;
     per_io_data_ptr->sent_len = 0;
-    per_io_data_ptr->cum_buffer.ReSet();
+    //per_io_data_ptr->cum_buffer.ReSet(); //현재 send 에서만 사용하므로 불필요
     queue_per_io_data_cache_.push(per_io_data_ptr);
     DBG_LOG("queue_per_io_data_cache_ client cache size = " << queue_per_io_data_cache_.size());
 }
@@ -921,14 +921,15 @@ bool ASock::BuildPerIoDataCache() {
             DBG_ELOG(err_msg_);
             return false;
         }
-        if (cumbuffer::OP_RSLT_OK != per_io_data_ptr->cum_buffer.Init(max_data_len_)) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
-            err_msg_ = std::string("cumBuffer(recv) Init error : ") +
-                std::string(per_io_data_ptr->cum_buffer.GetErrMsg());
-            DBG_ELOG(err_msg_);
-            delete per_io_data_ptr;
-            return false;
-        }
+        // send 에서만 사용되므로 현재 cumbuffer 불필요.
+        //if (cumbuffer::OP_RSLT_OK != per_io_data_ptr->cum_buffer.Init(max_data_len_)) {
+        //    std::lock_guard<std::mutex> lock(err_msg_lock_);
+        //    err_msg_ = std::string("cumBuffer(recv) Init error : ") +
+        //        std::string(per_io_data_ptr->cum_buffer.GetErrMsg());
+        //    DBG_ELOG(err_msg_);
+        //    delete per_io_data_ptr;
+        //    return false;
+        //}
         per_io_data_ptr->wsabuf.buf = NULL;
         per_io_data_ptr->wsabuf.len = 0 ;
         per_io_data_ptr->io_type = EnumIOType::IO_UNKNOWN;
