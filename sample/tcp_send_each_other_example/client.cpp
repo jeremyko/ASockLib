@@ -234,7 +234,7 @@ int main(int argc, char* argv[])
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
         (*it)->WaitForClientLoopExit();
     }
-
+    std::this_thread::sleep_for(std::chrono::seconds(2)); // wait all disconnect callback invoked
     while (! vec_clients.empty()) {
         delete vec_clients.back();
         vec_clients.pop_back();
