@@ -974,9 +974,9 @@ bool ASock::BuildClientContextCache() {
         }
         ctx_ptr->pending_send_deque.clear();
         ReSetCtxPtr(ctx_ptr);
-        queue_client_cache_.push(ctx_ptr);
+        queue_ctx_cache_.push(ctx_ptr);
     }
-    DBG_LOG("current queue_client_cache_ size =" << queue_client_cache_.size());
+    DBG_LOG("current queue_ctx_cache_ size =" << queue_ctx_cache_.size());
     return true;
 }
 ///////////////////////////////////////////////////////////////////////////////
@@ -984,22 +984,22 @@ Context* ASock::PopClientContextFromCache()
 {
     Context* ctx_ptr = nullptr;
     { //lock scope
-        std::lock_guard<std::mutex> lock(cache_lock_);
-        if (!queue_client_cache_.empty()) {
-            ctx_ptr = queue_client_cache_.front();
-            queue_client_cache_.pop(); 
-            DBG_LOG("queue_client_cache not empty! -> " <<"queue client cache size = " << queue_client_cache_.size());
+        std::lock_guard<std::mutex> lock(ctx_cache_lock_);
+        if (!queue_ctx_cache_.empty()) {
+            ctx_ptr = queue_ctx_cache_.front();
+            queue_ctx_cache_.pop(); 
+            DBG_LOG("queue_ctx_cache not empty! -> " <<"queue ctx cache size = " << queue_ctx_cache_.size());
             ReSetCtxPtr(ctx_ptr);
             return ctx_ptr;
         }
     }
     //alloc new !!!
-    std::lock_guard<std::mutex> lock(cache_lock_);
+    std::lock_guard<std::mutex> lock(ctx_cache_lock_);
     if (!BuildClientContextCache()) {
         return nullptr;
     }
-    Context* rtn_ctx_ptr = queue_client_cache_.front();
-    queue_client_cache_.pop();
+    Context* rtn_ctx_ptr = queue_ctx_cache_.front();
+    queue_ctx_cache_.pop();
     ReSetCtxPtr(rtn_ctx_ptr);
     return rtn_ctx_ptr ;
 }
@@ -1007,14 +1007,14 @@ Context* ASock::PopClientContextFromCache()
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::PushClientContextToCache(Context* ctx_ptr)
 {
-    std::lock_guard<std::mutex> lock(cache_lock_);
+    std::lock_guard<std::mutex> lock(ctx_cache_lock_);
     {
         //reset all
         DBG_LOG("sock=" << ctx_ptr->sock_id_copy);
         ReSetCtxPtr(ctx_ptr);
     }
-    queue_client_cache_.push(ctx_ptr);
-    DBG_LOG("queue client cache size = " << queue_client_cache_.size());
+    queue_ctx_cache_.push(ctx_ptr);
+    DBG_LOG("queue ctx cache size = " << queue_ctx_cache_.size());
 }
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::ReSetCtxPtr(Context* ctx_ptr)
@@ -1044,16 +1044,16 @@ void ASock::ReSetCtxPtr(Context* ctx_ptr)
 void ASock::ClearClientCache()
 {
     DBG_LOG("======= clear all cache ========");
-    std::lock_guard<std::mutex> lock(cache_lock_);
-    while (!queue_client_cache_.empty()) {
-        Context* ctx_ptr = queue_client_cache_.front();
+    std::lock_guard<std::mutex> lock(ctx_cache_lock_);
+    while (!queue_ctx_cache_.empty()) {
+        Context* ctx_ptr = queue_ctx_cache_.front();
         while(!ctx_ptr->pending_send_deque.empty() ) {
             PENDING_SENT pending_sent= ctx_ptr->pending_send_deque.front();
             delete [] pending_sent.pending_sent_data;
             ctx_ptr->pending_send_deque.pop_front();
         }
         delete ctx_ptr;
-        queue_client_cache_.pop();
+        queue_ctx_cache_.pop();
     }
 }
 

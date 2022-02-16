@@ -61,7 +61,7 @@ bool STEO_Client::InitializeTcpClient(size_t client_id)
     tcp_client_.SetCbOnRecvedCompletePacket(std::bind( &STEO_Client::OnRecvedCompleteData, this, _1,_2,_3));
     //tcp_client_.SetCbOnDisconnectedFromServer(std::bind( &STEO_Client::OnDisconnectedFromServer, this));
     //connect timeout is 3 secs, max message length is approximately 1024 bytes...
-    if(!tcp_client_.InitTcpClient("127.0.0.1", 9990, 3, 40960 ) ) {
+    if(!tcp_client_.InitTcpClient("127.0.0.1", 9990, 3, 1024 ) ) {
         ELOG("error : "<< tcp_client_.GetLastErrMsg() ); 
         return false;
     }

@@ -567,10 +567,10 @@ Context* ASock::PopClientContextFromCache()
 {
     Context* ctx_ptr = nullptr;
     {//lock scope
-        std::lock_guard<std::mutex> lock(cache_lock_);
-        if (!queue_client_cache_.empty()) {
-            ctx_ptr = queue_client_cache_.front();
-            queue_client_cache_.pop();
+        std::lock_guard<std::mutex> lock(ctx_cache_lock_);
+        if (!queue_ctx_cache_.empty()) {
+            ctx_ptr = queue_ctx_cache_.front();
+            queue_ctx_cache_.pop();
             return ctx_ptr;
         }
     }
@@ -604,23 +604,23 @@ void ASock::PushClientContextToCache(Context* ctx_ptr)
         delete [] pending_sent.pending_sent_data;
         ctx_ptr->pending_send_deque.pop_front();
     }
-    std::lock_guard<std::mutex> lock(cache_lock_);
-    queue_client_cache_.push(ctx_ptr);
+    std::lock_guard<std::mutex> lock(ctx_cache_lock_);
+    queue_ctx_cache_.push(ctx_ptr);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 void ASock::ClearClientCache()
 {
-    std::lock_guard<std::mutex> lock(cache_lock_);
-    while(!queue_client_cache_.empty() ) {
-        Context* ctx_ptr = queue_client_cache_.front();
+    std::lock_guard<std::mutex> lock(ctx_cache_lock_);
+    while(!queue_ctx_cache_.empty() ) {
+        Context* ctx_ptr = queue_ctx_cache_.front();
         while(!ctx_ptr->pending_send_deque.empty() ) {
             PENDING_SENT pending_sent= ctx_ptr->pending_send_deque.front();
             delete [] pending_sent.pending_sent_data;
             ctx_ptr->pending_send_deque.pop_front();
         }
         delete ctx_ptr;
-        queue_client_cache_.pop();
+        queue_ctx_cache_.pop();
     }
 }
 

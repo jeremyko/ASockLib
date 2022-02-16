@@ -48,8 +48,8 @@ bool STEO_Server::InitializeTcpServer()
     tcp_server_.SetCbOnRecvedCompletePacket(std::bind( &STEO_Server::OnRecvedCompleteData, this, _1,_2,_3));
     tcp_server_.SetCbOnClientConnected      (std::bind( &STEO_Server::OnClientConnected, this, _1));
     tcp_server_.SetCbOnClientDisconnected   (std::bind( &STEO_Server::OnClientDisconnected, this, _1));
-    //max client is 10000, max message length is approximately 1024 bytes...
-    if(!tcp_server_.InitTcpServer("127.0.0.1", 9990, 1024 /*,default=10000*/)) {
+    //max client is 10000
+    if(!tcp_server_.InitTcpServer("127.0.0.1", 9990, 1024, 10000 /*,default=10000*/)) {
         std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< tcp_server_.GetLastErrMsg() <<"\n"; 
         return false;
     }
@@ -124,7 +124,7 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Server::OnClientConnected(asock::Context* ctx_ptr) 
 {
-    std::cout <<"client connected : socket fd ["<< ctx_ptr->socket <<"]\n";
+    //std::cout <<"client connected : socket fd ["<< ctx_ptr->socket <<"]\n";
 
     //spawn new thread (server, client both sending each other)
     for (size_t j = 0; j < SERVER_SEND_THREADS_PER_CLIENT; j++) {
@@ -136,7 +136,7 @@ void STEO_Server::OnClientConnected(asock::Context* ctx_ptr)
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Server::OnClientDisconnected(asock::Context* ctx_ptr) 
 {
-    std::cout <<"client disconnected : socket fd ["<< ctx_ptr->socket <<"]\n";
+    //std::cout <<"client disconnected : socket fd ["<< ctx_ptr->socket <<"]\n";
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -183,8 +183,8 @@ int main(int argc, char* argv[])
     while( echoserver.IsServerRunning() ) {
         std::this_thread::sleep_for(std::chrono::seconds(5));
 #ifdef WIN32
-        std::cout << "*   client total = " << echoserver.tcp_server_.GetCountOfClients() << 
-                     "    client cash = " << echoserver.tcp_server_.GetCountOfClientCashQueue() << "\n";
+        std::cout << "*   client total  = " << echoserver.tcp_server_.GetCountOfClients() << 
+                     "    context cache = " << echoserver.tcp_server_.GetCountOfContextQueue() << "\n";
 #endif
     }
     std::cout << "server exit...\n";

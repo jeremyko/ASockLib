@@ -210,7 +210,7 @@ class ASock
             err_msg_ = " length is invalid";
             return false;
         }
-        max_data_len_ = max_data_len * 10 ; 
+        max_data_len_ = max_data_len * 20 ; 
         return true;
     }
     std::string GetLastErrMsg(){return err_msg_; }
@@ -389,9 +389,9 @@ class ASock
     size_t  GetMaxClientLimit(){return max_client_limit_ ; }
     int   GetCountOfClients(){ return client_cnt_ ; }
 #ifdef WIN32
-    size_t  GetCountOfClientCashQueue(){ 
-        std::lock_guard<std::mutex> lock(per_io_data_cache_lock_);
-        return queue_client_cache_.size(); 
+    size_t  GetCountOfContextQueue(){ 
+        std::lock_guard<std::mutex> lock(ctx_cache_lock_);
+        return queue_ctx_cache_.size(); 
     }
 #endif
 
@@ -406,8 +406,8 @@ class ASock
     size_t            max_client_limit_  {0};
     int               max_worker_cnt_{ 0 };
     std::atomic<int>  cur_quit_cnt_{0};
-    std::queue<Context*> queue_client_cache_;
-    std::mutex           cache_lock_ ; 
+    std::queue<Context*> queue_ctx_cache_;
+    std::mutex           ctx_cache_lock_ ; 
 #if defined __APPLE__ || defined __linux__ 
     Context*  listen_context_ptr_ {nullptr};
 #endif
