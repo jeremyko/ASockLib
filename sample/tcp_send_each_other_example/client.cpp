@@ -39,6 +39,12 @@ class STEO_Client
     void WaitForClientLoopExit();
     std::string  GetLastErrMsg(){return  tcp_client_.GetLastErrMsg() ; }
     size_t client_id_;
+    size_t GetMaxOverlappedRecvCnt() {
+        return tcp_client_.GetMaxOverlappedRecvCnt();
+    }
+    size_t GetMaxDataLen() {
+        return tcp_client_.GetMaxDataLen();
+    }
   private:
     asock::ASock   tcp_client_ ; //composite usage
     size_t  OnCalculateDataLen(asock::Context* context_ptr); 
@@ -60,8 +66,8 @@ bool STEO_Client::InitializeTcpClient(size_t client_id)
     tcp_client_.SetCbOnCalculatePacketLen(std::bind( &STEO_Client::OnCalculateDataLen, this, _1));
     tcp_client_.SetCbOnRecvedCompletePacket(std::bind( &STEO_Client::OnRecvedCompleteData, this, _1,_2,_3));
     //tcp_client_.SetCbOnDisconnectedFromServer(std::bind( &STEO_Client::OnDisconnectedFromServer, this));
-    //connect timeout is 3 secs, max message length is approximately 1024 bytes...
-    if(!tcp_client_.InitTcpClient("127.0.0.1", 9990, 3, 40960 ) ) {
+    //connect timeout is 3 secs
+    if(!tcp_client_.InitTcpClient("127.0.0.1", 9990, 3, 4096 * THREADS_PER_CLIENT) ) {
         ELOG("error : "<< tcp_client_.GetLastErrMsg() ); 
         return false;
     }
@@ -84,7 +90,7 @@ void STEO_Client::SendThread(size_t index)
         if (IsConnected()) {
             break;
         } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1)); 
+            //std::this_thread::sleep_for(std::chrono::milliseconds(1)); 
             continue;
         }
     }
@@ -93,12 +99,11 @@ void STEO_Client::SendThread(size_t index)
     ST_MY_HEADER header;
     char send_msg[256];
     while(IsConnected()){
-        std::string data = "client[";
+        std::string data = "client:";
         data += std::to_string(client_id_);
-        data += "]thread index[";
+        data += ",thread index:";
         data += std::to_string(index);
-        data += "](";
-        data += std::to_string(sent_cnt) + std::string(")");
+        data += std::to_string(sent_cnt) ;
         {
             std::lock_guard<std::mutex> lock(sent_chk_lock_);
             vec_sent_strings_.push_back(data);
@@ -111,6 +116,7 @@ void STEO_Client::SendThread(size_t index)
             DBG_ELOG("error! " << tcp_client_.GetLastErrMsg());
             return;
         }
+        //std::this_thread::sleep_for(std::chrono::milliseconds(200)); //TEST Áö¿ö¶ó TODO
         sent_cnt++ ;
         if(sent_cnt >= SEND_PER_THREAD){
             //LOG("client " <<index << " completes send ");
@@ -195,6 +201,8 @@ int main(int argc, char* argv[])
     std::vector<std::thread>  vec_threads ;
     std::vector<STEO_Client*> vec_clients;
     std::cout << "client started\n";
+    size_t maxOverlappedCnt = 0;
+    size_t max_data_len = 0;
     for (size_t i = 0; i < MAX_CLIENTS; i++) {
         STEO_Client* client = new (std::nothrow) STEO_Client;
         if (client == nullptr) {
@@ -204,6 +212,8 @@ int main(int argc, char* argv[])
         if(!client->InitializeTcpClient(i)){
             continue;
         }
+        maxOverlappedCnt = client->GetMaxOverlappedRecvCnt();
+        max_data_len = client->GetMaxDataLen();
         //spawn threads along with creating clients
         //for (size_t j = 0; j < MAX_THREADS; j++) {
         //    vec_threads.push_back(std::thread(&STEO_Client::SendThread, client, j));
@@ -242,6 +252,8 @@ int main(int argc, char* argv[])
     vec_clients.clear();
 
 	std::cout << "\n\n=====================================================================\n";
+    std::cout << "overlapped recv count       = " << maxOverlappedCnt << "\n";
+    std::cout << "max data length             = " << max_data_len << "\n";
     std::cout << "total clients               = " << MAX_CLIENTS <<"\n";
     std::cout << "threads per client          = " << THREADS_PER_CLIENT << "\n";
     std::cout << "send per thread             = " << SEND_PER_THREAD << "\n";

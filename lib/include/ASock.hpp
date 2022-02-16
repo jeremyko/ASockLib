@@ -121,7 +121,7 @@ namespace asock {
     const size_t  DEFAULT_MAX_CLIENT  =10000;
     const size_t  MORE_TO_COME        =0;
 
-    typedef enum _ENUM_SOCK_USAGE_ {
+    enum class SockUsage {
         SOCK_USAGE_UNKNOWN = 0 ,
         SOCK_USAGE_TCP_SERVER ,
         SOCK_USAGE_UDP_SERVER ,
@@ -129,7 +129,7 @@ namespace asock {
         SOCK_USAGE_TCP_CLIENT ,
         SOCK_USAGE_UDP_CLIENT ,
         SOCK_USAGE_IPC_CLIENT 
-    } ENUM_SOCK_USAGE ;
+    }  ;
 
     typedef struct _PENDING_SENT_ {
         char*       pending_sent_data ; 
@@ -166,32 +166,53 @@ namespace asock {
         IO_QUIT,
 		IO_UNKNOWN
     };
+
     typedef struct _PER_IO_DATA_ {
         OVERLAPPED	overlapped ;
         WSABUF      wsabuf;
-		EnumIOType  io_type;
-        CumBuffer   cum_buffer;
+		EnumIOType  io_type { EnumIOType::IO_UNKNOWN };
+        //CumBuffer   cum_buffer; //TODO 고정 길이 버퍼? char buffer [1023];
+            // TODO 일단 고정길이 버퍼 여러개를 만들어서 테스트해보자. cumbuffer 대신..
         size_t      total_send_len {0} ;
-        size_t      complete_recv_len {0} ;
         size_t      sent_len {0} ; //XXX
-        bool        is_packet_len_calculated {false};
+        size_t      recv_issued_id { 0 };  //TODO
     } PER_IO_DATA; //XXX 1200 bytes.... 
 
+    // recv 중첩 호출시마다(lock 에 의해 동기화되는) deque 에 저장되는 정보. 
+    // recv 완료 이벤트가 호출 순서와 다른 순서로 발생 가능하므로 관리 필요
+    typedef struct _RECV_ISSUED_ID_N_STATE_ {
+        size_t	id {0};
+        bool    is_recved{false};
+        size_t  recved_len{ 0 };
+        char*   recved_data{nullptr}; //TODO recv 한 데이터를 복사해서 보관한다. 순서 없이 도착한 경우등 
+    } RECV_ISSUED_ID_N_STATE;
+
+    //========================================= context 
     typedef struct _Context_ {
-        SOCKET_T     socket; 
+        SOCKET_T     socket{INVALID_SOCKET};
         int          sock_id_copy{ -1 };
-        PER_IO_DATA* per_recv_io_ctx { NULL }; //XXX TODO multiple wasrecv
+        //PER_IO_DATA* per_recv_io_ctx { NULL }; //XXX TODO multiple wasrecv : 중첩 수신마다 별개 버퍼 사용.여기 있을 필요 없다. XXX
         std::mutex   ctx_lock ; 
         std::atomic<int>  recv_ref_cnt{ 0 }; 
         std::atomic<int>  send_ref_cnt{ 0 }; 
-        CumBuffer* GetBuffer() {
-            return & (per_recv_io_ctx->cum_buffer);
+        CumBuffer* GetBuffer() {  // TODO XXX 
+            return & total_buffer;
         }
         bool         is_connected {false}; 
         SOCKADDR_IN  udp_remote_addr ; //for udp
         std::deque<PENDING_SENT> pending_send_deque ; 
         bool         is_sent_pending {false}; 
+        //multiple wsarecv ----- START
+        bool        is_packet_len_calculated {false};
+        size_t      complete_recv_len {0} ; //TODO
+        CumBuffer   total_buffer; //TODO 중첩 수신된 데이터를 하나로 모은다, client 경우에는 그냥 버퍼로 사용
+        std::deque<RECV_ISSUED_ID_N_STATE> deq_recv_issued_id_n_state ; // TODO : recv 호출시마다 증가되는 issue id 를 순서대로 저장.
+        std::deque<char*> deq_recved_data ; // TODO : 순서대로 도착하지 않는 경우 보관.
+        std::atomic<size_t>  cur_recv_issued_id { 0 }; //recv 호출시 증가 
+        //multiple wsarecv ----- START
     } Context ;
+    //========================================= context 
+
 #endif //WIN32
 
 
@@ -210,7 +231,7 @@ class ASock
             err_msg_ = " length is invalid";
             return false;
         }
-        max_data_len_ = max_data_len * 10 ; 
+        max_data_len_ = max_data_len * 10 * max_overlapped_recv_cnt_; //TODO 용량을 어떻게 ?
         return true;
     }
     std::string GetLastErrMsg(){return err_msg_; }
@@ -236,10 +257,77 @@ class ASock
         }
         return true;
     }
+    size_t GetMaxOverlappedRecvCnt() {
+        return max_overlapped_recv_cnt_;
+    }
+    size_t GetWorkerCnt() {
+        return max_worker_cnt_;
+    }
+    size_t GetMaxDataLen() {
+        return max_data_len_ ;
+    }
 
   protected :
     size_t  recv_buffer_capcity_{0};
     size_t  max_data_len_ {0};
+    //+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    size_t  max_overlapped_recv_cnt_ {4}; //TODO 1,2,.. 별 차이없고..많으면 오히려 성능이 안나옴 ? 
+    //TODO RecvData, IssueRecv 함수가 lock 에 묶여 있다!! 개별함수를 thread 에서 호출해야 할거 같고...
+    //  ==>   RecvData 와 분리가능하게 !!!!
+    // --> 여러개의 중첩 수신인 경우, 처리가 빨라야 의미 있다... 늦으면 오히려 한번에 많이 받아처리하는게 더 빠름..
+    // TODO XXX --> cumbuffer 용량이 매우 커야 할수도 있다. 중첩호출 처음것이 안들어도고 계속 누적되면..  
+    /*
+    * 총 수신 바이트 동일 : 
+    -- 중첩 2
+    worker count    = 16
+    max data length = 102400
+    server started
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:IssueRecv:400) >>> (id = 0), per_recv_io->wsabuf.len =102400
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:IssueRecv:400) >>> (id = 1), per_recv_io->wsabuf.len =102400
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:AcceptThreadRoutine:683) all initial IssueRecv invoked.....
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:199)  <<< (id = 0) bytes_transferred =12537
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:243)  *** (id = 0), max_fragments_index_canbe_processed :0 : sock =300
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:246)     len = 12537
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:265) GetCumulatedLen ==>12537
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:IssueRecv:400) >>> (id = 2), per_recv_io->wsabuf.len =102400
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:199)  <<< (id = 2) bytes_transferred =28
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:243)  *** (id = 2), max_fragments_index_canbe_processed :-1 : sock =300
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:IssueRecv:400) >>> (id = 3), per_recv_io->wsabuf.len =102400
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:199)  <<< (id = 3) bytes_transferred =840
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:243)  *** (id = 3), max_fragments_index_canbe_processed :-1 : sock =300
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:IssueRecv:400) >>> (id = 4), per_recv_io->wsabuf.len =102400
+
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:199)  <<< (id = 1) bytes_transferred =65495 //XXX 이게 문제!
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:243)  *** (id = 1), max_fragments_index_canbe_processed :2 : sock =300
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:246)     len = 65495
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:246)     len = 28
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:246)     len = 840
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:265) GetCumulatedLen ==>66363
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:IssueRecv:400) >>> (id = 5), per_recv_io->wsabuf.len =102400
+
+    -- 중첩 1
+    worker count    = 16
+    max data length = 102400
+    server started
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:IssueRecv:400) >>> (id = 0), per_recv_io->wsabuf.len =102400
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:AcceptThreadRoutine:683) all initial IssueRecv invoked.....
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:199)  <<< (id = 0) bytes_transferred =12698
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:243)  *** (id = 0), max_fragments_index_canbe_processed :0 : sock =300
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:246)     len = 12698
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:265) GetCumulatedLen ==>12698
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:IssueRecv:400) >>> (id = 1), per_recv_io->wsabuf.len =102400
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:199)  <<< (id = 1) bytes_transferred =62482
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:243)  *** (id = 1), max_fragments_index_canbe_processed :0 : sock =300
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:246)     len = 62482
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:265) GetCumulatedLen ==>62482
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:IssueRecv:400) >>> (id = 2), per_recv_io->wsabuf.len =102400
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:199)  <<< (id = 2) bytes_transferred =3720
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:243)  *** (id = 2), max_fragments_index_canbe_processed :0 : sock =300
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:246)     len = 3720
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:RecvData:265) GetCumulatedLen ==>3720
+    (C:\Users\jerem\Downloads\mydev\ASockLib\lib\src\win\ASock.cpp:IssueRecv:400) >>> (id = 3), per_recv_io->wsabuf.len =102400
+    */
+    //+++++++++++++++++++++++++++++++++++++++++++++++++++++++
     std::mutex   lock_ ; 
 #ifdef __APPLE__
     struct  kevent* kq_events_ptr_ {nullptr};
@@ -255,7 +343,7 @@ class ASock
     std::mutex   err_msg_lock_ ; 
     std::string  err_msg_ ;
     size_t send_buffer_capcity_ {asock::DEFAULT_CAPACITY};
-    ENUM_SOCK_USAGE sock_usage_ {asock::SOCK_USAGE_UNKNOWN};
+    SockUsage sock_usage_ { SockUsage::SOCK_USAGE_UNKNOWN};
     std::function<size_t(Context*)>   cb_on_calculate_data_len_ {nullptr} ;
     std::function<bool(Context*,char*,size_t)>cb_on_recved_complete_packet_{nullptr};
 
@@ -266,7 +354,7 @@ class ASock
 	void StartWorkerThreads();
     bool StartServer();
     void BuildErrMsgString(int err_no);
-	bool RecvData(size_t worker_id, Context* ctx_ptr, DWORD bytes_transferred);
+	bool RecvData(PER_IO_DATA* per_io_data, Context* ctx_ptr, DWORD bytes_transferred);
 	bool RecvfromData(size_t worker_id, Context* ctx_ptr, DWORD bytes_transferred); //udp
     void ReSetCtxPtr(Context* ctx_ptr);
     bool SendPendingData(); //client only
@@ -281,7 +369,7 @@ class ASock
 #elif __linux__
     bool ControlEpoll(Context* ctx_ptr , uint32_t events, int op);
 #elif WIN32
-    bool IssueRecv(size_t worker_index, Context* client_ctx);
+    bool IssueRecv( Context* client_ctx);
 #endif
 
   private:
@@ -348,7 +436,7 @@ class ASock
 
     //for composition : Assign yours to these callbacks 
   public :
-    void TerminateClient(Context* ctx_ptr,bool is_graceful=true);
+    void TerminateClient(Context* ctx_ptr,size_t worker_index, bool is_graceful=true);
     bool SetCbOnDisconnectedFromServer(std::function<void()> cb) {
         //for composition usage 
         if(cb != nullptr) {
@@ -389,9 +477,9 @@ class ASock
     size_t  GetMaxClientLimit(){return max_client_limit_ ; }
     int   GetCountOfClients(){ return client_cnt_ ; }
 #ifdef WIN32
-    size_t  GetCountOfClientCashQueue(){ 
-        std::lock_guard<std::mutex> lock(per_io_data_cache_lock_);
-        return queue_client_cache_.size(); 
+    size_t  GetCountOfCtxCashQueue(){ 
+        std::lock_guard<std::mutex> lock(cache_lock_);
+        return queue_ctx_cache_.size(); 
     }
 #endif
 
@@ -406,7 +494,7 @@ class ASock
     size_t            max_client_limit_  {0};
     int               max_worker_cnt_{ 0 };
     std::atomic<int>  cur_quit_cnt_{0};
-    std::queue<Context*> queue_client_cache_;
+    std::queue<Context*> queue_ctx_cache_;
     std::mutex           cache_lock_ ; 
 #if defined __APPLE__ || defined __linux__ 
     Context*  listen_context_ptr_ {nullptr};
