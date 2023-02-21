@@ -147,7 +147,7 @@ bool ASock::RecvfromData(Context* ctx_ptr) //XXX context 가 지금 서버 것.
     if( recved_len > 0) {
         ctx_ptr->recv_buffer.IncreaseData(recved_len);
         //udp got complete packet 
-        char* complete_packet_data = new (std::nothrow) char [max_data_len_] ; 
+        char* complete_packet_data = new (std::nothrow) char [max_data_len_] ; // TODO no..not good
         if(complete_packet_data == NULL) {
             err_msg_ = "memory alloc failed!";
             return false;
@@ -213,7 +213,7 @@ bool ASock::RecvData(Context* ctx_ptr)
                 return true; //need to recv more
             } else {
                 //got complete packet 
-                char* complete_packet_data = new (std::nothrow) char [ctx_ptr->complete_packet_len] ; //XXX 
+                char* complete_packet_data = new (std::nothrow) char [ctx_ptr->complete_packet_len] ; // TODO no..not good
                 if(complete_packet_data == NULL) {
                     err_msg_ = "memory alloc failed!";
                     return false;
