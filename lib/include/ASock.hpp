@@ -210,7 +210,7 @@ class ASock
             err_msg_ = " length is invalid";
             return false;
         }
-        max_data_len_ = max_data_len * 20 ; 
+        max_data_len_ = max_data_len * 20 ; //TODO this is not good 
         return true;
     }
     std::string GetLastErrMsg(){return err_msg_; }
