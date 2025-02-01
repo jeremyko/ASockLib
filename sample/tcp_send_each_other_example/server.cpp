@@ -82,8 +82,8 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
     //user specific : your whole data has arrived.
     
     //char packet[asock::DEFAULT_PACKET_SIZE];
-    //memcpy(&packet, data_ptr + CHAT_HEADER_SIZE, len - CHAT_HEADER_SIZE);
-    //packet[len - CHAT_HEADER_SIZE] = '\0';
+    //memcpy(&packet, data_ptr, len);
+    //packet[len] = '\0';
     //std::cout << "recved [" << packet << "]\n";
     //---------------------------------------
     //this is echo server
