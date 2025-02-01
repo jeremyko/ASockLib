@@ -1,7 +1,4 @@
-add_executable (udp_server_compo echo_server.cpp)
-add_executable (udp_client_compo client.cpp)
- 
-target_link_libraries (udp_server_compo LINK_PUBLIC ASockLib)
-target_link_libraries (udp_client_compo LINK_PUBLIC ASockLib)
+add_executable(udp_server_compo echo_server.cpp)
+add_executable(udp_client_compo client.cpp)
 
 

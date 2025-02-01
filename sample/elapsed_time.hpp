@@ -23,13 +23,11 @@
 #define __KOELAPSED_TIME_HPP__
 
 #include <chrono>
-#include <string>
 
 typedef std::chrono::duration<int, std::milli> millisecs_t;
 typedef std::chrono::duration<long long, std::micro> microsecs_t;
 
-typedef enum _ENUM_TIME_RESOLUTION_
-{
+typedef enum _ENUM_TIME_RESOLUTION_ {
     MILLI_SEC_RESOLUTION,
     MICRO_SEC_RESOLUTION,
     NO_RESOLUTION
@@ -37,8 +35,7 @@ typedef enum _ENUM_TIME_RESOLUTION_
 } ENUM_TIME_RESOLUTION;
 
 ////////////////////////////////////////////////////////////////////////////////
-class ElapsedTime
-{
+class ElapsedTime {
     public:
         ElapsedTime() {
             SetStartTime();
@@ -51,18 +48,20 @@ class ElapsedTime
         long long SetEndTime( ENUM_TIME_RESOLUTION resolution) {
             end_time_ = std::chrono::steady_clock::now(); 
             if(resolution == MILLI_SEC_RESOLUTION) {
-                millisecs_t duration(std::chrono::duration_cast<millisecs_t>(end_time_ - start_time_));
+                millisecs_t duration(std::chrono::duration_cast<millisecs_t>
+                                     (end_time_ - start_time_));
                 return duration.count();
             } else if (resolution == MICRO_SEC_RESOLUTION) {
-                microsecs_t duration(std::chrono::duration_cast<microsecs_t>(end_time_ - start_time_));
+                microsecs_t duration(std::chrono::duration_cast<microsecs_t>
+                                     (end_time_ - start_time_));
                 return duration.count();
             }
             return -1; //error
         }
 
     protected:
-        std::chrono::steady_clock::time_point start_time_; 
-        std::chrono::steady_clock::time_point end_time_  ;   
+        std::chrono::steady_clock::time_point start_time_;
+        std::chrono::steady_clock::time_point end_time_  ;
 };
 
 #endif

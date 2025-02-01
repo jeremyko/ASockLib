@@ -3,17 +3,16 @@
 #include <csignal>
 
 #include "ASock.hpp"
-#include "../../msg_defines.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 class UdpEchoServer 
 {
   public:
     UdpEchoServer(){this_instance_ = this; }
-    bool    initialize_udp_server();
+    bool    RunUdpServer();
     bool    IsServerRunning(){return udp_server_.IsServerRunning();};
     std::string  GetLastErrMsg(){return  udp_server_.GetLastErrMsg() ; }
-    static void sigint_handler(int signo);
+    static void SigIntHandler(int signo);
     asock::ASock udp_server_ ; //composite usage
 
     static  UdpEchoServer* this_instance_ ;
@@ -24,30 +23,30 @@ class UdpEchoServer
 UdpEchoServer* UdpEchoServer::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
-bool UdpEchoServer::initialize_udp_server()
-{
+bool UdpEchoServer::RunUdpServer() {
     //register callbacks
-    udp_server_.SetCbOnRecvedCompletePacket(std::bind( &UdpEchoServer::OnRecvedCompleteData, this,
-                    std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    //max message length is 1024 bytes, max client is 10000.
-    if(!udp_server_.InitUdpServer("127.0.0.1", 9990, 1024 /*,default=10000*/)) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< udp_server_.GetLastErrMsg() <<"\n"; 
+    udp_server_.SetCbOnRecvedCompletePacket(
+                    std::bind( &UdpEchoServer::OnRecvedCompleteData, this,
+                            std::placeholders::_1, 
+                            std::placeholders::_2, 
+                            std::placeholders::_3));
+    if(!udp_server_.RunUdpServer("127.0.0.1", 9990 )) {
+        std::cerr << udp_server_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) 
-{
+bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) {
     //user specific : your whole data has arrived. 
     char packet[asock::DEFAULT_PACKET_SIZE];
-    memcpy(&packet, data_ptr + CHAT_HEADER_SIZE, len - CHAT_HEADER_SIZE);
-    packet[len - CHAT_HEADER_SIZE] = '\0';
+    memcpy(&packet, data_ptr, len);
+    packet[len] = '\0';
     std::cout << "recved [" << packet << "]\n";
     //this is echo server
     if(! udp_server_.SendData(context_ptr, data_ptr, len) ) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< GetLastErrMsg() <<"\n"; 
+        std::cerr << GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
@@ -55,19 +54,17 @@ bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_
 
 ///////////////////////////////////////////////////////////////////////////////
 #if defined __APPLE__ || defined __linux__ 
-void UdpEchoServer::sigint_handler(int signo)
-{
+void UdpEchoServer::SigIntHandler(int signo) {
     sigset_t sigset, oldset;
     sigfillset(&sigset);
     if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0) {
-        std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< strerror(errno) <<"\n"; 
+        std::cerr << strerror(errno) <<"\n"; 
     }
     std::cout << "Stop Server! \n";
     UdpEchoServer::this_instance_->udp_server_.StopServer();
 }
 #else
-BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
-{
+BOOL WINAPI CtrlHandler(DWORD fdwCtrlType) {
     switch (fdwCtrlType) {
         // Handle the CTRL-C signal. 
     case CTRL_C_EVENT:
@@ -81,10 +78,9 @@ BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]) {
 #if defined __APPLE__ || defined __linux__ 
-    std::signal(SIGINT,UdpEchoServer::sigint_handler);
+    std::signal(SIGINT,UdpEchoServer::SigIntHandler);
 #else
     if (0 == SetConsoleCtrlHandler(CtrlHandler, TRUE)) {
         std::cout << "error: server exit...\n";
@@ -92,7 +88,7 @@ int main(int argc, char* argv[])
     }
 #endif
     UdpEchoServer echoserver; 
-    echoserver.initialize_udp_server();
+    echoserver.RunUdpServer();
     std::cout << "server started" << "\n";
     while( echoserver.IsServerRunning() ) {
         std::this_thread::sleep_for(std::chrono::seconds(1));

@@ -1,3 +1,4 @@
+/******************************************************************************
 MIT License
 
 Copyright (c) 2025 jung hyun, ko
@@ -19,3 +20,17 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+ *****************************************************************************/
+
+#ifndef ASOCK_HPP
+#define ASOCK_HPP
+
+#if defined __APPLE__ || defined __linux__ 
+#include "ASockNix.hpp"
+#elif WIN32
+#include "ASockWin.hpp"
+#endif
+
+#endif // ASOCK_HPP 
+
+

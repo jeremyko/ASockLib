@@ -23,25 +23,17 @@
 #ifndef _KOCONDVAR_HPP_
 #define _KOCONDVAR_HPP_
 
-#include <iostream>
-#include <thread>
-#include <atomic>
 #include <mutex>
-#include <functional>
-#include <vector>
-#include <queue>
 #include <condition_variable>
 #include <chrono>
 
-typedef enum __ENUM_COND_VAR_RSLT__
-{
+typedef enum __ENUM_COND_VAR_RSLT__ {
     COND_VAR_RSLT_TIMEOUT = 0,
     COND_VAR_RSLT_SIGNALED
 } ENUM_COND_VAR_RSLT ;
 
 ///////////////////////////////////////////////////////////////////////////////
-class CondVar
-{
+class CondVar {
     public:
         CondVar()  = default;
         ~CondVar() = default;
@@ -93,11 +85,8 @@ class CondVar
         std::mutex              cond_var_lock_ ;
         std::condition_variable cond_var_ ;
         size_t notified_cnt_ {0}; 
-        //XXX use count. no boolean. 
-        //NotifyOne, NotifyAll can be called multiple times before WaitForSignal is called.
         bool is_all_waiting_end_ {false};
 };
-
 
 #endif // _KOCONDVAR_HPP_
 
