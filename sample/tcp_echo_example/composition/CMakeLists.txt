@@ -1,4 +1,4 @@
-add_executable(tcp_server_compo echo_server.cpp)
-add_executable(tcp_client_compo client.cpp)
+add_executable(server_tcp_comp echo_server.cpp)
+add_executable(client_tcp_comp client.cpp)
 
 

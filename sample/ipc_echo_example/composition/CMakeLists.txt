@@ -1,5 +1,5 @@
-add_executable(ipc_server_compo echo_server.cpp)
-add_executable(ipc_client_compo client.cpp)
+add_executable(server_ipc_comp echo_server.cpp)
+add_executable(client_ipc_comp client.cpp)
 
 
 

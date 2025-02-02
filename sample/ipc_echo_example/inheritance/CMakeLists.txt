@@ -1,3 +1,3 @@
-add_executable(ipc_server_inher echo_server.cpp)
-add_executable(ipc_client_inher client.cpp)
+add_executable(server_ipc_inh echo_server.cpp)
+add_executable(client_ipc_inh client.cpp)
 

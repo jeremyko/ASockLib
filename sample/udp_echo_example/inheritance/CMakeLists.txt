@@ -1,3 +1,3 @@
-add_executable(udp_server_inher echo_server.cpp)
-add_executable(udp_client_inher client.cpp)
+add_executable(server_udp_inh echo_server.cpp)
+add_executable(client_udp_inh client.cpp)
 
