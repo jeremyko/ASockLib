@@ -34,6 +34,7 @@ Just copy all `*.hpp` header files to your project. And include `ASock.hpp`
 
 #include "ASock.hpp"
 
+#define DEFAULT_PACKET_SIZE 1024
 class EchoServer : public asock::ASock {
   private:
     bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len ) override;
@@ -44,7 +45,7 @@ class EchoServer : public asock::ASock {
 bool EchoServer::OnRecvedCompleteData(asock::Context* context_ptr, 
                                       char* data_ptr, size_t len ) {
     //user specific : - your whole data has arrived.
-    char packet[asock::DEFAULT_PACKET_SIZE];
+    char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet, data_ptr,len );
     packet[len] = '\0';
     std::cout << "recved [" << packet << "]\n";
@@ -89,6 +90,7 @@ int main(int argc, char* argv[]) {
 #include <cassert>
 #include "ASock.hpp"
 
+#define DEFAULT_PACKET_SIZE 1024
 class EchoClient : public asock::ASock
 {
   private:
@@ -98,7 +100,7 @@ class EchoClient : public asock::ASock
 
 bool EchoClient:: OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len) {
     //user specific : - your whole data has arrived.
-    char packet[asock::DEFAULT_PACKET_SIZE];
+    char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr ,len);
     packet[len] = '\0';
     std::cout << "server response [" << packet << "]\n";
