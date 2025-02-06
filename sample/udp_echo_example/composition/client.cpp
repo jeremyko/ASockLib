@@ -5,6 +5,7 @@
 #include <cassert>
 #include "ASock.hpp"
 
+#define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
 class UdpEchoClient 
 {
@@ -26,7 +27,8 @@ bool UdpEchoClient::IntUdpClient() {
                                             std::placeholders::_1, 
                                             std::placeholders::_2, 
                                             std::placeholders::_3));
-    if(!udp_client_.InitUdpClient("127.0.0.1", 9990  ) ) {
+    // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
+    if(!udp_client_.InitUdpClient("127.0.0.1", 9990, DEFAULT_PACKET_SIZE  ) ) {
         std::cerr << udp_client_.GetLastErrMsg() <<"\n"; 
         return false;
     }
@@ -37,7 +39,7 @@ bool UdpEchoClient::IntUdpClient() {
 bool UdpEchoClient:: OnRecvedCompleteData(asock::Context* context_ptr, 
                                           char* data_ptr, size_t len) {
     //user specific : your whole data has arrived.
-    char packet[asock::DEFAULT_PACKET_SIZE];
+    char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr, len );
     packet[len] = '\0';
     std::cout << "server response [" << packet << "]\n";

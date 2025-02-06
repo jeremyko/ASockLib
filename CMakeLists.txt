@@ -1,14 +1,14 @@
+# for sample and test executables.
 cmake_minimum_required(VERSION 3.14)
 
-project(ASock)
+project(ASockLib LANGUAGES CXX)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-set(CMAKE_CXX_STANDARD 11)
 #set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_BUILD_TYPE Release)
 
-#ADD_DEFINITIONS ( -DDEBUG_PRINT ) # for terminal debugging
+#add_definitions( -DDEBUG_PRINT ) # for debugging log
 
 set(CMAKE_VERBOSE_MAKEFILE true)
 
@@ -42,3 +42,5 @@ elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   add_subdirectory(sample/udp_echo_example/composition)
   add_subdirectory(sample/tcp_send_each_other_example)
 endif()
+
+add_subdirectory(test/buffer_test)

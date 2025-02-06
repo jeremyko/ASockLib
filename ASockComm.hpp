@@ -31,27 +31,41 @@ typedef struct  sockaddr_in SOCKADDR_IN ;
 typedef struct  sockaddr    SOCKADDR ;
 
 namespace asock {
-#define LOG_WHERE "("<<__FILE__<<":"<<__func__<<":"<<__LINE__<<") "
-#define LOG(x)  std::cout<<LOG_WHERE << x << "\n"
-#define ELOG(x) std::cerr<<LOG_WHERE << x << "\n"
-
-#ifdef DEBUG_PRINT
-#if defined __APPLE__ || defined __linux__ 
 #define COLOR_RED  "\x1B[31m"
 #define COLOR_GREEN "\x1B[32m" 
 #define COLOR_BLUE "\x1B[34m"
 #define COLOR_RESET "\x1B[0m"
-#define DBG_LOG(x)  std::cout<<LOG_WHERE << x << "\n"
+
+#define LOG_WHERE "("<<__FILE__<<":"<<__func__<<":"<<__LINE__<<") "
+#define LOG(x)  std::cout<<LOG_WHERE << x << "\n"
+
+#if defined __APPLE__ || defined __linux__ 
+#define ELOG(x) std::cerr<<LOG_WHERE << "error : " << COLOR_RED<< x << COLOR_RESET << "\n"
+#endif //__APPLE__ , __linux__
+
+#ifdef WIN32
+#define ELOG(x) std::cerr<<LOG_WHERE << x << "\n"
+#endif //__APPLE__ , __linux__
+
+#ifdef DEBUG_PRINT
+#if defined __APPLE__ || defined __linux__ 
+#define DBG_LOG(x) std::cout<<LOG_WHERE << COLOR_BLUE<< x << COLOR_RESET << "\n"
 #define DBG_ELOG(x) std::cerr<<LOG_WHERE << COLOR_RED<< x << COLOR_RESET << "\n"
+#define DBG_GREEN_LOG(x) std::cout<<LOG_WHERE << COLOR_GREEN<< x << COLOR_RESET << "\n"
+#define DBG_BLUE_LOG(x) std::cout<<LOG_WHERE << COLOR_BLUE<< x << COLOR_RESET << "\n"
+#define DBG_RED_LOG(x) std::cout<<LOG_WHERE << COLOR_RED<< x << COLOR_RESET << "\n"
 #endif //__APPLE__ , __linux__
 
 //windows --> no color support
 #ifdef WIN32
 #define  DBG_LOG(x)  std::cout<<LOG_WHERE << x << "\n"
 #define  DBG_ELOG(x) std::cerr<<LOG_WHERE << x << "\n"
+#define DBG_GREEN_LOG(x) std::cout<<LOG_WHERE << x << "\n"
+#define DBG_BLUE_LOG(x) std::cout<<LOG_WHERE << x << "\n"
+#define DBG_RED_LOG(x) std::cout<<LOG_WHERE << x << "\n"
 #endif // WIN32
 
-#else //DEBUG_PRINT
+#else // --- DEBUG_PRINT
 #define  DBG_LOG(x) 
 #define  DBG_ELOG(x) 
 #define  DBG_RED_LOG(x) 
@@ -59,8 +73,6 @@ namespace asock {
 #define  DBG_GREEN_LOG(x)
 #endif //DEBUG_PRINT
 
-const size_t  DEFAULT_PACKET_SIZE =1024;
-const size_t  DEFAULT_CAPACITY    =1024;
 const size_t  DEFAULT_MAX_CLIENT  =10000;
 const size_t  MORE_TO_COME        =0;
 
@@ -78,6 +90,9 @@ typedef struct _ST_HEADER_ {
     char msg_len[10];
 } ST_HEADER ;
 #define HEADER_SIZE sizeof(ST_HEADER)
+
+const size_t  DEFAULT_BUFFER_SIZE = HEADER_SIZE + 1400 ;
+
 } //namespace asock 
 #endif 
 

@@ -511,6 +511,33 @@ class CumBuffer {
         cur_read_ =0;
         cur_write_=0;
     }
+
+    // Increases the buffer size by the specified size and then copies existing data.
+    bool IncreaseBufferAndCopyExisting(size_t len) {
+        size_t old_buffer_len = buffer_len_ ;
+        char* old_buffer_ptr = new (std::nothrow) char [old_buffer_len];
+        if(old_buffer_ptr == nullptr) {
+            err_msg_="alloc failed :";
+            return false;
+        }
+        memcpy(old_buffer_ptr, buffer_ptr_, old_buffer_len);
+
+        if(buffer_ptr_) { 
+            delete [] buffer_ptr_; 
+        } 
+        buffer_len_ = len ;
+        buffer_ptr_ = new (std::nothrow) char [buffer_len_];
+        if(buffer_ptr_ == nullptr) {
+            err_msg_="alloc failed :";
+            return false;
+        }
+        memset(buffer_ptr_, '\0', buffer_len_);
+        memcpy(buffer_ptr_, old_buffer_ptr, old_buffer_len);
+
+        return true;
+    }
+
+
     //-------------------------------------------------------------------------
     const char* GetErrMsg() { 
         return err_msg_.c_str() ; 

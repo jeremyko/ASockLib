@@ -147,11 +147,11 @@ int main(int argc, char* argv[]) {
     echoserver.RunTcpServer();
     std::cout << "server started\n";
     while( echoserver.IsServerRunning() ) {
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
 #ifdef WIN32
-        std::cout << "*   client total  = " << echoserver.tcp_server_.GetCountOfClients() 
-                  << "    context cache = " << echoserver.tcp_server_.GetCountOfContextQueue() 
-                  << "\n";
+        // std::cout << "*   client total  = " << echoserver.tcp_server_.GetCountOfClients() 
+        //           << "    context cache = " << echoserver.tcp_server_.GetCountOfContextQueue() 
+        //           << "\n";
 #endif
     }
     std::cout << "server exit...\n";

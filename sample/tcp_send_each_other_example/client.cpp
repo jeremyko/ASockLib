@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "../condvar.hpp"
 #include "../elapsed_time.hpp"
 
+#define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
 //Send To Each Other Client
 // An example in which the server and the client randomly exchange data with each other.
@@ -75,13 +77,8 @@ void STEO_Client::WaitForClientLoopExit() {
 }
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Client::SendThread(size_t index) {
-    while (true) {
-        if (IsConnected()) {
-            break;
-        } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1)); 
-            continue;
-        }
+    while (!IsConnected()) {
+        std::this_thread::sleep_for(std::chrono::seconds(1)); 
     }
     size_t sent_cnt =0;
     while(IsConnected()){
@@ -112,7 +109,7 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* context_ptr,
                                        char* data_ptr, size_t len) {
     //user specific : your whole data has arrived.
 
-    char packet[asock::DEFAULT_PACKET_SIZE];
+    char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet, data_ptr,len);
     packet[len] = '\0';
     std::string response = packet;
@@ -197,7 +194,7 @@ int main(int argc, char* argv[]) {
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
         (*it)->WaitForClientLoopExit();
     }
-    std::this_thread::sleep_for(std::chrono::seconds(2)); // wait all disconnect callback invoked
+    std::this_thread::sleep_for(std::chrono::milliseconds(200)); // wait all disconnect callback invoked
     while (! vec_clients.empty()) {
         delete vec_clients.back();
         vec_clients.pop_back();

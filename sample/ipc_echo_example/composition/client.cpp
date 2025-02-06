@@ -5,6 +5,7 @@
 #include <cassert>
 #include "ASock.hpp"
 
+#define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
 class EchoClient 
 {
@@ -40,7 +41,7 @@ bool EchoClient::InitIpcClient(const char* ipc_sock_path) {
 bool EchoClient:: OnRecvedCompleteData(asock::Context* context_ptr, 
                                        char* data_ptr, size_t len) {
     //user specific : your whole data has arrived.
-    char packet[asock::DEFAULT_PACKET_SIZE];
+    char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr, len );
     packet[len] = '\0';
     std::cout << "server response [" << packet << "]\n";

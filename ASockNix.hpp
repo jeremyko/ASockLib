@@ -26,6 +26,7 @@ SOFTWARE.
 #include "ASockBuffer.hpp"
 
 #include <atomic>
+#include <cassert>
 #include <string>
 #include <thread>
 #include <queue>
@@ -184,8 +185,8 @@ public :
             }
             return true;
         }
-                 
-        char* data_position_ptr = new char[total_len];// XXX TODO 
+        // header 를 앞에 추가한다. 
+        char* data_position_ptr = new char[total_len];// FIX:
         memcpy(data_position_ptr,(char*)&header, HEADER_SIZE);
         memcpy(data_position_ptr+HEADER_SIZE, data_ptr, len);
 
@@ -193,14 +194,14 @@ public :
             int sent_len =0;
             size_t remained_len = total_len-total_sent;           
             if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
-                //XXX UDP : all or nothing. no partial sent, send with header.
+                //UDP : all or nothing. no partial sent, send with header.
                 sent_len = sendto(ctx_ptr->socket,  data_position_ptr, remained_len , 0, 
                                 (struct sockaddr*)& ctx_ptr->udp_remote_addr,   
                                 sizeof(ctx_ptr->udp_remote_addr)) ;
             } else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
-                //XXX UDP : all or nothing. no partial sent, send with header.
+                //UDP : all or nothing. no partial sent, send with header.
                 sent_len = sendto(ctx_ptr->socket,  data_position_ptr, remained_len , 0, 
-                                0, //XXX client : already set! (via connect)  
+                                0, //client : already set! (via connect)  
                                 sizeof(ctx_ptr->udp_remote_addr)) ;
             } else {
                 sent_len = send(ctx_ptr->socket, data_position_ptr, remained_len, 0);
@@ -236,7 +237,7 @@ public :
                     ctx_ptr->is_sent_pending = true;
                     return true;
                 } else if ( errno != EINTR ) {
-                    //XXX err_msg_ need lock for multithread
+                    // err_msg_ need lock for multithread
                     std::lock_guard<std::mutex> lock(err_msg_lock_);
                     err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
                     return false;
@@ -252,7 +253,7 @@ public :
             err_msg_ = " length is invalid";
             return false;
         }
-        max_data_len_ = max_data_len * 20 ; //TODO this is not good 
+        max_data_len_ = max_data_len; 
         return true;
     }
 
@@ -275,15 +276,34 @@ public :
 
 private:
     size_t  OnCalculateDataLen(Context* ctx_ptr) {
-        //std::cout << "cum len : " << ctx_ptr->GetBuffer()->GetCumulatedLen() << "\n";
-        if( ctx_ptr->GetBuffer()->GetCumulatedLen() < (int)HEADER_SIZE ) {
-            //std::cout << "more to come : " << "\n";
+        DBG_LOG("(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  <<
+            " / capacity : " << ctx_ptr->recv_buffer.GetCapacity() <<
+            " / total free : " << ctx_ptr->recv_buffer.GetTotalFreeSpace() <<
+            " / linear free : " << ctx_ptr->recv_buffer.GetLinearFreeSpace() <<
+            " / cumulated : " << ctx_ptr->recv_buffer.GetCumulatedLen() );
+        if( ctx_ptr->recv_buffer.GetCumulatedLen() < (int)HEADER_SIZE ) {
+            DBG_LOG("more to come");
             return asock::MORE_TO_COME ; //more to come 
         }
         ST_HEADER header ;
-        ctx_ptr->GetBuffer()->PeekData(HEADER_SIZE, (char*)&header);  
+        ctx_ptr->recv_buffer.PeekData(HEADER_SIZE, (char*)&header);  
         size_t supposed_total_len = std::atoi(header.msg_len) + HEADER_SIZE;
-        assert(supposed_total_len<=context_ptr->GetBuffer()->GetCapacity());
+        if(supposed_total_len > ctx_ptr->recv_buffer.GetCapacity()) {
+            DBG_RED_LOG( "(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  <<
+                 " / packet length : " << supposed_total_len <<
+                 " / buffer is insufficient => increase buffer");
+            // If the size of the data to be received is larger than the buffer, 
+            // increase the buffer capacity.
+            ctx_ptr->recv_buffer.IncreaseBufferAndCopyExisting(supposed_total_len * 2);
+
+            DBG_LOG("(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  <<
+                " / capacity : " << ctx_ptr->recv_buffer.GetCapacity() <<
+                " / total free : " << ctx_ptr->recv_buffer.GetTotalFreeSpace() <<
+                " / linear free : " << ctx_ptr->recv_buffer.GetLinearFreeSpace() <<
+                " / cumulated : " << ctx_ptr->recv_buffer.GetCumulatedLen() );
+        }; 
+        DBG_LOG( "(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  <<
+                " / packet length : " << supposed_total_len );
         return supposed_total_len ;
     }
 
@@ -294,7 +314,6 @@ private:
     } 
 
 protected :
-    size_t  recv_buffer_capcity_{0};
     size_t  max_data_len_ {0};
     std::mutex   lock_ ; 
 #ifdef __APPLE__
@@ -307,7 +326,6 @@ protected :
 
     std::mutex   err_msg_lock_ ; 
     std::string  err_msg_ ;
-    size_t send_buffer_capcity_ {asock::DEFAULT_CAPACITY};
     ENUM_SOCK_USAGE sock_usage_ {asock::SOCK_USAGE_UNKNOWN};
     //std::function<size_t(Context*)>   cb_on_calculate_data_len_ {nullptr} ;
     std::function<bool(Context*,char*,size_t)>cb_on_recved_complete_packet_{nullptr};
@@ -355,16 +373,16 @@ protected :
             PENDING_SENT pending_sent = ctx_ptr->pending_send_deque.front();
             int sent_len = 0;
             if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
-                //XXX UDP : all or nothing . no partial sent!
+                // UDP : all or nothing . no partial sent!
                 sent_len = sendto(ctx_ptr->socket,  pending_sent.pending_sent_data, 
                                   pending_sent.pending_sent_len, 
                                   0, (struct sockaddr*)& pending_sent.udp_remote_addr,   
                                   sizeof(pending_sent.udp_remote_addr)) ;
             } else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
-                //XXX UDP : all or nothing . no partial sent!
+                // UDP : all or nothing . no partial sent!
                 sent_len = sendto(ctx_ptr->socket,  pending_sent.pending_sent_data, 
                                   pending_sent.pending_sent_len, 
-                                  0, 0, //XXX client : already set! (via connect)  
+                                  0, 0, // client : already set! (via connect)  
                                   sizeof(pending_sent.udp_remote_addr)) ;
             } else {
                 sent_len = send(ctx_ptr->socket, pending_sent.pending_sent_data, 
@@ -442,36 +460,37 @@ protected :
 
     //-------------------------------------------------------------------------
     bool RecvData(Context* ctx_ptr){
-        int want_recv_len = max_data_len_ ;
-        if(max_data_len_ > ctx_ptr->recv_buffer.GetLinearFreeSpace() ) {
-            want_recv_len = ctx_ptr->recv_buffer.GetLinearFreeSpace() ; 
-        }
-        if(want_recv_len==0) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
-            err_msg_ = "no linear free space left ";
-            return false; 
-        }
+        DBG_LOG("-----------------------------------------------------------" <<
+                " max_data_len_: " << max_data_len_ );
+        DBG_LOG("          (usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  <<
+                " / capacity : " << ctx_ptr->recv_buffer.GetCapacity()  <<
+                " / total free : " << ctx_ptr->recv_buffer.GetTotalFreeSpace()  <<
+                " / linear free : " << ctx_ptr->recv_buffer.GetLinearFreeSpace() <<
+                " / cumulated : " << ctx_ptr->recv_buffer.GetCumulatedLen() );
+
+        size_t free_linear_len = ctx_ptr->recv_buffer.GetLinearFreeSpace();
+        assert(free_linear_len != 0);
         int recved_len = recv( ctx_ptr->socket, 
-                               ctx_ptr->recv_buffer.GetLinearAppendPtr(), want_recv_len, 0); 
+                              ctx_ptr->recv_buffer.GetLinearAppendPtr(), free_linear_len, 0); 
         if( recved_len > 0) {
+            DBG_LOG("          (usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  
+                    << " / want to recv : " << free_linear_len << " / actual recved :" << recved_len );
             ctx_ptr->recv_buffer.IncreaseData(recved_len);
             while(ctx_ptr->recv_buffer.GetCumulatedLen()) {
                 //invoke user specific implementation
                 if(!ctx_ptr->is_packet_len_calculated ) {
                     //only when calculation is necessary
-                    //if(cb_on_calculate_data_len_!=nullptr) {
-                    //    //invoke user specific callback
-                    //    ctx_ptr->complete_packet_len =cb_on_calculate_data_len_ ( ctx_ptr ); 
-                    //} else {
                     ctx_ptr->complete_packet_len = OnCalculateDataLen( ctx_ptr ); 
-                    //}
                     ctx_ptr->is_packet_len_calculated = true;
                 }
                 if(ctx_ptr->complete_packet_len == asock::MORE_TO_COME) {
                     ctx_ptr->is_packet_len_calculated = false;
                     return true; //need to recv more
-                } else if(ctx_ptr->complete_packet_len > 
-                        ctx_ptr->recv_buffer.GetCumulatedLen()) {
+                } else if(ctx_ptr->complete_packet_len > ctx_ptr->recv_buffer.GetCumulatedLen()) {
+                    // 이미 recv 한 이후 임. 만약 OnCalculateDataLen 에서 버퍼 증가 재할당이 발생했다면, 
+                    // 한번더 recv 가 수행될것이다.
+                    DBG_GREEN_LOG("          (usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  <<
+                     " / need to recv more, buffer cumulated : " << ctx_ptr->recv_buffer.GetCumulatedLen() ) ;
                     return true; //need to recv more
                 } else {
                     //got complete packet 
@@ -481,16 +500,17 @@ protected :
                         return false;
                     }
                     if(cumbuffer::OP_RSLT_OK!= ctx_ptr->recv_buffer.GetData(ctx_ptr->complete_packet_len, 
-                                                            complete_packet_data )) {
+                                                                       complete_packet_data )) {
                         //error !
                         {
                             std::lock_guard<std::mutex> lock(err_msg_lock_);
                             err_msg_ = ctx_ptr->recv_buffer.GetErrMsg();
                         }
                         ctx_ptr->is_packet_len_calculated = false;
-                        delete[] complete_packet_data; //XXX
+                        delete[] complete_packet_data;
                         return false; 
                     }
+
                     if(cb_on_recved_complete_packet_!=nullptr) {
                         //invoke user specific callback
                         cb_on_recved_complete_packet_ (ctx_ptr, 
@@ -502,13 +522,19 @@ protected :
                                    complete_packet_data + HEADER_SIZE , 
                                      ctx_ptr->complete_packet_len - HEADER_SIZE ); 
                     }
+                    DBG_LOG("          (usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  <<
+                            " / capacity : " << ctx_ptr->recv_buffer.GetCapacity()  <<
+                            " / total free : " << ctx_ptr->recv_buffer.GetTotalFreeSpace()  <<
+                            " / linear free : " << ctx_ptr->recv_buffer.GetLinearFreeSpace() <<
+                            " / cumulated : " << ctx_ptr->recv_buffer.GetCumulatedLen() );
                     ctx_ptr->is_packet_len_calculated = false;
-                    delete[] complete_packet_data; //XXX
+                    delete[] complete_packet_data; 
                 }
             } //while
         } else if( recved_len == 0 ) {
             std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "recv 0, client disconnected , fd:" + std::to_string(ctx_ptr->socket);
+            DBG_LOG(err_msg_);
             return false ;
         }
         return true ;
@@ -516,12 +542,9 @@ protected :
 
     //-------------------------------------------------------------------------
     bool RecvfromData(Context* ctx_ptr) {
-        if(max_data_len_ > ctx_ptr->recv_buffer.GetLinearFreeSpace() ) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
-            err_msg_ = "no linear free space left " + 
-                std::to_string( ctx_ptr->recv_buffer.GetLinearFreeSpace()) ;
-            return false; 
-        }
+
+        // udp 인 경우에는 미리 최대 수신가능한 크기를 알아서 버퍼를 할당해야함.
+        // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
 
         SOCKLEN_T addrlen = sizeof(ctx_ptr->udp_remote_addr);
         int recved_len = recvfrom(ctx_ptr->socket, //--> is listen_socket_
@@ -531,6 +554,8 @@ protected :
                                 (struct sockaddr *)&ctx_ptr->udp_remote_addr, 
                                 &addrlen ); 
         if( recved_len > 0) {
+            DBG_LOG("          (usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  
+                    << " / actual recved :" << recved_len );
             ctx_ptr->recv_buffer.IncreaseData(recved_len);
             //udp got complete packet 
             char* complete_packet_data = new (std::nothrow) char [max_data_len_] ; // TODO no..not good
@@ -545,10 +570,10 @@ protected :
                 err_msg_ = ctx_ptr->recv_buffer.GetErrMsg();
                 std::cerr << err_msg_ << "\n";
                 ctx_ptr->is_packet_len_calculated = false;
-                delete[] complete_packet_data; //XXX
+                delete[] complete_packet_data; 
                 return false; 
             }
-            //XXX UDP 이므로 받는 버퍼를 초기화해서, linear free space를 초기화 상태로 
+            // UDP 이므로 받는 버퍼를 초기화해서, linear free space를 초기화 상태로 
             ctx_ptr->recv_buffer.ReSet(); //this is udp. all data has arrived!
 
             if(cb_on_recved_complete_packet_!=nullptr) {
@@ -560,7 +585,12 @@ protected :
                 OnRecvedCompleteData(ctx_ptr,complete_packet_data + HEADER_SIZE , 
                              recved_len - HEADER_SIZE); 
             }
-            delete[] complete_packet_data; //XXX
+            delete[] complete_packet_data; 
+            DBG_LOG("          (usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  <<
+                    " / capacity : " << ctx_ptr->recv_buffer.GetCapacity()  <<
+                    " / total free : " << ctx_ptr->recv_buffer.GetTotalFreeSpace()  <<
+                    " / linear free : " << ctx_ptr->recv_buffer.GetLinearFreeSpace() <<
+                    " / cumulated : " << ctx_ptr->recv_buffer.GetCumulatedLen() );
         }
         return true;
     } //udp
@@ -604,10 +634,14 @@ protected :
     //---------------------------------------------------------    
 public :
     //-------------------------------------------------------------------------
+    // - If you know the maximum data size you will be sending and receiving in advance, 
+    //   it is better to allocate a buffer large enough to match that.
+    // - If you do not know the size in advance or if it exceeds the buffer, 
+    //   dynamic memory allocation occurs internally. 
     bool InitTcpClient(const char* server_ip, 
                        unsigned short  server_port, 
                        int         connect_timeout_secs=10, 
-                       size_t  max_data_len = asock::DEFAULT_PACKET_SIZE) {
+                       size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE) {
         sock_usage_ = SOCK_USAGE_TCP_CLIENT  ;
         connect_timeout_secs_ = connect_timeout_secs;
         if(!SetBufferCapacity(max_data_len) ) {
@@ -622,9 +656,10 @@ public :
     }
 
     //-------------------------------------------------------------------------
+    // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
     bool InitUdpClient(const char* server_ip, 
                        unsigned short  server_port, 
-                       size_t  max_data_len = asock::DEFAULT_PACKET_SIZE) {
+                       size_t  max_data_len) {
         sock_usage_ = SOCK_USAGE_UDP_CLIENT  ;
         if(!SetBufferCapacity(max_data_len) ) {
             return false;
@@ -638,9 +673,13 @@ public :
     }
 
     //-------------------------------------------------------------------------
+    // - If you know the maximum data size you will be sending and receiving in advance, 
+    //   it is better to allocate a buffer large enough to match that.
+    // - If you do not know the size in advance or if it exceeds the buffer, 
+    //   dynamic memory allocation occurs internally. 
     bool InitIpcClient(const char* sock_path, 
                        int         connect_timeout_secs=10,
-                       size_t  max_data_len=asock::DEFAULT_PACKET_SIZE) {
+                       size_t  max_data_len=asock::DEFAULT_BUFFER_SIZE) {
         sock_usage_ = SOCK_USAGE_IPC_CLIENT  ;
         connect_timeout_secs_ = connect_timeout_secs;
         if(!SetBufferCapacity(max_data_len) ) {
@@ -827,7 +866,7 @@ private :
         memset(ep_events_, 0x00, sizeof(struct epoll_event) * max_client_limit_);
 #endif
         if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
-            //UDP is special~~~ XXX 
+            //UDP is special~~~ 
             std::thread server_thread(&ASock::ServerThreadUdpRoutine, this);
             server_thread.detach();
         } else {
@@ -852,7 +891,6 @@ private :
             return  false;
         }
         if(!is_buffer_init_ ) {
-            //TODO : use InitAutoGrowing
             if(cumbuffer::OP_RSLT_OK != context_.recv_buffer.Init(max_data_len_) ) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = std::string("cumBuffer Init error :") + 
@@ -1091,6 +1129,7 @@ public :
         }
         PushClientContextToCache(client_ctx);
     }
+
     //for composition : Assign yours to these callbacks 
     //-------------------------------------------------------------------------
     bool SetCbOnDisconnectedFromServer(std::function<void()> cb) {
@@ -1114,9 +1153,13 @@ private :
     //---------------------------------------------------------    
 public :
     //-------------------------------------------------------------------------
+    // - If you know the maximum data size you will be sending and receiving in advance, 
+    //   it is better to allocate a buffer large enough to match that.
+    // - If you do not know the size in advance or if it exceeds the buffer, 
+    //   dynamic memory allocation occurs internally. 
     bool  RunTcpServer (const char* bind_ip, 
                          int         bind_port, 
-                         size_t  max_data_len=asock::DEFAULT_PACKET_SIZE,
+                         size_t  max_data_len=asock::DEFAULT_BUFFER_SIZE,
                          size_t  max_client=asock::DEFAULT_MAX_CLIENT) {
         sock_usage_ = SOCK_USAGE_TCP_SERVER  ;
         server_ip_ = bind_ip ; 
@@ -1132,9 +1175,11 @@ public :
     };
 
     //-------------------------------------------------------------------------
+    // In case of UDP, you need to know the maximum receivable size in advance 
+    // and allocate a buffer.
     bool  RunUdpServer (const char* bind_ip, 
                          size_t      bind_port, 
-                         size_t  max_data_len=asock::DEFAULT_PACKET_SIZE,
+                         size_t  max_data_len,
                          size_t  max_client=asock::DEFAULT_MAX_CLIENT) {
         sock_usage_ = SOCK_USAGE_UDP_SERVER  ;
         server_ip_ = bind_ip ; 
@@ -1151,8 +1196,12 @@ public :
 
 #if defined __APPLE__ || defined __linux__ 
     //-------------------------------------------------------------------------
+    // - If you know the maximum data size you will be sending and receiving in advance, 
+    //   it is better to allocate a buffer large enough to match that.
+    // - If you do not know the size in advance or if it exceeds the buffer, 
+    //   dynamic memory allocation occurs internally. 
     bool  RunIpcServer (const char* sock_path, 
-                         size_t  max_data_len=asock::DEFAULT_PACKET_SIZE,
+                         size_t  max_data_len=asock::DEFAULT_BUFFER_SIZE,
                          size_t  max_client=asock::DEFAULT_MAX_CLIENT ) {
         sock_usage_ = SOCK_USAGE_IPC_SERVER  ;
         server_ipc_socket_path_ = sock_path;
@@ -1221,6 +1270,7 @@ private :
                 return;
             }
 #endif
+            //DBG_LOG("--->> event count : " << event_cnt);
             for (int i = 0; i < event_cnt; i++) {
 #ifdef __APPLE__
                 if (kq_events_ptr_[i].ident   == listen_socket_) {

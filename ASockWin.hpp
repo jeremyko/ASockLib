@@ -245,12 +245,10 @@ public :
     HANDLE  handle_completion_port_;
 
 protected :
-    size_t  recv_buffer_capcity_{0};
     size_t  max_data_len_ {0};
     std::mutex   lock_ ; 
     std::mutex   err_msg_lock_ ; 
     std::string  err_msg_ ;
-    size_t send_buffer_capcity_ {asock::DEFAULT_CAPACITY};
     ENUM_SOCK_USAGE sock_usage_ {asock::SOCK_USAGE_UNKNOWN};
     std::function<bool(Context*,char*,size_t)>cb_on_recved_complete_packet_{nullptr};
 
@@ -654,8 +652,9 @@ protected :
         //XXX cumbuffer 에 Append 가능할 만큼만 수신하게 해줘야함!!
         size_t want_recv_len = max_data_len_;
         //-------------------------------------
-        if (max_data_len_ > client_ctx->GetBuffer()->GetLinearFreeSpace()) { 
-            want_recv_len = client_ctx->GetBuffer()->GetLinearFreeSpace();
+        size_t free_linear_len = ctx_ptr->recv_buffer.GetLinearFreeSpace();
+        if (max_data_len_ > free_linear_len) { 
+            want_recv_len = free_linear_len ;
         }
         if (want_recv_len == 0) {
             std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -1076,8 +1075,9 @@ private :
                     //============================
                     size_t want_recv_len = max_data_len_;
                     //-------------------------------------
-                    if (max_data_len_ > context_.GetBuffer()->GetLinearFreeSpace()) { 
-                        want_recv_len = context_.GetBuffer()->GetLinearFreeSpace();
+                    size_t free_linear_len = ctx_ptr->recv_buffer.GetLinearFreeSpace();
+                    if (max_data_len_ > free_linear_len) { 
+                        want_recv_len = free_linear_len;
                     }
                     if (want_recv_len == 0) {
                         std::lock_guard<std::mutex> lock(err_msg_lock_);

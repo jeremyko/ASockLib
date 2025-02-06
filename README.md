@@ -1,6 +1,6 @@
-# ASockLib #
+# ASockLib 
 
-### What ###
+### What 
 
 A C++11 header-only, simple and easy cross-platform c++ socket server/client framework. 
 
@@ -12,13 +12,13 @@ A C++11 header-only, simple and easy cross-platform c++ socket server/client fra
 - windows : tcp, udp using winsock.
 
 
-### Install ###
+### Install 
 
 Just copy all `*.hpp` header files to your project. And include `ASock.hpp`
 
-### Usage ###
+### Usage 
 
-#### tcp echo server ####
+#### tcp echo server 
 
 
 ```cpp
@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
 
 ```
 
-#### tcp echo client ####
+#### tcp echo client
 
 ```cpp
 #include <iostream>
@@ -132,7 +132,7 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-#### sample compile ####
+#### sample compile
 
 ```sh
 git clone https://github.com/jeremyko/ASockLib.git
@@ -140,6 +140,5 @@ cd ASockLib
 mkdir build && cd build 
 cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..
 make  # or msbuild(windows)
-```
 ```
 
