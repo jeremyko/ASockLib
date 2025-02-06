@@ -744,17 +744,6 @@ private:
         DBG_LOG("(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket <<
                 " / packet length : " << supposed_total_len);
         return supposed_total_len;
-
-
-        //std::cout << "cum len : " << ctx_ptr->GetBuffer()->GetCumulatedLen() << "\n";
-        //if (ctx_ptr->GetBuffer()->GetCumulatedLen() < (int)HEADER_SIZE) {
-        //    std::cout << "more to come : " << "\n";
-        //    return asock::MORE_TO_COME; //more to come 
-        //}
-        //ST_HEADER header;
-        //ctx_ptr->GetBuffer()->PeekData(HEADER_SIZE, (char*)&header);
-        //size_t supposed_total_len = std::atoi(header.msg_len) + HEADER_SIZE;
-        //return supposed_total_len;
     }
 
     virtual bool    OnRecvedCompleteData(Context* ctx_ptr, 
