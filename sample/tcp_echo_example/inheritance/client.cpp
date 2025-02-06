@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
     while( client.IsConnected() ) {
         std::cin.clear();
         getline(std::cin, user_msg); 
-        int msg_len = user_msg.length();
+        size_t msg_len = user_msg.length();
         if(msg_len>0) {
             if(! client.SendToServer(user_msg.c_str(),msg_len) ) {
                 std::cerr << client.GetLastErrMsg() <<"\n"; 

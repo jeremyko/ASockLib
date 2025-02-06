@@ -193,7 +193,7 @@ public :
         }
         if (result == 0) {
             //no error occurs and the send operation has completed immediately
-            DBG_LOG("!!! WSASend returns 0 !!! ");
+            DBG_LOG("WSASend returns 0 : no error");
         } else if (result == SOCKET_ERROR) {
             if (WSA_IO_PENDING == WSAGetLastError()) {
                 //DBG_LOG("!!! WSASend returns --> WSA_IO_PENDING");
@@ -221,7 +221,7 @@ public :
             err_msg_ = " length is invalid";
             return false;
         }
-        max_data_len_ = max_data_len * 20 ; //TODO this is not good 
+        max_data_len_ = max_data_len ; 
         return true;
     }
 
@@ -454,6 +454,12 @@ protected :
 
     //-------------------------------------------------------------------------
     bool RecvData(size_t worker_id, Context* ctx_ptr, DWORD bytes_transferred) {
+        DBG_LOG("(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket <<
+                " / capacity : " << ctx_ptr->GetBuffer()->GetCapacity() <<
+                " / total free : " << ctx_ptr->GetBuffer()->GetTotalFreeSpace() <<
+                " / linear free : " << ctx_ptr->GetBuffer()->GetLinearFreeSpace() <<
+                " / cumulated : " << ctx_ptr->GetBuffer()->GetCumulatedLen());
+
         ctx_ptr->GetBuffer()->IncreaseData(bytes_transferred);
         while (ctx_ptr->per_recv_io_ctx->cum_buffer.GetCumulatedLen()) {
             if (!ctx_ptr->per_recv_io_ctx->is_packet_len_calculated){ 
@@ -469,6 +475,7 @@ protected :
                 return true; //need to recv more
             } else {
                 //got complete packet 
+                DBG_LOG("got complete packet");
                 size_t alloc_len = ctx_ptr->per_recv_io_ctx->complete_recv_len;
                 char* complete_packet_data = new (std::nothrow) char [alloc_len] ; //XXX 
                 if(complete_packet_data == nullptr) {
@@ -551,7 +558,7 @@ protected :
 
     //-------------------------------------------------------------------------
     void ReSetCtxPtr(Context* ctx_ptr) {
-        DBG_LOG("sock=" << ctx_ptr->socket << ",sock=" << ctx_ptr->sock_id_copy);
+        //DBG_LOG("sock=" << ctx_ptr->socket << ",sock=" << ctx_ptr->sock_id_copy);
         SecureZeroMemory((PVOID)&ctx_ptr->per_recv_io_ctx->overlapped, sizeof(WSAOVERLAPPED));
         ctx_ptr->per_recv_io_ctx->cum_buffer.ReSet();
         ctx_ptr->socket = INVALID_SOCKET;
@@ -649,31 +656,15 @@ protected :
         // because it can result in an unpredictable buffer order.
         //--------------------------------------------------------
 
-        //XXX cumbuffer 에 Append 가능할 만큼만 수신하게 해줘야함!!
-        size_t want_recv_len = max_data_len_;
         //-------------------------------------
-        size_t free_linear_len = ctx_ptr->recv_buffer.GetLinearFreeSpace();
-        if (max_data_len_ > free_linear_len) { 
-            want_recv_len = free_linear_len ;
-        }
-        if (want_recv_len == 0) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
-            err_msg_ = "no linear free space left ";
-            shutdown(client_ctx->socket, SD_BOTH);
-            if (0 != closesocket(client_ctx->socket)) {
-                int last_err = WSAGetLastError();
-                DBG_ELOG("sock=" << client_ctx->socket << ",close socket error! : " 
-                         << last_err);
-            }
-            client_ctx->socket = INVALID_SOCKET;
-            return false;
-        }
+        size_t free_linear_len = client_ctx->GetBuffer()->GetLinearFreeSpace();
+        DBG_LOG("want to recv len = " << free_linear_len);
         DWORD dw_flags = 0;
         DWORD dw_recv_bytes = 0;
         SecureZeroMemory((PVOID)& client_ctx->per_recv_io_ctx->overlapped, sizeof(WSAOVERLAPPED));
         //XXX cumbuffer 에 가능한 만큼만 ...
         client_ctx->per_recv_io_ctx->wsabuf.buf = client_ctx->GetBuffer()->GetLinearAppendPtr();
-        client_ctx->per_recv_io_ctx->wsabuf.len = (ULONG)want_recv_len ;
+        client_ctx->per_recv_io_ctx->wsabuf.len = (ULONG)free_linear_len ;
         client_ctx->per_recv_io_ctx->io_type = EnumIOType::IO_RECV;
         int result = -1;
         if (sock_usage_ == SOCK_USAGE_UDP_SERVER || sock_usage_ == SOCK_USAGE_UDP_CLIENT) {
@@ -721,15 +712,47 @@ protected :
 private:
     //-----------------------------------------------------
     size_t  OnCalculateDataLen(Context* ctx_ptr) {
-        //std::cout << "cum len : " << ctx_ptr->GetBuffer()->GetCumulatedLen() << "\n";
+        DBG_LOG("(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket <<
+                " / capacity : " << ctx_ptr->GetBuffer()->GetCapacity() <<
+                " / total free : " << ctx_ptr->GetBuffer()->GetTotalFreeSpace() <<
+                " / linear free : " << ctx_ptr->GetBuffer()->GetLinearFreeSpace() <<
+                " / cumulated : " << ctx_ptr->GetBuffer()->GetCumulatedLen());
+
         if (ctx_ptr->GetBuffer()->GetCumulatedLen() < (int)HEADER_SIZE) {
-            std::cout << "more to come : " << "\n";
+            DBG_LOG("more to come");
             return asock::MORE_TO_COME; //more to come 
         }
         ST_HEADER header;
         ctx_ptr->GetBuffer()->PeekData(HEADER_SIZE, (char*)&header);
         size_t supposed_total_len = std::atoi(header.msg_len) + HEADER_SIZE;
+        if (supposed_total_len > ctx_ptr->GetBuffer()->GetCapacity()) {
+            DBG_RED_LOG("(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket <<
+                        " / packet length : " << supposed_total_len <<
+                        " / buffer is insufficient => increase buffer");
+            // If the size of the data to be received is larger than the buffer, 
+            // increase the buffer capacity.
+            ctx_ptr->GetBuffer()->IncreaseBufferAndCopyExisting(supposed_total_len * 2);
+
+            DBG_LOG("(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket <<
+                    " / capacity : " << ctx_ptr->GetBuffer()->GetCapacity() <<
+                    " / total free : " << ctx_ptr->GetBuffer()->GetTotalFreeSpace() <<
+                    " / linear free : " << ctx_ptr->GetBuffer()->GetLinearFreeSpace() <<
+                    " / cumulated : " << ctx_ptr->GetBuffer()->GetCumulatedLen());
+        };
+        DBG_LOG("(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket <<
+                " / packet length : " << supposed_total_len);
         return supposed_total_len;
+
+
+        //std::cout << "cum len : " << ctx_ptr->GetBuffer()->GetCumulatedLen() << "\n";
+        //if (ctx_ptr->GetBuffer()->GetCumulatedLen() < (int)HEADER_SIZE) {
+        //    std::cout << "more to come : " << "\n";
+        //    return asock::MORE_TO_COME; //more to come 
+        //}
+        //ST_HEADER header;
+        //ctx_ptr->GetBuffer()->PeekData(HEADER_SIZE, (char*)&header);
+        //size_t supposed_total_len = std::atoi(header.msg_len) + HEADER_SIZE;
+        //return supposed_total_len;
     }
 
     virtual bool    OnRecvedCompleteData(Context* ctx_ptr, 
@@ -746,7 +769,7 @@ public :
     bool InitTcpClient(const char* server_ip,
                        unsigned short  server_port,
                        int         connect_timeout_secs = 10,
-                       size_t  max_data_len = asock::DEFAULT_PACKET_SIZE) {
+                       size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE) {
         sock_usage_  = SOCK_USAGE_TCP_CLIENT;
         server_ip_   = server_ip ;
         server_port_ = server_port;
@@ -777,7 +800,7 @@ public :
     //-------------------------------------------------------------------------
     bool InitUdpClient(const char* server_ip,
                        unsigned short  server_port,
-                       size_t  max_data_len = asock::DEFAULT_PACKET_SIZE) {
+                       size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE) {
         sock_usage_ = SOCK_USAGE_UDP_CLIENT  ;
         server_ip_   = server_ip ;
         server_port_ = server_port;
@@ -1075,7 +1098,7 @@ private :
                     //============================
                     size_t want_recv_len = max_data_len_;
                     //-------------------------------------
-                    size_t free_linear_len = ctx_ptr->recv_buffer.GetLinearFreeSpace();
+                    size_t free_linear_len = context_.GetBuffer()->GetLinearFreeSpace();
                     if (max_data_len_ > free_linear_len) { 
                         want_recv_len = free_linear_len;
                     }
@@ -1256,7 +1279,7 @@ public :
     //-------------------------------------------------------------------------
     bool  RunTcpServer(const char* bind_ip,
                         int         bind_port,
-                        size_t  max_data_len = asock::DEFAULT_PACKET_SIZE,
+                        size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE,
                         size_t  max_client = asock::DEFAULT_MAX_CLIENT) {
         sock_usage_ = SOCK_USAGE_TCP_SERVER;
         server_ip_ = bind_ip;
@@ -1274,7 +1297,7 @@ public :
     //-------------------------------------------------------------------------
     bool  RunUdpServer(const char* bind_ip,
                         size_t  bind_port,
-                        size_t  max_data_len = asock::DEFAULT_PACKET_SIZE,
+                        size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE,
                         size_t  max_client = asock::DEFAULT_MAX_CLIENT) {
         sock_usage_ = SOCK_USAGE_UDP_SERVER  ;
         server_ip_ = bind_ip ; 
@@ -1295,7 +1318,7 @@ public :
     void  StopServer() {
         is_need_server_run_ = false;
         for (size_t i = 0; i < max_worker_cnt_; i++) {
-            DBG_LOG("PostQueuedCompletionStatus");
+            //DBG_LOG("PostQueuedCompletionStatus");
             DWORD       bytes_transferred = 0;
             Context* ctx_ptr = PopClientContextFromCache();
             ctx_ptr->per_recv_io_ctx = PopPerIoDataFromCache();
@@ -1348,7 +1371,7 @@ private :
 
     //-------------------------------------------------------------------------
     bool BuildClientContextCache() {
-        DBG_LOG("queue_client_cache alloc ");
+        //DBG_LOG("queue_client_cache alloc ");
         Context* ctx_ptr = nullptr;
         for (int i = 0; i < max_client_limit_; i++) {
             ctx_ptr = new (std::nothrow) Context();
@@ -1417,8 +1440,7 @@ private :
             if (!queue_ctx_cache_.empty()) {
                 ctx_ptr = queue_ctx_cache_.front();
                 queue_ctx_cache_.pop(); 
-                DBG_LOG("queue_ctx_cache not empty! -> " 
-                        << "queue ctx cache size = " << queue_ctx_cache_.size());
+                //DBG_LOG("queue_ctx_cache not empty! -> " << "queue ctx cache size = " << queue_ctx_cache_.size());
                 ReSetCtxPtr(ctx_ptr);
                 return ctx_ptr;
             }
@@ -1436,7 +1458,7 @@ private :
 
     //-------------------------------------------------------------------------
     bool BuildPerIoDataCache() {
-        DBG_LOG("queue_per_io_data_cache_ alloc ");
+        //DBG_LOG("queue_per_io_data_cache_ alloc ");
         PER_IO_DATA* per_io_data_ptr = nullptr;
         for (int i = 0; i < max_client_limit_ * 2; i++) { // 최대 예상 client 의 2배로 시작
             per_io_data_ptr = new (std::nothrow) PER_IO_DATA;
@@ -1467,9 +1489,7 @@ private :
         if (!queue_per_io_data_cache_.empty()) {
             per_io_data_ptr = queue_per_io_data_cache_.front();
             queue_per_io_data_cache_.pop();
-            DBG_LOG("queue_per_io_data_cache_ not empty! -> " 
-                    << "queue_per_io_data_cache_ client cache size = "
-                    << queue_per_io_data_cache_.size());
+            //DBG_LOG("queue_per_io_data_cache_ not empty! -> " << "queue_per_io_data_cache_ client cache size = " << queue_per_io_data_cache_.size());
             return per_io_data_ptr;
         }
         //alloc new !!!
@@ -1770,7 +1790,7 @@ private :
             //======================================================= IO_RECV
             case EnumIOType::IO_QUIT :
             {
-                DBG_LOG( "IO_QUIT "); 
+                //DBG_LOG( "IO_QUIT "); 
                 cur_quit_cnt_++;
                 if (max_worker_cnt_ == cur_quit_cnt_) {
                     is_server_running_ = false;
