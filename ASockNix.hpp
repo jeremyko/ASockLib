@@ -294,7 +294,9 @@ private:
                  " / buffer is insufficient => increase buffer");
             // If the size of the data to be received is larger than the buffer, 
             // increase the buffer capacity.
-            ctx_ptr->recv_buffer.IncreaseBufferAndCopyExisting(supposed_total_len * 2);
+            size_t new_buffer_len= supposed_total_len * 2;
+            ctx_ptr->recv_buffer.IncreaseBufferAndCopyExisting(new_buffer_len);
+            SetBufferCapacity(new_buffer_len);
 
             DBG_LOG("(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  <<
                 " / capacity : " << ctx_ptr->recv_buffer.GetCapacity() <<
