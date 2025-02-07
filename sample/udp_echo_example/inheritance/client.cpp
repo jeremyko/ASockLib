@@ -5,6 +5,8 @@
 #include <cassert>
 #include "ASock.hpp"
 
+// It may sound obvious, but the buffer you use should be large enough for 
+// the other party to receive the data sent.
 #define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
 class EchoClient : public asock::ASock

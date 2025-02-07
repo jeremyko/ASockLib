@@ -46,7 +46,7 @@ bool TestServer::RunTcpServer() {
 bool TestServer::OnRecvedCompleteData(asock::Context* ctx_ptr, 
                                          char* data_ptr, size_t len ) {
     //user specific : your whole data has arrived.
-    char packet[1024];
+    char packet[1024]; // note : this buffer must be large enough to receive the data sent.
     memcpy(&packet, data_ptr, len);
     packet[len] = '\0';
     cli_msg_ = packet;
@@ -106,7 +106,7 @@ void TestClient::WaitForClientLoopExit() {
 bool TestClient:: OnRecvedCompleteData(asock::Context* context_ptr, 
                                        char* data_ptr, size_t len) {
     //user specific : your whole data has arrived.
-    char packet[1024];
+    char packet[1024]; // note : this buffer must be large enough to receive the data sent.
     memcpy(&packet, data_ptr,len);
     packet[len] = '\0';
     svr_res_ = packet;
