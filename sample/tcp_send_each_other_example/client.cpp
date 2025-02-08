@@ -11,8 +11,7 @@
 #include "../condvar.hpp"
 #include "../elapsed_time.hpp"
 
-// It may sound obvious, but the buffer you use should be large enough for 
-// the other party to receive the data sent.
+// NOTE: The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
 //Send To Each Other Client
