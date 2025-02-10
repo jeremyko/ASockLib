@@ -66,14 +66,14 @@ int main(int , char* []) {
 #if defined __APPLE__ || defined __linux__ 
     std::signal(SIGINT,EchoServer::SigIntHandler);
 #endif
-    EchoServer echoserver; 
-    if(!echoserver.RunTcpServer("127.0.0.1", 9990 )) {
-        std::cerr << echoserver.GetLastErrMsg() <<"\n"; 
+    EchoServer server; 
+    if(!server.RunTcpServer("127.0.0.1", 9990 )) {
+        std::cerr << server.GetLastErrMsg() <<"\n"; 
         return 1;
     }
     std::cout << "server started" << "\n";
-    while( echoserver.IsServerRunning() ) {
-		std::this_thread::sleep_for(std::chrono::seconds(1));
+    while( server.IsServerRunning() ) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "server exit...\n";
     return 0;

@@ -63,7 +63,7 @@ bool STEO_Client::IntTcpClient(size_t client_id) {
                                 &STEO_Client::OnRecvedCompleteData, this, _1,_2,_3));
     
     if(!tcp_client_.InitTcpClient("127.0.0.1", 9990   ) ) {
-        ELOG("error : "<< tcp_client_.GetLastErrMsg() ); 
+        std::cerr <<"error : "<< tcp_client_.GetLastErrMsg() << "\n"; 
         return false;
     }
     return true;
@@ -162,10 +162,10 @@ int main(int , char* []) {
         STEO_Client* client = new (std::nothrow) STEO_Client;
         if (client == nullptr) {
             std::cerr << "alloc failed!!\n";
-            exit(1);
+            exit(EXIT_FAILURE);
         }
         if(!client->IntTcpClient(i)){
-            continue;
+            exit(EXIT_FAILURE);
         }
         vec_clients.push_back(client);
     }

@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iostream>
 #include <cassert>
 #include <csignal>
@@ -139,10 +140,12 @@ int main(int , char* []) {
         return 1;
     }
 #endif
-    STEO_Server echoserver; 
-    echoserver.RunTcpServer();
+    STEO_Server server; 
+    if(!server.RunTcpServer()){
+        return 1;
+    }
     std::cout << "server started\n";
-    while( echoserver.IsServerRunning() ) {
+    while( server.IsServerRunning() ) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
 #ifdef WIN32
         // std::cout << "*   client total  = " << echoserver.tcp_server_.GetCountOfClients() 

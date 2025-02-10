@@ -64,7 +64,9 @@ void EchoClient::OnDisconnectedFromServer() {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int , char* []) {
     EchoClient client;
-    client.InitTcpClient(); 
+    if(!client.InitTcpClient()) {
+        return 1;
+    }
     std::cout << "client started" << "\n";
     std::string user_msg  {""}; 
     while( client.IsConnected() ) {

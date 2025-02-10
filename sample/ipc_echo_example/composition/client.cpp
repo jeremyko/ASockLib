@@ -62,11 +62,13 @@ void EchoClient::OnDisconnectedFromServer() {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[]) {
     if(argc !=2) {
-        std::cout << "usage : " << argv[0] << " ipc_socket_full_path \n\n";
+        std::cerr << "usage : " << argv[0] << " ipc_socket_full_path \n\n";
         return 1;
     }
     EchoClient client;
-    client.InitIpcClient(argv[1]);
+    if(!client.InitIpcClient(argv[1])) {
+        return 1;
+    }
     std::cout << "client started" << "\n";
     std::string user_msg  {""}; 
     while( client.IsConnected() ) {

@@ -27,6 +27,7 @@ SOFTWARE.
 
 #include <atomic>
 #include <cassert>
+#include <cstdlib>
 #include <string>
 #include <thread>
 #include <queue>
@@ -295,7 +296,10 @@ private:
             // If the size of the data to be received is larger than the buffer, 
             // increase the buffer capacity.
             size_t new_buffer_len= supposed_total_len * 2;
-            ctx_ptr->recv_buffer.IncreaseBufferAndCopyExisting(new_buffer_len);
+            if(!ctx_ptr->recv_buffer.IncreaseBufferAndCopyExisting(new_buffer_len)) {
+                ELOG(ctx_ptr->recv_buffer.GetErrMsg());
+                exit(EXIT_FAILURE);
+            }
             SetBufferCapacity(new_buffer_len);
 
             DBG_LOG("(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket  <<

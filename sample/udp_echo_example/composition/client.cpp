@@ -54,7 +54,9 @@ bool UdpEchoClient:: SendToServer(const char* data, size_t len) {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int , char* []) {
     UdpEchoClient client;
-    client.IntUdpClient();
+    if(!client.IntUdpClient()){
+        return 1;
+    }
     std::string user_msg  {""}; 
     std::cout << "client started" << "\n";
     while( client.IsConnected() ) {

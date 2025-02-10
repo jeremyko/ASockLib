@@ -66,12 +66,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     std::signal(SIGINT,EchoServer::SigIntHandler);
-    EchoServer echoserver; 
-    if(!echoserver.RunIpcServer(argv[1])) {
-        std::cerr << echoserver.GetLastErrMsg() <<"\n"; 
-        exit(1);
+    EchoServer server; 
+    if(!server.RunIpcServer(argv[1])) {
+        std::cerr << server.GetLastErrMsg() <<"\n"; 
+        return 1;
     }std::cout << "server started" << "\n";
-    while( echoserver.IsServerRunning() ) {
+    while( server.IsServerRunning() ) {
         sleep(1);
     }
     std::cout << "server exit...\n";

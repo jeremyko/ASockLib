@@ -90,10 +90,12 @@ int main(int , char* []) {
         return 1;
     }
 #endif
-    UdpEchoServer echoserver; 
-    echoserver.RunUdpServer();
+    UdpEchoServer server; 
+    if(!server.RunUdpServer()){
+        return 1;
+    }
     std::cout << "server started" << "\n";
-    while( echoserver.IsServerRunning() ) {
+    while( server.IsServerRunning() ) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "server exit...\n";

@@ -86,14 +86,16 @@ void EchoServer::SigintHandler(int signo) {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[]) {
     if(argc !=2) {
-        std::cout << "usage : " << argv[0] << " ipc_socket_full_path \n\n";
+        std::cerr << "usage : " << argv[0] << " ipc_socket_full_path \n\n";
         return 1;
     }
     std::signal(SIGINT,EchoServer::SigintHandler);
-    EchoServer echoserver; 
-    echoserver.InitIpcServer(argv[1]);
+    EchoServer server; 
+    if(!server.InitIpcServer(argv[1])) {
+        return 1;
+    }
     std::cout << "server started" << "\n";
-    while( echoserver.IsServerRunning() ) {
+    while( server.IsServerRunning() ) {
         sleep(1);
     }
     std::cout << "server exit...\n";

@@ -37,7 +37,7 @@ void EchoClient::OnDisconnectedFromServer() {
 int main(int , char* []) {
     EchoClient client;
     if(!client.InitTcpClient("127.0.0.1", 9990  ) ) {
-        std::cerr <<"] error! "<< client.GetLastErrMsg() <<"\n"; 
+        std::cerr << client.GetLastErrMsg() <<"\n"; 
         return 1;
     }
     std::cout << "client started" << "\n";
