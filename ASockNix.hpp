@@ -1167,7 +1167,7 @@ public :
         server_ip_ = bind_ip ; 
         server_port_ = bind_port ; 
         max_client_limit_ = max_client ; 
-        if(max_client_limit_<0) {
+        if(max_client_limit_==0) {
             return false;
         }
         if(!SetBufferCapacity(max_data_len)) {
@@ -1187,7 +1187,7 @@ public :
         server_ip_ = bind_ip ; 
         server_port_ = bind_port ; 
         max_client_limit_ = max_client ; 
-        if(max_client_limit_<0) {
+        if(max_client_limit_==0) {
             return false;
         }
         if(!SetBufferCapacity(max_data_len)) {
@@ -1208,7 +1208,7 @@ public :
         sock_usage_ = SOCK_USAGE_IPC_SERVER  ;
         server_ipc_socket_path_ = sock_path;
         max_client_limit_ = max_client ; 
-        if(max_client_limit_<0) {
+        if(max_client_limit_==0) {
             return false;
         }
         if(!SetBufferCapacity(max_data_len)) {
