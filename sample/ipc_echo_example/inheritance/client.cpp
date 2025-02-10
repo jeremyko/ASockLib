@@ -17,8 +17,7 @@ class EchoClient : public asock::ASock
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-bool EchoClient:: OnRecvedCompleteData(asock::Context* context_ptr, 
-                                       char* data_ptr, size_t len) {
+bool EchoClient:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
     //user specific : - your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr, len );

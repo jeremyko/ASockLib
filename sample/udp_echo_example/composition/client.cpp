@@ -37,8 +37,7 @@ bool UdpEchoClient::IntUdpClient() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool UdpEchoClient:: OnRecvedCompleteData(asock::Context* context_ptr, 
-                                          char* data_ptr, size_t len) {
+bool UdpEchoClient:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
     //user specific : your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr, len );
@@ -53,7 +52,7 @@ bool UdpEchoClient:: SendToServer(const char* data, size_t len) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-int main(int argc, char* argv[]) {
+int main(int , char* []) {
     UdpEchoClient client;
     client.IntUdpClient();
     std::string user_msg  {""}; 

@@ -54,7 +54,7 @@ void EchoServer::SigIntHandler(int signo) {
     sigset_t sigset, oldset;
     sigfillset(&sigset);
     if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0) {
-        std::cerr << strerror(errno) <<"\n"; 
+        std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
     }
     std::cout << "Stop Server! \n";
     this_instance_->StopServer();
@@ -62,7 +62,7 @@ void EchoServer::SigIntHandler(int signo) {
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
-int main(int argc, char* argv[]) {
+int main(int , char* []) {
 #if defined __APPLE__ || defined __linux__ 
     std::signal(SIGINT,EchoServer::SigIntHandler);
 #endif

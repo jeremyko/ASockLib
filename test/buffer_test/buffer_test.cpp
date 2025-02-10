@@ -103,8 +103,7 @@ void TestClient::WaitForClientLoopExit() {
     tcp_client_.WaitForClientLoopExit();
 }
 
-bool TestClient:: OnRecvedCompleteData(asock::Context* context_ptr, 
-                                       char* data_ptr, size_t len) {
+bool TestClient:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
     //user specific : your whole data has arrived.
     char packet[1024]; // note : this buffer must be large enough to receive the data sent.
     memcpy(&packet, data_ptr,len);

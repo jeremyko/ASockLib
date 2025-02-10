@@ -106,8 +106,7 @@ void STEO_Client::SendThread(size_t index) {
     //LOG("send thread exiting : " << index);
 }
 ///////////////////////////////////////////////////////////////////////////////
-bool STEO_Client:: OnRecvedCompleteData(asock::Context* context_ptr, 
-                                       char* data_ptr, size_t len) {
+bool STEO_Client:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
     //user specific : your whole data has arrived.
 
     char packet[DEFAULT_PACKET_SIZE];
@@ -154,7 +153,7 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* context_ptr,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-int main(int argc, char* argv[]) {
+int main(int , char* []) {
     ElapsedTime elapsed;
     std::vector<std::thread>  vec_threads ;
     std::vector<STEO_Client*> vec_clients;

@@ -25,6 +25,8 @@ if(WIN32)
   add_definitions(/wd4244 /wd4324 /wd4819 -D_CRT_SECURE_NO_WARNINGS)
 elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   add_definitions(-Wall)
+  add_definitions(-Werror)
+  add_definitions(-Wextra)
 endif()
 
 if(WIN32)

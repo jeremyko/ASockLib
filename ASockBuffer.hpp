@@ -495,16 +495,18 @@ class CumBuffer {
         assert(cumulated_len_ <= buffer_len_);//XXX
     }
     //-------------------------------------------------------------------------
-    void    DebugPos(int line) {
 #ifdef CUMBUFFER_DEBUG
+    void    DebugPos(int line) {
         std::cout <<"line [" <<line
             <<"] cur_read_=" << cur_read_  
             <<", cur_write_="  << cur_write_ 
             <<", cumulated_len_=" << cumulated_len_ 
             <<", buffer_len_=" << buffer_len_
             <<"\n";
-#endif
     }
+#else
+    void DebugPos(int) {}
+#endif
     //-------------------------------------------------------------------------
     void ReSet() {
         cumulated_len_=0;

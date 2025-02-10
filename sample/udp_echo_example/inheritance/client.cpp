@@ -15,7 +15,7 @@ class EchoClient : public asock::ASock
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-bool EchoClient:: OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) {
+bool EchoClient:: OnRecvedCompleteData(asock::Context* ,char* data_ptr, size_t len) {
     //user specific : - your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet, data_ptr, len );
@@ -25,7 +25,7 @@ bool EchoClient:: OnRecvedCompleteData(asock::Context* context_ptr,char* data_pt
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-int main(int argc, char* argv[]) {
+int main(int , char* []) {
     EchoClient client;
     // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
     if(!client.InitUdpClient("127.0.0.1", 9990, DEFAULT_PACKET_SIZE  ) ) {

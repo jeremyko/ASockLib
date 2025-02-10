@@ -309,9 +309,8 @@ private:
         return supposed_total_len ;
     }
 
-    virtual bool OnRecvedCompleteData(Context* ctx_ptr, 
-                                         char* data_ptr, size_t size_t) {
-        std::cerr << "ERROR! OnRecvedCompleteData not implemented!\n";
+    virtual bool OnRecvedCompleteData(Context* , char* , size_t ) {
+        std::cerr << "ERROR! OnRecvedCompleteData not implemented! \n";
         return false;
     } 
 
@@ -1523,8 +1522,8 @@ private :
     std::function<void(Context*)> cb_on_client_disconnected_ {nullptr};
 
     //for inheritance : Implement these virtual functions.
-    virtual void    OnClientConnected(Context* ctx_ptr) {}; 
-    virtual void    OnClientDisconnected(Context* ctx_ptr) {} ;  
+    virtual void OnClientConnected(Context*) {}; 
+    virtual void OnClientDisconnected(Context*) {} ;  
 };
 } //namespace
 

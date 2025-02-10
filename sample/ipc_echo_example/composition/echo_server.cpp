@@ -77,7 +77,7 @@ void EchoServer::SigintHandler(int signo) {
     sigset_t sigset, oldset;
     sigfillset(&sigset);
     if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0) {
-        std::cerr << strerror(errno) <<"\n"; 
+        std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
     }
     std::cout << "Stop Server! \n";
     this_instance_->ipc_server_.StopServer();

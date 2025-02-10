@@ -31,7 +31,6 @@ class STEO_Server
     bool    OnRecvedCompleteData(asock::Context* ctx_ptr, 
                                  char* data_ptr, size_t len ) ;
     void    OnClientConnected(asock::Context* ctx_ptr) ; 
-    void    OnClientDisconnected(asock::Context* ctx_ptr) ; 
     void    SendThread(asock::Context* ctx_ptr) ;
 };
 
@@ -48,8 +47,6 @@ bool STEO_Server::RunTcpServer() {
                                 &STEO_Server::OnRecvedCompleteData, this, _1,_2,_3));
     tcp_server_.SetCbOnClientConnected      (std::bind( 
                                 &STEO_Server::OnClientConnected, this, _1));
-    tcp_server_.SetCbOnClientDisconnected   (std::bind( 
-                                &STEO_Server::OnClientDisconnected, this, _1));
 
     if(!tcp_server_.RunTcpServer("127.0.0.1", 9990 )) {
         std::cerr << tcp_server_.GetLastErrMsg() <<"\n"; 
@@ -106,10 +103,6 @@ void STEO_Server::OnClientConnected(asock::Context* ctx_ptr) {
     }
 }
 
-///////////////////////////////////////////////////////////////////////////////
-void STEO_Server::OnClientDisconnected(asock::Context* ctx_ptr) {
-    //std::cout <<"client disconnected : socket fd ["<< ctx_ptr->socket <<"]\n";
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 #if defined __APPLE__ || defined __linux__ 
@@ -117,7 +110,7 @@ void STEO_Server::SigIntHandler(int signo) {
     sigset_t sigset, oldset;
     sigfillset(&sigset);
     if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0) {
-        std::cerr << strerror(errno) <<"\n"; 
+        std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
     }
     std::cout << "Stop Server! \n";
     this_instance_->tcp_server_.StopServer();
@@ -137,7 +130,7 @@ BOOL WINAPI CtrlHandler(DWORD fdwCtrlType) {
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
-int main(int argc, char* argv[]) {
+int main(int , char* []) {
 #if defined __APPLE__ || defined __linux__ 
     std::signal(SIGINT,STEO_Server::SigIntHandler);
 #else
