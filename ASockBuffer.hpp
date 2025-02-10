@@ -530,8 +530,9 @@ class CumBuffer {
         buffer_len_ = len ;
         buffer_ptr_ = new (std::nothrow) char [buffer_len_];
         if(buffer_ptr_ == nullptr) {
-            err_msg_="alloc failed :";
-            return false;
+            std::cerr << "alloc failed : exit" <<"\n";
+            // It can't proceed any further.
+            exit(EXIT_FAILURE);
         }
         memset(buffer_ptr_, '\0', buffer_len_);
         memcpy(buffer_ptr_, old_buffer_ptr, old_buffer_len);
