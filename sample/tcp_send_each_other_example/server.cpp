@@ -68,7 +68,7 @@ void STEO_Server::SendThread(asock::Context* ctx_ptr) {
         memcpy(send_msg,data.c_str(),data.length());
         if(! tcp_server_.SendData(ctx_ptr,send_msg,data.length())) {
             ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
-            return ;
+            exit(EXIT_FAILURE);
         }
         cnt++;
         if(cnt >= SERVER_MSG_PER_CLIENT_THREAD){
@@ -90,7 +90,7 @@ bool STEO_Server::OnRecvedCompleteData(asock::Context* ctx_ptr,
     //this is echo server
     if (!tcp_server_.SendData(  ctx_ptr, data_ptr, len)) {
         ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
-        return false;
+        exit(EXIT_FAILURE);
     }
     return true;
 }
@@ -142,7 +142,7 @@ int main(int , char* []) {
 #endif
     STEO_Server server; 
     if(!server.RunTcpServer()){
-        return 1;
+        exit(EXIT_FAILURE);
     }
     std::cout << "server started\n";
     while( server.IsServerRunning() ) {

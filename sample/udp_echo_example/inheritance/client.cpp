@@ -30,7 +30,7 @@ int main(int , char* []) {
     // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
     if(!client.InitUdpClient("127.0.0.1", 9990, DEFAULT_PACKET_SIZE  ) ) {
         std::cerr << client.GetLastErrMsg() <<"\n"; 
-        return 1;
+        exit(EXIT_FAILURE);
     }
     std::cout << "client started" << "\n";
     std::string user_msg  {""}; 
@@ -41,11 +41,11 @@ int main(int , char* []) {
         if(msg_len>0) {
             if(! client.SendToServer(user_msg.c_str(),msg_len) ) {
                 std::cerr << client.GetLastErrMsg() <<"\n"; 
-                return 1;
+                exit(EXIT_FAILURE);
             }
         }
     }//while
     std::cout << "client exit...\n";
-    return 0;
+    exit(EXIT_SUCCESS);
 }
 

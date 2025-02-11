@@ -64,7 +64,7 @@ bool STEO_Client::IntTcpClient(size_t client_id) {
     
     if(!tcp_client_.InitTcpClient("127.0.0.1", 9990   ) ) {
         std::cerr <<"error : "<< tcp_client_.GetLastErrMsg() << "\n"; 
-        return false;
+        exit(EXIT_FAILURE);
     }
     return true;
 }
@@ -95,7 +95,7 @@ void STEO_Client::SendThread(size_t index) {
         }
         if (!tcp_client_.SendToServer(data.c_str(),data.length())) {
             DBG_ELOG("error! " << tcp_client_.GetLastErrMsg());
-            return;
+            exit(EXIT_FAILURE);
         }
         sent_cnt++ ;
         if(sent_cnt >= SEND_PER_THREAD){
@@ -132,9 +132,8 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t
             }
         }
         if (!found) {
-            std::this_thread::sleep_for(std::chrono::seconds(2));
             std::cerr << "data abnomaly !!! --> [" << response <<"]\n";
-            exit(1);
+            exit(EXIT_FAILURE);
         }
     }
     // if (g_responsed_cnt >0 && g_responsed_cnt % 10000 == 0) {
@@ -216,6 +215,6 @@ int main(int , char* []) {
     std::cout << "total server sent msg count = " << g_server_msg_cnt << "\n";
     std::cout << "elapsed                     = " <<  elapsed_fmt << " / " <<elapsed_time <<"ms\n\n";
 
-    return 0;
+    exit(EXIT_SUCCESS);
 }
 

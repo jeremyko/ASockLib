@@ -153,7 +153,7 @@ public :
                          << WSAGetLastError());
             }
             ctx_ptr->socket = INVALID_SOCKET; //XXX
-            exit(1);
+            exit(EXIT_FAILURE);
         }
 
         ST_HEADER header;
@@ -400,7 +400,7 @@ protected :
             Context* ctx_ptr = PopClientContextFromCache();
             if (ctx_ptr == nullptr) {
                 ELOG(err_msg_);
-                exit(1);
+                exit(EXIT_FAILURE);
             }
             ctx_ptr->is_connected = true;
             ctx_ptr->socket = listen_socket_;
@@ -412,7 +412,7 @@ protected :
                 BuildErrMsgString(WSAGetLastError());
                 ELOG("alloc failed! delete ctx_ptr");
                 delete ctx_ptr;
-                exit(1);
+                exit(EXIT_FAILURE);
             }
             // Start receiving.
             if (!IssueRecv(99999, ctx_ptr)) { // worker_index 99999 is for debugging.
@@ -430,7 +430,7 @@ protected :
                              << ctx_ptr->sock_id_copy);
                     PushClientContextToCache(ctx_ptr);
                 }
-                exit(1);
+                exit(EXIT_FAILURE);
             }
         } else {
             std::thread server_thread(&ASock::AcceptThreadRoutine, this);
@@ -480,7 +480,7 @@ protected :
                 char* complete_packet_data = new (std::nothrow) char [alloc_len] ; //XXX 
                 if(complete_packet_data == nullptr) {
                     ELOG("mem alloc failed");
-                    exit(1);
+                    exit(EXIT_FAILURE);
                 }
                 if (cumbuffer::OP_RSLT_OK !=
                     ctx_ptr->per_recv_io_ctx->cum_buffer.GetData (
@@ -494,7 +494,7 @@ protected :
                     }
                     ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
                     delete[] complete_packet_data; //XXX
-                    exit(1);
+                    exit(EXIT_FAILURE);
                 }
                 if (cb_on_recved_complete_packet_ != nullptr) {
                     //invoke user specific callback
@@ -523,7 +523,7 @@ protected :
         char* complete_packet_data = new (std::nothrow) char[bytes_transferred]; //XXX TODO !!!
         if (complete_packet_data == nullptr) {
             ELOG("mem alloc failed");
-            exit(1);
+            exit(EXIT_FAILURE);
         }
         if (cumbuffer::OP_RSLT_OK != ctx_ptr->per_recv_io_ctx->cum_buffer.
             GetData(bytes_transferred, complete_packet_data)) {
@@ -732,7 +732,10 @@ private:
             // If the size of the data to be received is larger than the buffer, 
             // increase the buffer capacity.
             size_t new_buffer_len= supposed_total_len * 2;
-            ctx_ptr->GetBuffer()->IncreaseBufferAndCopyExisting(new_buffer_len);
+            if(!ctx_ptr->GetBuffer()->IncreaseBufferAndCopyExisting(new_buffer_len)){
+                ELOG(ctx_ptr->recv_buffer.GetErrMsg());
+                exit(EXIT_FAILURE);
+            }
             SetBufferCapacity(new_buffer_len);
 
             DBG_LOG("(usg:" << this->sock_usage_ << ")sock:" << ctx_ptr->socket <<
@@ -1539,7 +1542,7 @@ private :
                 BuildErrMsgString(last_err);
                 if (!is_need_server_run_) {
                     ELOG(err_msg_);
-                    exit(1);
+                    exit(EXIT_FAILURE);
                 } else {
                     break;
                 }
@@ -1549,7 +1552,7 @@ private :
             Context* ctx_ptr = PopClientContextFromCache();
             if (ctx_ptr == nullptr) {
                 ELOG(err_msg_);
-                exit(1);
+                exit(EXIT_FAILURE);
             }
             ctx_ptr->is_connected = true;
             ctx_ptr->socket = client_sock; 
@@ -1561,7 +1564,7 @@ private :
                 BuildErrMsgString(WSAGetLastError());
                 ELOG(err_msg_ );
                 delete ctx_ptr;
-                exit(1); 
+                exit(EXIT_FAILURE);
             }
             // XXX iocp 초기화 완료후 사용자의 콜백을 호출해야 함. 
             // 사용자가 콜백에서 send를 시도할수 있기 때문.

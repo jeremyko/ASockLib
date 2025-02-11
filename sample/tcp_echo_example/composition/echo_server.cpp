@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iostream>
 #include <cassert>
 #include <csignal>
@@ -62,7 +63,7 @@ bool    EchoServer::OnRecvedCompleteData(asock::Context* context_ptr,
     
     if(! tcp_server_.SendData(context_ptr, data_ptr, len) ) {
         std::cerr << GetLastErrMsg() <<"\n"; 
-        return false;
+        exit(EXIT_FAILURE);
     }
     return true;
 }
@@ -83,6 +84,7 @@ void EchoServer::SigIntHandler(int signo) {
     sigfillset(&sigset);
     if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0) {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
+        exit(EXIT_FAILURE);
     }
     std::cout << "Stop Server! \n";
     this_instance_->tcp_server_.StopServer();
@@ -96,13 +98,13 @@ int main(int , char* []) {
 #endif
     EchoServer server; 
     if(!server.RunTcpServer()){
-        return 1;
+        exit(EXIT_FAILURE);
     }
     std::cout << "server started" <<  "\n";
     while( server.IsServerRunning() ) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "server exit...\n";
-    return 0;
+    exit(EXIT_SUCCESS);
 }
 

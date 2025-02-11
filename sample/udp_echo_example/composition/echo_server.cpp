@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iostream>
 #include <cassert>
 #include <csignal>
@@ -50,7 +51,7 @@ bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_
     //this is echo server
     if(! udp_server_.SendData(context_ptr, data_ptr, len) ) {
         std::cerr << GetLastErrMsg() <<"\n"; 
-        return false;
+        exit(EXIT_FAILURE);
     }
     return true;
 }
@@ -62,6 +63,7 @@ void UdpEchoServer::SigIntHandler(int signo) {
     sigfillset(&sigset);
     if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0) {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
+        exit(EXIT_FAILURE);
     }
     std::cout << "Stop Server! \n";
     UdpEchoServer::this_instance_->udp_server_.StopServer();
@@ -87,18 +89,18 @@ int main(int , char* []) {
 #else
     if (0 == SetConsoleCtrlHandler(CtrlHandler, TRUE)) {
         std::cout << "error: server exit...\n";
-        return 1;
+        exit(EXIT_FAILURE);
     }
 #endif
     UdpEchoServer server; 
     if(!server.RunUdpServer()){
-        return 1;
+        exit(EXIT_FAILURE);
     }
     std::cout << "server started" << "\n";
     while( server.IsServerRunning() ) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "server exit...\n";
-    return 0;
+    exit(EXIT_SUCCESS);
 }
 

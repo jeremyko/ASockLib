@@ -241,6 +241,7 @@ public :
                     // err_msg_ need lock for multithread
                     std::lock_guard<std::mutex> lock(err_msg_lock_);
                     err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
+                    ELOG(err_msg_);
                     return false;
                 }
             }
@@ -566,17 +567,18 @@ protected :
             char* complete_packet_data = new (std::nothrow) char [max_data_len_] ; // TODO no..not good
             if(complete_packet_data == NULL) {
                 err_msg_ = "memory alloc failed!";
-                return false;
+                ELOG(err_msg_);
+                exit(EXIT_FAILURE);
             }
             if(cumbuffer::OP_RSLT_OK!= 
             ctx_ptr->recv_buffer.GetData(recved_len, complete_packet_data )) {
                 //error !
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = ctx_ptr->recv_buffer.GetErrMsg();
-                std::cerr << err_msg_ << "\n";
+                ELOG(err_msg_);
                 ctx_ptr->is_packet_len_calculated = false;
                 delete[] complete_packet_data; 
-                return false; 
+                return false;
             }
             // UDP 이므로 받는 버퍼를 초기화해서, linear free space를 초기화 상태로 
             ctx_ptr->recv_buffer.ReSet(); //this is udp. all data has arrived!
@@ -855,7 +857,6 @@ private :
             return false;
         }
         // RunServer
-        //if(!ControlEpoll (listen_context_ptr_, EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDHUP, EPOLL_CTL_ADD)){
         if(!ControlEpoll (listen_context_ptr_, EPOLLIN , EPOLL_CTL_ADD)){
             return false;
         }
@@ -1017,7 +1018,6 @@ private :
             }
 #elif __linux__
             // RunClientThread
-            //if(!ControlEpoll( &context_, EPOLLIN | EPOLLOUT | EPOLLERR , EPOLL_CTL_ADD )) {
             if(!ControlEpoll( &context_, EPOLLIN  , EPOLL_CTL_ADD )) {
                 close(context_.socket);
                 return false;
@@ -1366,7 +1366,7 @@ private :
 #endif
                     //# recv #----------
                     if(! RecvfromData(listen_context_ptr_)) {
-                        break;
+                        exit(EXIT_FAILURE);
                     }
                 }
 #ifdef __APPLE__

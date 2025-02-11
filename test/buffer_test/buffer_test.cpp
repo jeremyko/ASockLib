@@ -65,7 +65,7 @@ class TestClient {
   public:
     bool IntTcpClient();
     bool SendToServer (const char* data, size_t len) ;
-    void DisConnectTcpClient();
+    void DisConnect();
     bool IsConnected() { return tcp_client_.IsConnected();}
     void WaitForClientLoopExit();
     std::string  GetLastErrMsg(){return  tcp_client_.GetLastErrMsg() ; }
@@ -96,7 +96,7 @@ bool TestClient::SendToServer (const char* data, size_t len) {
     return tcp_client_.SendToServer(data, len);
 }
 
-void TestClient::DisConnectTcpClient() {
+void TestClient::DisConnect() {
     tcp_client_.Disconnect();
 }
 void TestClient::WaitForClientLoopExit() {
@@ -163,7 +163,7 @@ TEST(BufferTest, IncreaseCapacity) {
 
     //--- Start termination procedure
     server.StopServer();
-    client.DisConnectTcpClient();
+    client.DisConnect();
     client.WaitForClientLoopExit();
 
     //--- Waiting for termination to complete.

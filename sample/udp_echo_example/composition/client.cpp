@@ -55,7 +55,7 @@ bool UdpEchoClient:: SendToServer(const char* data, size_t len) {
 int main(int , char* []) {
     UdpEchoClient client;
     if(!client.IntUdpClient()){
-        return 1;
+        exit(EXIT_FAILURE);
     }
     std::string user_msg  {""}; 
     std::cout << "client started" << "\n";
@@ -66,11 +66,11 @@ int main(int , char* []) {
         if(msg_len>0) {
             if(! client.SendToServer(user_msg.c_str(),msg_len) ) {
                 std::cerr << client.GetLastErrMsg() <<"\n"; 
-                return 1;
+                exit(EXIT_FAILURE);
             }            
         }
     } //while
     std::cout << "client exit...\n";
-    return 0;
+    exit(EXIT_SUCCESS);
 }
 

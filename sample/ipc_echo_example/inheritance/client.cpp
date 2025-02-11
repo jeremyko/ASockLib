@@ -29,19 +29,19 @@ bool EchoClient:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t 
 ///////////////////////////////////////////////////////////////////////////////
 void EchoClient::OnDisconnectedFromServer() {
     std::cout << "* server disconnected ! \n";
-    exit(1);
+    exit(EXIT_FAILURE);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[]) {
     if(argc !=2) {
         std::cout << "usage : " << argv[0] << " ipc_socket_full_path \n\n";
-        return 1;
+        exit(EXIT_FAILURE);
     }
     EchoClient client;
     if(!client.InitIpcClient(argv[1] )) {
         std::cerr << client.GetLastErrMsg() <<"\n"; 
-        return 1;
+        exit(EXIT_FAILURE);
     }
     std::cout << "client started" << "\n";
     std::string user_msg  {""}; 
@@ -52,11 +52,11 @@ int main(int argc, char* argv[]) {
         if(msg_len>0) {
             if(! client.SendToServer(user_msg.c_str(),user_msg.length()) ) {
                 std::cerr << client.GetLastErrMsg() <<"\n"; 
-                return 1;
+                exit(EXIT_FAILURE);
             }
         }
     }//while
     std::cout << "client exit...\n";
-    return 0;
+    exit(EXIT_SUCCESS);
 }
 
