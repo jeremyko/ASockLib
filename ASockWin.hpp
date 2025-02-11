@@ -733,7 +733,7 @@ private:
             // increase the buffer capacity.
             size_t new_buffer_len= supposed_total_len * 2;
             if(!ctx_ptr->GetBuffer()->IncreaseBufferAndCopyExisting(new_buffer_len)){
-                ELOG(ctx_ptr->recv_buffer.GetErrMsg());
+                ELOG(ctx_ptr->GetBuffer()->GetErrMsg());
                 exit(EXIT_FAILURE);
             }
             SetBufferCapacity(new_buffer_len);
