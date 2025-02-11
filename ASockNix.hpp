@@ -813,6 +813,9 @@ private :
         }
         //-------------------------------------------------
         if ( result < 0 ) {
+            if ( sock_usage_ == SOCK_USAGE_IPC_SERVER ) {
+                ELOG(server_ipc_socket_path_.c_str());
+            }
             err_msg_ = "bind error ["  + std::string(strerror(errno)) + "]";
             return false ;
         }
@@ -872,7 +875,6 @@ private :
         memset(ep_events_, 0x00, sizeof(struct epoll_event) * max_client_limit_);
 #endif
         if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
-            //UDP is special~~~ 
             std::thread server_thread(&ASock::ServerThreadUdpRoutine, this);
             server_thread.detach();
         } else {
@@ -1212,6 +1214,7 @@ public :
         server_ipc_socket_path_ = sock_path;
         max_client_limit_ = max_client ; 
         if(max_client_limit_==0) {
+            ELOG("max client is 0");
             return false;
         }
         if(!SetBufferCapacity(max_data_len)) {
@@ -1267,7 +1270,7 @@ private :
                 return;
             }
 #elif __linux__
-            int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 1000 );
+            int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 100 );
             if (event_cnt < 0) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
@@ -1350,7 +1353,7 @@ private :
                 return;
             }
 #elif __linux__
-            int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 1000 );
+            int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 100 );
             if (event_cnt < 0) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
