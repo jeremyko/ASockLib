@@ -1,15 +1,18 @@
-add_executable(udp_test udp_test.cpp)
+add_executable(test_udp udp_test.cpp)
 
 # gtest requires c++14. AsockLib does not.
 set(CMAKE_CXX_STANDARD 14)
+if(APPLE)
+  add_definitions(-std=c++14)
+endif()
 
 if(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   find_library(GTEST_LIBRARY
-        NAMES gtest
-        PATHS /usr/lib /usr/local/lib
+    NAMES gtest
+    PATHS /usr/lib /usr/local/lib
   )
   if(GTEST_LIBRARY)
-    target_link_libraries(udp_test LINK_PUBLIC ${GTEST_LIBRARY})
+    target_link_libraries(test_udp LINK_PUBLIC ${GTEST_LIBRARY})
   endif()
 endif()
 

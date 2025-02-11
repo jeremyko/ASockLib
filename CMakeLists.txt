@@ -27,6 +27,7 @@ elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   add_definitions(-Wall)
   add_definitions(-Werror)
   add_definitions(-Wextra)
+  include_directories(/usr/local/include)
 endif()
 
 if(WIN32)

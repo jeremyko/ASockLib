@@ -1281,7 +1281,7 @@ private :
             //DBG_LOG("--->> event count : " << event_cnt);
             for (int i = 0; i < event_cnt; i++) {
 #ifdef __APPLE__
-                if (kq_events_ptr_[i].ident   == listen_socket_) {
+                if ((int)kq_events_ptr_[i].ident == listen_socket_) {
 #elif __linux__
                 if (((Context*)ep_events_[i].data.ptr)->socket == listen_socket_){
 #endif
