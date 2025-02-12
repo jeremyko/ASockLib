@@ -3,41 +3,45 @@
 #include <cstdlib>
 #include <stdio.h>
 #include <cassert>
+#include <csignal>
 #include "ASock.hpp"
 
 // NOTE: The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
-class UdpEchoClient 
-{
+class Client {
   public:
     bool IntUdpClient();
     bool SendToServer(const char* data, size_t len);
-    bool IsConnected() { return udp_client_.IsConnected();}
-    std::string  GetLastErrMsg(){return  udp_client_.GetLastErrMsg() ; }
+    bool IsConnected() { return client_.IsConnected();}
+    static void SigIntHandler(int signo);
+    std::string GetLastErrMsg(){return  client_.GetLastErrMsg() ; }
 
   private:
-    asock::ASock   udp_client_ ; //composite usage
-    bool    OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len); 
+    static Client* this_instance_ ;
+    asock::ASock client_ ; //composite usage
+    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len); 
 };
 
+Client* Client::this_instance_ = nullptr;
 ///////////////////////////////////////////////////////////////////////////////
-bool UdpEchoClient::IntUdpClient() {
+bool Client::IntUdpClient() {
+    this_instance_ = this;
     //register callbacks
-    udp_client_.SetCbOnRecvedCompletePacket(std::bind(&UdpEchoClient::OnRecvedCompleteData, this,
+    client_.SetCbOnRecvedCompletePacket(std::bind(&Client::OnRecvedCompleteData, this,
                                             std::placeholders::_1, 
                                             std::placeholders::_2, 
                                             std::placeholders::_3));
     // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
-    if(!udp_client_.InitUdpClient("127.0.0.1", 9990, DEFAULT_PACKET_SIZE  ) ) {
-        std::cerr << udp_client_.GetLastErrMsg() <<"\n"; 
+    if(!client_.InitUdpClient("127.0.0.1", 9990, DEFAULT_PACKET_SIZE  ) ) {
+        std::cerr << client_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool UdpEchoClient:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
+bool Client:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
     //user specific : your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr, len );
@@ -47,13 +51,31 @@ bool UdpEchoClient:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool UdpEchoClient:: SendToServer(const char* data, size_t len) {
-    return udp_client_.SendToServer(data, len);
+bool Client:: SendToServer(const char* data, size_t len) {
+    return client_.SendToServer(data, len);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void Client::SigIntHandler(int signo) {
+    if (signo == SIGINT) {
+        std::cout << "stop client\n";
+        this_instance_->client_.Disconnect();
+        //--- Waiting for termination to complete.
+        while(this_instance_->IsConnected() ) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        exit(EXIT_SUCCESS);
+    }
+    else {
+        std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
+        exit(EXIT_FAILURE);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 int main(int , char* []) {
-    UdpEchoClient client;
+    std::signal(SIGINT,Client::SigIntHandler);
+    Client client;
     if(!client.IntUdpClient()){
         exit(EXIT_FAILURE);
     }

@@ -34,17 +34,16 @@ size_t TOTAL_EXPECTED_SERVER_ECHO_CNT =
 std::atomic<size_t> g_responsed_cnt{ 0 };
 std::atomic<size_t> g_server_msg_cnt{ 0 };
 
-class STEO_Client 
-{
+class Client {
   public:
     bool IntTcpClient(size_t client_id);
     void DisConnect();
-    bool IsConnected() { return tcp_client_.IsConnected();}
+    bool IsConnected() { return client_.IsConnected();}
     void SendThread(size_t index) ;
-    std::string  GetLastErrMsg(){return  tcp_client_.GetLastErrMsg() ; }
+    std::string  GetLastErrMsg(){return  client_.GetLastErrMsg() ; }
     size_t client_id_;
   private:
-    asock::ASock   tcp_client_ ; //composite usage
+    asock::ASock client_ ; //composite usage
     bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, 
                               size_t len); 
     std::vector<std::string> vec_sent_strings_ ;
@@ -52,27 +51,26 @@ class STEO_Client
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-bool STEO_Client::IntTcpClient(size_t client_id) {
+bool Client::IntTcpClient(size_t client_id) {
     client_id_ = client_id ;
-    //register callbacks
     using std::placeholders::_1;
     using std::placeholders::_2;
     using std::placeholders::_3;
-    tcp_client_.SetCbOnRecvedCompletePacket(std::bind( 
-                                &STEO_Client::OnRecvedCompleteData, this, _1,_2,_3));
+    client_.SetCbOnRecvedCompletePacket(std::bind( 
+                                &Client::OnRecvedCompleteData, this, _1,_2,_3));
     
-    if(!tcp_client_.InitTcpClient("127.0.0.1", 9990   ) ) {
-        std::cerr <<"error : "<< tcp_client_.GetLastErrMsg() << "\n"; 
+    if(!client_.InitTcpClient("127.0.0.1", 9990   ) ) {
+        std::cerr <<"error : "<< client_.GetLastErrMsg() << "\n"; 
         exit(EXIT_FAILURE);
     }
     return true;
 }
 ///////////////////////////////////////////////////////////////////////////////
-void STEO_Client::DisConnect() {
-    tcp_client_.Disconnect();
+void Client::DisConnect() {
+    client_.Disconnect();
 }
 ///////////////////////////////////////////////////////////////////////////////
-void STEO_Client::SendThread(size_t index) {
+void Client::SendThread(size_t index) {
     while (!IsConnected()) {
         std::this_thread::sleep_for(std::chrono::seconds(1)); 
     }
@@ -88,8 +86,8 @@ void STEO_Client::SendThread(size_t index) {
             std::lock_guard<std::mutex> lock(sent_chk_lock_);
             vec_sent_strings_.push_back(data);
         }
-        if (!tcp_client_.SendToServer(data.c_str(),data.length())) {
-            DBG_ELOG("error! " << tcp_client_.GetLastErrMsg());
+        if (!client_.SendToServer(data.c_str(),data.length())) {
+            DBG_ELOG("error! " << client_.GetLastErrMsg());
             exit(EXIT_FAILURE);
         }
         sent_cnt++ ;
@@ -101,7 +99,7 @@ void STEO_Client::SendThread(size_t index) {
     //LOG("send thread exiting : " << index);
 }
 ///////////////////////////////////////////////////////////////////////////////
-bool STEO_Client:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
+bool Client:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
     //user specific : your whole data has arrived.
 
     char packet[DEFAULT_PACKET_SIZE];
@@ -150,10 +148,10 @@ bool STEO_Client:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t
 int main(int , char* []) {
     ElapsedTime elapsed;
     std::vector<std::thread>  vec_threads ;
-    std::vector<STEO_Client*> vec_clients;
+    std::vector<Client*> vec_clients;
     std::cout << "client started\n";
     for (size_t i = 0; i < MAX_CLIENTS; i++) {
-        STEO_Client* client = new (std::nothrow) STEO_Client;
+        Client* client = new (std::nothrow) Client;
         if (client == nullptr) {
             std::cerr << "alloc failed!!\n";
             exit(EXIT_FAILURE);
@@ -167,7 +165,7 @@ int main(int , char* []) {
     //spawn thread after all client starts..
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
         for (size_t j = 0; j < THREADS_PER_CLIENT; j++) {
-            vec_threads.push_back(std::thread(&STEO_Client::SendThread, *it, j));
+            vec_threads.push_back(std::thread(&Client::SendThread, *it, j));
         }
     }
     for(size_t i = 0; i < vec_threads.size(); i++) {

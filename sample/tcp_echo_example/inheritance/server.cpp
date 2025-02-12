@@ -8,28 +8,25 @@
 // NOTE: The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
-class EchoServer : public asock::ASock
-{
+class Server : public asock::ASock {
   public:
-    EchoServer(){this_instance_ = this; }
+    Server(){this_instance_ = this; }
     static void SigIntHandler(int signo);
-
   private:
-    bool    OnRecvedCompleteData(asock::Context* context_ptr, 
-                                 char* data_ptr, size_t len ) override;
-    void    OnClientConnected(asock::Context* context_ptr) override;
-    void    OnClientDisconnected(asock::Context* context_ptr) override;
-    static  EchoServer* this_instance_ ;
+    static  Server* this_instance_ ;
+    bool    OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len ) override ;
+    void    OnClientConnected(asock::Context* context_ptr) override; 
+    void    OnClientDisconnected(asock::Context* context_ptr) override; 
 };
 
-EchoServer* EchoServer::this_instance_ = nullptr;
+Server* Server::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
-bool    EchoServer::OnRecvedCompleteData(asock::Context* context_ptr, 
-                                         char*  data_ptr, size_t len ) {
+bool    Server::OnRecvedCompleteData(asock::Context* context_ptr, 
+                                         char* data_ptr, size_t len ) {
     //user specific : - your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
-    memcpy(&packet,data_ptr, len);
+    memcpy(&packet,data_ptr,len);
     packet[len] = '\0';
     std::cout << "recved [" << packet << "]\n";
     // this is echo server
@@ -41,40 +38,41 @@ bool    EchoServer::OnRecvedCompleteData(asock::Context* context_ptr,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void EchoServer::OnClientConnected(asock::Context* context_ptr) {
+void Server::OnClientConnected(asock::Context* context_ptr) {
     std::cout << "client connected : socket fd ["<< context_ptr->socket <<"]\n";
 }
 ///////////////////////////////////////////////////////////////////////////////
-void EchoServer::OnClientDisconnected(asock::Context* context_ptr) {
+void Server::OnClientDisconnected(asock::Context* context_ptr) {
     std::cout << "client disconnected : socket fd ["<< context_ptr->socket <<"]\n";
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void EchoServer::SigIntHandler(int signo) {
-    sigset_t sigset, oldset;
-    sigfillset(&sigset);
-    if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0) {
+void Server::SigIntHandler(int signo) {
+    if (signo == SIGINT) {
+        std::cout << "stop server! \n";
+        this_instance_->StopServer();
+        while(this_instance_->IsServerRunning() ) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        exit(EXIT_SUCCESS);
+    }
+    else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }
-    std::cout << "Stop Server! \n";
-    this_instance_->StopServer();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-int main(int argc, char* argv[]) {
-    if(argc !=2) {
-        std::cout << "usage : " << argv[0] << " ipc_socket_full_path \n\n";
-        exit(EXIT_FAILURE);
-    }
-    std::signal(SIGINT,EchoServer::SigIntHandler);
-    EchoServer server; 
-    if(!server.RunIpcServer(argv[1])) {
+int main(int , char* []) {
+    std::signal(SIGINT,Server::SigIntHandler);
+    Server server; 
+    if(!server.RunTcpServer("127.0.0.1", 9990 )) {
         std::cerr << server.GetLastErrMsg() <<"\n"; 
         exit(EXIT_FAILURE);
-    }std::cout << "server started" << "\n";
+    }
+    std::cout << "server started" << "\n";
     while( server.IsServerRunning() ) {
-        sleep(1);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "server exit...\n";
     exit(EXIT_SUCCESS);

@@ -8,48 +8,46 @@
 // NOTE: The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
-class UdpEchoServer 
-{
+class Server {
   public:
-    UdpEchoServer(){this_instance_ = this; }
-    bool    RunUdpServer();
-    bool    IsServerRunning(){return udp_server_.IsServerRunning();};
-    std::string  GetLastErrMsg(){return  udp_server_.GetLastErrMsg() ; }
+    bool RunUdpServer();
+    bool IsServerRunning(){return server_.IsServerRunning();};
+    std::string GetLastErrMsg(){return  server_.GetLastErrMsg() ; }
     static void SigIntHandler(int signo);
-    asock::ASock udp_server_ ; //composite usage
-
-    static  UdpEchoServer* this_instance_ ;
+    asock::ASock server_ ; //composite usage
+    static  Server* this_instance_ ;
   private:
     bool    OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) ;
 };
 
-UdpEchoServer* UdpEchoServer::this_instance_ = nullptr;
+Server* Server::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
-bool UdpEchoServer::RunUdpServer() {
+bool Server::RunUdpServer() {
+    this_instance_ = this;
     //register callbacks
-    udp_server_.SetCbOnRecvedCompletePacket(
-                    std::bind( &UdpEchoServer::OnRecvedCompleteData, this,
+    server_.SetCbOnRecvedCompletePacket(
+                    std::bind( &Server::OnRecvedCompleteData, this,
                             std::placeholders::_1, 
                             std::placeholders::_2, 
                             std::placeholders::_3));
     // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
-    if(!udp_server_.RunUdpServer("127.0.0.1", 9990, DEFAULT_PACKET_SIZE )) {
-        std::cerr << udp_server_.GetLastErrMsg() <<"\n"; 
+    if(!server_.RunUdpServer("127.0.0.1", 9990, DEFAULT_PACKET_SIZE )) {
+        std::cerr << server_.GetLastErrMsg() <<"\n"; 
         return false;
     }
     return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) {
+bool Server::OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) {
     //user specific : your whole data has arrived. 
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet, data_ptr, len);
     packet[len] = '\0';
     std::cout << "recved [" << packet << "]\n";
     //this is echo server
-    if(! udp_server_.SendData(context_ptr, data_ptr, len) ) {
+    if(! server_.SendData(context_ptr, data_ptr, len) ) {
         std::cerr << GetLastErrMsg() <<"\n"; 
         exit(EXIT_FAILURE);
     }
@@ -57,42 +55,25 @@ bool UdpEchoServer::OnRecvedCompleteData(asock::Context* context_ptr,char* data_
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-#if defined __APPLE__ || defined __linux__ 
-void UdpEchoServer::SigIntHandler(int signo) {
-    sigset_t sigset, oldset;
-    sigfillset(&sigset);
-    if (sigprocmask(SIG_BLOCK, &sigset, &oldset) < 0) {
+void Server::SigIntHandler(int signo) {
+    if (signo == SIGINT) {
+        std::cout << "stop server! \n";
+        this_instance_->server_.StopServer();
+        while(this_instance_->IsServerRunning() ) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        exit(EXIT_SUCCESS);
+    }
+    else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }
-    std::cout << "Stop Server! \n";
-    UdpEchoServer::this_instance_->udp_server_.StopServer();
 }
-#else
-BOOL WINAPI CtrlHandler(DWORD fdwCtrlType) {
-    switch (fdwCtrlType) {
-        // Handle the CTRL-C signal. 
-    case CTRL_C_EVENT:
-        DBG_LOG("Ctrl-C event");
-        UdpEchoServer::this_instance_->udp_server_.StopServer();
-        return TRUE;
-    default:
-        return FALSE;
-    }
-}
-#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 int main(int , char* []) {
-#if defined __APPLE__ || defined __linux__ 
-    std::signal(SIGINT,UdpEchoServer::SigIntHandler);
-#else
-    if (0 == SetConsoleCtrlHandler(CtrlHandler, TRUE)) {
-        std::cout << "error: server exit...\n";
-        exit(EXIT_FAILURE);
-    }
-#endif
-    UdpEchoServer server; 
+    std::signal(SIGINT,Server::SigIntHandler);
+    Server server; 
     if(!server.RunUdpServer()){
         exit(EXIT_FAILURE);
     }

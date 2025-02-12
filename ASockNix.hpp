@@ -125,12 +125,15 @@ public :
             // destructor 
             ControlEpoll(listen_context_ptr_, 
                           EPOLLIN , EPOLL_CTL_DEL ); //just in case
+            if(sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
+                if(server_ipc_socket_path_.length()>0){
+                    DBG_LOG("unlink :" << server_ipc_socket_path_);
+                    unlink(server_ipc_socket_path_.c_str());
+                }
+            }
 #endif
 
             delete listen_context_ptr_ ;
-            if ( sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
-                unlink(server_ipc_socket_path_.c_str());
-            }
         }
     }  
 
@@ -245,6 +248,7 @@ public :
                     std::lock_guard<std::mutex> lock(err_msg_lock_);
                     err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
                     ELOG(err_msg_);
+                    delete [] data_buffer;
                     return false;
                 }
             }
@@ -718,23 +722,35 @@ public :
     //-------------------------------------------------------------------------
     SOCKET_T  GetSocket () { return  context_.socket ; }
     //-------------------------------------------------------------------------
-    bool IsConnected() { 
+    bool IsConnected() {
         if (is_connected_ && is_client_thread_running_) {
             return true;
         }
         return false;
     }
+
     //-------------------------------------------------------------------------
+    // Disconnects from the server and waits for the client thread to terminate.
     void Disconnect() {
         if(context_.socket > 0 ) {
             close(context_.socket);
         }
         context_.socket = -1;
         is_connected_ = false;
-        //wait thread exit
-        while (is_client_thread_running_) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        // TODO: fix this. 아래 로직 개선할것.
+        // server 연결종료시 호출된 콜백내부에서 Disconnect 를 호출하는 경우 고려,
+        // 구분처리한다.(무한loop방지)
+        // --> is_client_thread_running_ :
+        // 콜백이 호출된 이후, client thread loop 가 종료되어야 false로 설정되므로
+        if(!is_server_disconnted_cb_invoked_){
+            //wait thread exit
+            while (is_client_thread_running_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
         }
+        // 콜백내에서 Disconnect 를 호출한 경우에만, main 종료시 대기(sleep)하는것이 필요함.
+        // --> thread 완전히 종료하는것을 대기하는것임.
     } ;
 
     //-------------------------------------------------------------------------
@@ -750,6 +766,7 @@ private :
     //std::thread client_thread_;
     SOCKADDR_UN ipc_conn_addr_   ;
     std::atomic<bool> is_client_thread_running_ {false};
+    bool is_server_disconnted_cb_invoked_ {false};
 
     //-------------------------------------------------------------------------
     bool RunServer() {
@@ -1053,6 +1070,7 @@ private :
 #elif __linux__
                 err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
 #endif
+                ELOG(err_msg_);
                 is_client_thread_running_ = false;
                 return;
             }
@@ -1104,6 +1122,7 @@ private :
 
     //-------------------------------------------------------------------------
     void InvokeServerDisconnectedHandler() {
+        is_server_disconnted_cb_invoked_=true;
         if(cb_on_disconnected_from_server_!=nullptr) {
             cb_on_disconnected_from_server_();
         } else {
@@ -1235,6 +1254,11 @@ public :
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         close(listen_socket_);
         is_need_server_run_ = false;
+        if ( sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
+            DBG_LOG("unlink :" << server_ipc_socket_path_);
+            unlink(server_ipc_socket_path_.c_str());
+            server_ipc_socket_path_="";
+        }
     }
     //-------------------------------------------------------------------------
     size_t  GetMaxClientLimit(){return max_client_limit_ ; }
@@ -1243,7 +1267,7 @@ public :
 
 private :
     std::string       server_ip_   ;
-    std::string       server_ipc_socket_path_ ;
+    std::string       server_ipc_socket_path_ ="";
     int               server_port_ {-1};
     std::atomic<int>  client_cnt_ {0}; 
     std::atomic<bool> is_need_server_run_ {true};
