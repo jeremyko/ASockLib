@@ -11,13 +11,17 @@
 class Server {
   public:
     bool RunUdpServer();
-    bool IsServerRunning(){return server_.IsServerRunning();};
-    std::string GetLastErrMsg(){return  server_.GetLastErrMsg() ; }
+    bool IsServerRunning(){
+        return server_.IsServerRunning();
+    }
+    std::string GetLastErrMsg(){
+        return server_.GetLastErrMsg();
+    }
     static void SigIntHandler(int signo);
     asock::ASock server_ ; //composite usage
-    static  Server* this_instance_ ;
+    static Server* this_instance_ ;
   private:
-    bool    OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) ;
+    bool OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) ;
 };
 
 Server* Server::this_instance_ = nullptr;
@@ -28,10 +32,10 @@ bool Server::RunUdpServer() {
     //register callbacks
     server_.SetCbOnRecvedCompletePacket(
                     std::bind( &Server::OnRecvedCompleteData, this,
-                            std::placeholders::_1, 
-                            std::placeholders::_2, 
+                            std::placeholders::_1, std::placeholders::_2,
                             std::placeholders::_3));
-    // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
+    // In case of UDP, you need to know the maximum receivable size in advance 
+    // and allocate a buffer.
     if(!server_.RunUdpServer("127.0.0.1", 9990, DEFAULT_PACKET_SIZE )) {
         std::cerr << server_.GetLastErrMsg() <<"\n"; 
         return false;
@@ -60,8 +64,7 @@ void Server::SigIntHandler(int signo) {
         std::cout << "stop server! \n";
         this_instance_->server_.StopServer();
         exit(EXIT_SUCCESS);
-    }
-    else {
+    } else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }

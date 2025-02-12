@@ -23,13 +23,13 @@ size_t MAX_CLIENTS        = 200;
 size_t THREADS_PER_CLIENT = 10;
 size_t SEND_PER_THREAD    = 10;
 
-size_t SERVER_SEND_THREADS_PER_CLIENT = 10; 
-size_t SERVER_MSG_PER_CLIENT_THREAD   = 10; 
+size_t SERVER_SEND_THREADS_PER_CLIENT = 10;
+size_t SERVER_MSG_PER_CLIENT_THREAD   = 10;
 
-size_t TOTAL_EXPECTED_SERVER_MSG_CNT  = 
+size_t TOTAL_EXPECTED_SERVER_MSG_CNT  =
     (MAX_CLIENTS * SERVER_SEND_THREADS_PER_CLIENT * SERVER_MSG_PER_CLIENT_THREAD);
 
-size_t TOTAL_EXPECTED_SERVER_ECHO_CNT = 
+size_t TOTAL_EXPECTED_SERVER_ECHO_CNT =
     (MAX_CLIENTS * THREADS_PER_CLIENT * SEND_PER_THREAD);
 std::atomic<size_t> g_responsed_cnt{ 0 };
 std::atomic<size_t> g_server_msg_cnt{ 0 };
@@ -38,14 +38,18 @@ class Client {
   public:
     bool IntTcpClient(size_t client_id);
     void DisConnect();
-    bool IsConnected() { return client_.IsConnected();}
+    bool IsConnected(){
+        return client_.IsConnected();
+    }
     void SendThread(size_t index) ;
-    std::string  GetLastErrMsg(){return  client_.GetLastErrMsg() ; }
+    std::string GetLastErrMsg(){
+        return client_.GetLastErrMsg();
+    }
     size_t client_id_;
   private:
     asock::ASock client_ ; //composite usage
-    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, 
-                              size_t len); 
+    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr,
+                              size_t len);
     std::vector<std::string> vec_sent_strings_ ;
     std::mutex  sent_chk_lock_ ; // XXX vec_sent_strings_ is used by multiple threads.
 };
@@ -58,7 +62,7 @@ bool Client::IntTcpClient(size_t client_id) {
     using std::placeholders::_3;
     client_.SetCbOnRecvedCompletePacket(std::bind( 
                                 &Client::OnRecvedCompleteData, this, _1,_2,_3));
-    
+ 
     if(!client_.InitTcpClient("127.0.0.1", 9990   ) ) {
         std::cerr <<"error : "<< client_.GetLastErrMsg() << "\n"; 
         exit(EXIT_FAILURE);
@@ -129,9 +133,6 @@ bool Client:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len)
             exit(EXIT_FAILURE);
         }
     }
-    // if (g_responsed_cnt >0 && g_responsed_cnt % 10000 == 0) {
-    //     LOG("client id =" << client_id_ << " : " << g_responsed_cnt);
-    // }
     // - client : after connecting to the server, the client starts THREADS_PER_CLIENT threads, 
     //            sends a message 10 times per thread, and receives an echo response.
     // - server : creates SERVER_SEND_THREADS_PER_CLIENT message sending threads when a client connects, 
@@ -183,7 +184,6 @@ int main(int , char* []) {
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
         (*it)->DisConnect();
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(200)); // wait all disconnect callback invoked
     while (! vec_clients.empty()) {
         delete vec_clients.back();
         vec_clients.pop_back();

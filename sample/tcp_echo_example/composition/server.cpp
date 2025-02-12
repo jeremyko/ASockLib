@@ -11,18 +11,21 @@
 class Server {
   public:
     static void SigIntHandler(int signo);
-    bool    RunTcpServer();
-    bool    IsServerRunning(){return server_.IsServerRunning();};
-    std::string  GetLastErrMsg(){return  server_.GetLastErrMsg() ; }
-
+    bool RunTcpServer();
+    bool IsServerRunning(){
+        return server_.IsServerRunning();
+    }
+    std::string GetLastErrMsg(){
+        return  server_.GetLastErrMsg();
+    }
   private:
     asock::ASock server_ ; //composite usage
-    static  Server* this_instance_ ;
+    static Server* this_instance_ ;
   private:
-    bool    OnRecvedCompleteData(asock::Context* context_ptr, 
-                                 char* data_ptr, size_t len ) ;
-    void    OnClientConnected(asock::Context* context_ptr) ; 
-    void    OnClientDisconnected(asock::Context* context_ptr) ; 
+    bool OnRecvedCompleteData(asock::Context* context_ptr, 
+                              char* data_ptr, size_t len ) ;
+    void OnClientConnected(asock::Context* context_ptr) ; 
+    void OnClientDisconnected(asock::Context* context_ptr) ; 
 };
 
 Server* Server::this_instance_ = nullptr;
@@ -49,7 +52,7 @@ bool Server::RunTcpServer() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool    Server::OnRecvedCompleteData(asock::Context* context_ptr, 
+bool Server::OnRecvedCompleteData(asock::Context* context_ptr, 
                                          char* data_ptr, size_t len ) {
     //user specific : your whole data has arrived.
     // this is echo server
@@ -80,8 +83,7 @@ void Server::SigIntHandler(int signo) {
         std::cout << "stop server! \n";
         this_instance_->server_.StopServer();
         exit(EXIT_SUCCESS);
-    }
-    else {
+    } else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }
@@ -90,7 +92,7 @@ void Server::SigIntHandler(int signo) {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int , char* []) {
     std::signal(SIGINT,Server::SigIntHandler);
-    Server server; 
+    Server server;
     if(!server.RunTcpServer()){
         exit(EXIT_FAILURE);
     }

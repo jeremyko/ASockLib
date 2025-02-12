@@ -1252,9 +1252,6 @@ public :
 
     //-------------------------------------------------------------------------
     void  StopServer() {
-        // Wait a moment for the current task (client termination) to complete.
-        // This is to prevent memory leaks.
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         close(listen_socket_);
         is_need_server_run_ = false;
         if ( sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
@@ -1575,8 +1572,4 @@ private :
     virtual void OnClientDisconnected(Context*) {} ;  
 };
 } //namespace
-
-
-
-
 

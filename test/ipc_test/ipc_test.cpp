@@ -10,33 +10,37 @@
 #define DEFAULT_PACKET_SIZE 1024
 
 // This file is created in the current directory and automatically deleted.
-#define TEST_IPC_PATH "asock.test.ipc" 
+#define TEST_IPC_PATH "asock.test.ipc"
 
 //////////////////////////////////////////////////////////////////////// server
-class TestServer 
-{
+class Server {
   public:
-    TestServer(){}
+    Server(){}
     bool RunIpcServer();
-    bool IsServerRunning(){return ipc_server_.IsServerRunning();};
-    void StopServer(){ ipc_server_.StopServer();};
-    std::string  GetLastErrMsg(){return  ipc_server_.GetLastErrMsg() ; }
+    bool IsServerRunning(){
+        return ipc_server_.IsServerRunning();
+    }
+    void StopServer(){ 
+        ipc_server_.StopServer();
+    }
+    std::string GetLastErrMsg(){
+        return  ipc_server_.GetLastErrMsg();
+    }
     asock::ASock ipc_server_ ; 
-    std::string  cli_msg_ = "";
+    std::string cli_msg_ = "";
   private:
-    bool OnRecvedCompleteData(asock::Context* ctx_ptr, 
-                              char* data_ptr, size_t len ) ;
+    bool OnRecvedCompleteData(asock::Context* ctx_ptr, char* data_ptr, size_t len) ;
 };
 
-static TestServer* this_instance_ = nullptr;
+static Server* this_instance_ = nullptr;
 
-bool TestServer::RunIpcServer() {
+bool Server::RunIpcServer() {
     this_instance_ = this; 
     using std::placeholders::_1;
     using std::placeholders::_2;
     using std::placeholders::_3;
-    ipc_server_.SetCbOnRecvedCompletePacket(std::bind( 
-                                &TestServer::OnRecvedCompleteData, this, _1,_2,_3));
+    ipc_server_.SetCbOnRecvedCompletePacket(std::bind(
+                        &Server::OnRecvedCompleteData, this, _1,_2,_3));
 
     if(!ipc_server_.RunIpcServer(TEST_IPC_PATH)) {
         std::cerr << ipc_server_.GetLastErrMsg() <<"\n"; 
@@ -45,8 +49,7 @@ bool TestServer::RunIpcServer() {
     return true;
 }
 
-bool TestServer::OnRecvedCompleteData(asock::Context* ctx_ptr, 
-                                         char* data_ptr, size_t len ) {
+bool Server::OnRecvedCompleteData(asock::Context* ctx_ptr, char* data_ptr, size_t len){
     //user specific : your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet, data_ptr, len);
@@ -63,28 +66,31 @@ bool TestServer::OnRecvedCompleteData(asock::Context* ctx_ptr,
 }
 
 //////////////////////////////////////////////////////////////////////// client 
-class TestClient {
+class Client {
   public:
     bool IntIpcClient();
-    bool SendToServer (const char* data, size_t len) ;
+    bool SendToServer(const char* data, size_t len) ;
     void DisConnect();
-    bool IsConnected() { return ipc_client_.IsConnected();}
-    std::string  GetLastErrMsg(){return  ipc_client_.GetLastErrMsg() ; }
+    bool IsConnected(){ 
+        return ipc_client_.IsConnected();
+    }
+    std::string  GetLastErrMsg(){
+        return  ipc_client_.GetLastErrMsg();
+    }
     size_t client_id_;
     std::string svr_res_ = "";
   private:
-    asock::ASock   ipc_client_ ; //composite usage
-    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, 
-                              size_t len); 
+    asock::ASock ipc_client_ ; //composite usage
+    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len);
 };
 
-bool TestClient::IntIpcClient() {
+bool Client::IntIpcClient() {
     using std::placeholders::_1;
     using std::placeholders::_2;
     using std::placeholders::_3;
-    ipc_client_.SetCbOnRecvedCompletePacket(std::bind( 
-                                &TestClient::OnRecvedCompleteData, this, _1,_2,_3));
-    
+    ipc_client_.SetCbOnRecvedCompletePacket(std::bind(
+                        &Client::OnRecvedCompleteData, this, _1,_2,_3));
+ 
     if(!ipc_client_.InitIpcClient(TEST_IPC_PATH) ) {
         ELOG("error : "<< ipc_client_.GetLastErrMsg() ); 
         return false;
@@ -92,15 +98,15 @@ bool TestClient::IntIpcClient() {
     return true;
 }
 
-bool TestClient::SendToServer (const char* data, size_t len) {
+bool Client::SendToServer (const char* data, size_t len) {
     return ipc_client_.SendToServer(data, len);
 }
 
-void TestClient::DisConnect() {
+void Client::DisConnect() {
     ipc_client_.Disconnect();
 }
 
-bool TestClient:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
+bool Client::OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
     //user specific : your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE]; 
     memcpy(&packet, data_ptr,len);
@@ -112,8 +118,8 @@ bool TestClient:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t 
 
 ///////////////////////////////////////////////////////////////////////////////
 TEST(IpcTest, SendRecv) {
-    TestServer server;
-    TestClient client ;
+    Server server;
+    Client client;
 
     //--- Run server, client
     EXPECT_TRUE(server.RunIpcServer());
@@ -125,7 +131,7 @@ TEST(IpcTest, SendRecv) {
     }
     std::cout << "==> server started\n";
     while (!client.IsConnected()) {
-        std::this_thread::sleep_for(std::chrono::seconds(1)); 
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "==> client started\n";
 

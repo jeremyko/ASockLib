@@ -10,20 +10,22 @@
 ///////////////////////////////////////////////////////////////////////////////
 class Server : public asock::ASock {
   public:
-    Server(){this_instance_ = this; }
+    Server(){
+        this_instance_ = this; 
+    }
     static void SigIntHandler(int signo);
   private:
-    static  Server* this_instance_ ;
-    bool    OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len ) override ;
-    void    OnClientConnected(asock::Context* context_ptr) override; 
-    void    OnClientDisconnected(asock::Context* context_ptr) override; 
+    static Server* this_instance_ ;
+    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len ) override ;
+    void OnClientConnected(asock::Context* context_ptr) override; 
+    void OnClientDisconnected(asock::Context* context_ptr) override; 
 };
 
 Server* Server::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
-bool    Server::OnRecvedCompleteData(asock::Context* context_ptr, 
-                                         char* data_ptr, size_t len ) {
+bool Server::OnRecvedCompleteData(asock::Context* context_ptr, 
+                                  char* data_ptr, size_t len ) {
     //user specific : - your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr,len);
@@ -52,8 +54,7 @@ void Server::SigIntHandler(int signo) {
         std::cout << "stop server! \n";
         this_instance_->StopServer();
         exit(EXIT_SUCCESS);
-    }
-    else {
+    } else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }
@@ -62,7 +63,7 @@ void Server::SigIntHandler(int signo) {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int , char* []) {
     std::signal(SIGINT,Server::SigIntHandler);
-    Server server; 
+    Server server;
     if(!server.RunTcpServer("127.0.0.1", 9990 )) {
         std::cerr << server.GetLastErrMsg() <<"\n"; 
         exit(EXIT_FAILURE);

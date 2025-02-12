@@ -14,14 +14,18 @@ class Client {
   public:
     bool InitTcpClient();
     bool SendToServer(const char* data, size_t len);
-    bool IsConnected() { return client_.IsConnected();}
-    std::string  GetLastErrMsg(){return  client_.GetLastErrMsg() ; }
+    bool IsConnected() {
+        return client_.IsConnected();
+    }
+    std::string  GetLastErrMsg(){
+        return  client_.GetLastErrMsg();
+    }
     static void SigIntHandler(int signo);
   private:
     static Client* this_instance_ ;
     asock::ASock client_ ; //composite usage
-    bool    OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len); 
-    void    OnDisconnectedFromServer() ; 
+    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len);
+    void OnDisconnectedFromServer();
 };
 Client* Client::this_instance_ = nullptr;
 
@@ -71,8 +75,7 @@ void Client::SigIntHandler(int signo) {
         std::cout << "stop client\n";
         this_instance_->client_.Disconnect();
         exit(EXIT_SUCCESS);
-    }
-    else {
+    } else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }

@@ -81,7 +81,7 @@ class CondVar {
             is_all_waiting_end_ = true;
         }
 
-    private:    
+    private:
         std::mutex              cond_var_lock_ ;
         std::condition_variable cond_var_ ;
         size_t notified_cnt_ {0}; 

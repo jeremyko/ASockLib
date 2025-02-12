@@ -13,13 +13,17 @@ class Client {
   public:
     bool InitIpcClient(const char* ipc_sock_path);
     bool SendToServer(const char* data, size_t len);
-    bool IsConnected() { return client_.IsConnected();}
-    std::string GetLastErrMsg(){return  client_.GetLastErrMsg() ; }
+    bool IsConnected() { 
+        return client_.IsConnected();
+    }
+    std::string GetLastErrMsg(){
+        return  client_.GetLastErrMsg();
+    }
     static void SigIntHandler(int signo);
   private:
     asock::ASock client_ ; //composite usage
     static Client* this_instance_ ;
-    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len); 
+    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len);
     void OnDisconnectedFromServer() ;
 };
 
@@ -27,7 +31,7 @@ Client* Client::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
 bool Client::InitIpcClient(const char* ipc_sock_path) {
-    this_instance_ = this; 
+    this_instance_ = this;
     //register callbacks
     using std::placeholders::_1;
     using std::placeholders::_2;
@@ -70,8 +74,7 @@ void Client::SigIntHandler(int signo) {
         std::cout << "stop client\n";
         this_instance_->client_.Disconnect();
         exit(EXIT_SUCCESS);
-    }
-    else {
+    } else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }

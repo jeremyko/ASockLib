@@ -20,9 +20,13 @@ size_t SERVER_MSG_PER_CLIENT_THREAD   = 10;
 class Server {
   public:
     bool RunTcpServer();
-    bool IsServerRunning(){return server_.IsServerRunning();};
+    bool IsServerRunning(){
+        return server_.IsServerRunning();
+    }
     static void SigIntHandler(int signo);
-    std::string  GetLastErrMsg(){return  server_.GetLastErrMsg() ; }
+    std::string GetLastErrMsg(){
+        return  server_.GetLastErrMsg();
+    }
     asock::ASock server_ ; //composite usage
   private:
     bool OnRecvedCompleteData(asock::Context* ctx_ptr, 
@@ -41,11 +45,11 @@ bool Server::RunTcpServer() {
     using std::placeholders::_3;
     server_.SetCbOnRecvedCompletePacket(std::bind( 
                                 &Server::OnRecvedCompleteData, this, _1,_2,_3));
-    server_.SetCbOnClientConnected      (std::bind( 
+    server_.SetCbOnClientConnected(std::bind( 
                                 &Server::OnClientConnected, this, _1));
 
     if(!server_.RunTcpServer("127.0.0.1", 9990 )) {
-        std::cerr << server_.GetLastErrMsg() <<"\n"; 
+        std::cerr << server_.GetLastErrMsg() <<"\n";
         return false;
     }
     return true;
@@ -76,7 +80,7 @@ void Server::SendThread(asock::Context* ctx_ptr) {
 bool Server::OnRecvedCompleteData(asock::Context* ctx_ptr, 
                                          char* data_ptr, size_t len ) {
     //user specific : your whole data has arrived.
-    
+ 
     //char packet[DEFAULT_PACKET_SIZE];
     //memcpy(&packet, data_ptr, len);
     //packet[len] = '\0';
@@ -105,8 +109,7 @@ void Server::SigIntHandler(int signo) {
         std::cout << "stop server\n";
         this_instance_->server_.StopServer();
         exit(EXIT_SUCCESS);
-    }
-    else {
+    } else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }
@@ -115,7 +118,7 @@ void Server::SigIntHandler(int signo) {
 ///////////////////////////////////////////////////////////////////////////////
 int main(int , char* []) {
     std::signal(SIGINT,Server::SigIntHandler);
-    Server server; 
+    Server server;
     if(!server.RunTcpServer()){
         exit(EXIT_FAILURE);
     }

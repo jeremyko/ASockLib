@@ -12,16 +12,20 @@ class Server {
   public:
     static void SigIntHandler(int signo);
     bool InitIpcServer(const char* ipc_sock_path);
-    bool IsServerRunning(){return server_.IsServerRunning();};
-    std::string GetLastErrMsg(){return  server_.GetLastErrMsg() ; }
+    bool IsServerRunning(){
+        return server_.IsServerRunning();
+    }
+    std::string GetLastErrMsg(){
+        return  server_.GetLastErrMsg();
+    }
   private:
     asock::ASock server_ ; //composite usage
     static Server* this_instance_ ;
   private:
-    bool OnRecvedCompleteData(asock::Context* context_ptr, 
-                                 char* data_ptr, size_t len ) ;
-    void OnClientConnected(asock::Context* context_ptr) ; 
-    void OnClientDisconnected(asock::Context* context_ptr) ; 
+    bool OnRecvedCompleteData(asock::Context* context_ptr,
+                              char* data_ptr, size_t len ) ;
+    void OnClientConnected(asock::Context* context_ptr) ;
+    void OnClientDisconnected(asock::Context* context_ptr) ;
 };
 
 Server* Server::this_instance_ = nullptr;
@@ -78,8 +82,7 @@ void Server::SigIntHandler(int signo) {
         std::cout << "stop server! \n";
         this_instance_->server_.StopServer();
         exit(EXIT_SUCCESS);
-    }
-    else {
+    } else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }

@@ -11,10 +11,12 @@
 ///////////////////////////////////////////////////////////////////////////////
 class Client : public asock::ASock {
   public:
-    Client(){this_instance_ = this;}
+    Client(){
+        this_instance_ = this;
+    }
     static void SigIntHandler(int signo);
   private:
-    static  Client* this_instance_ ;
+    static Client* this_instance_ ;
     bool OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) override;
 };
 Client* Client::this_instance_ = nullptr;
@@ -35,8 +37,7 @@ void Client::SigIntHandler(int signo) {
         std::cout << "stop client\n";
         this_instance_->Disconnect();
         exit(EXIT_SUCCESS);
-    }
-    else {
+    } else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }
@@ -48,7 +49,7 @@ int main(int , char* []) {
     Client client;
     // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
     if(!client.InitUdpClient("127.0.0.1", 9990, DEFAULT_PACKET_SIZE  ) ) {
-        std::cerr << client.GetLastErrMsg() <<"\n"; 
+        std::cerr << client.GetLastErrMsg() <<"\n";
         exit(EXIT_FAILURE);
     }
     std::cout << "client started" << "\n";
@@ -59,7 +60,7 @@ int main(int , char* []) {
         size_t msg_len = user_msg.length();
         if(msg_len>0) {
             if(! client.SendToServer(user_msg.c_str(),msg_len) ) {
-                std::cerr << client.GetLastErrMsg() <<"\n"; 
+                std::cerr << client.GetLastErrMsg() <<"\n";
                 exit(EXIT_FAILURE);
             }
         }

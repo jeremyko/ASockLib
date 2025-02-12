@@ -10,11 +10,13 @@
 ///////////////////////////////////////////////////////////////////////////////
 class Server : public asock::ASock {
   public:
-    Server(){this_instance_ = this; }
+    Server(){
+        this_instance_ = this;
+    }
     static void SigIntHandler(int signo);
   private:
-    bool    OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) override;
-    static  Server* this_instance_ ;
+    bool OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) override;
+    static Server* this_instance_ ;
 };
 Server* Server::this_instance_ = nullptr;
 
@@ -39,8 +41,7 @@ void Server::SigIntHandler(int signo) {
         std::cout << "stop server! \n";
         this_instance_->StopServer();
         exit(EXIT_SUCCESS);
-    }
-    else {
+    } else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }

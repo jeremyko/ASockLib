@@ -13,14 +13,17 @@ class Client {
   public:
     bool IntUdpClient();
     bool SendToServer(const char* data, size_t len);
-    bool IsConnected() { return client_.IsConnected();}
+    bool IsConnected(){
+        return client_.IsConnected();
+    }
     static void SigIntHandler(int signo);
-    std::string GetLastErrMsg(){return  client_.GetLastErrMsg() ; }
-
+    std::string GetLastErrMsg(){
+        return  client_.GetLastErrMsg();
+    }
   private:
     static Client* this_instance_ ;
     asock::ASock client_ ; //composite usage
-    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len); 
+    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len);
 };
 
 Client* Client::this_instance_ = nullptr;
@@ -29,11 +32,10 @@ bool Client::IntUdpClient() {
     this_instance_ = this;
     //register callbacks
     client_.SetCbOnRecvedCompletePacket(std::bind(&Client::OnRecvedCompleteData, this,
-                                            std::placeholders::_1, 
-                                            std::placeholders::_2, 
+                                            std::placeholders::_1, std::placeholders::_2,
                                             std::placeholders::_3));
     // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
-    if(!client_.InitUdpClient("127.0.0.1", 9990, DEFAULT_PACKET_SIZE  ) ) {
+    if(!client_.InitUdpClient("127.0.0.1", 9990, DEFAULT_PACKET_SIZE )){
         std::cerr << client_.GetLastErrMsg() <<"\n"; 
         return false;
     }
@@ -61,8 +63,7 @@ void Client::SigIntHandler(int signo) {
         std::cout << "stop client\n";
         this_instance_->client_.Disconnect();
         exit(EXIT_SUCCESS);
-    }
-    else {
+    } else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }
@@ -85,7 +86,7 @@ int main(int , char* []) {
             if(! client.SendToServer(user_msg.c_str(),msg_len) ) {
                 std::cerr << client.GetLastErrMsg() <<"\n"; 
                 exit(EXIT_FAILURE);
-            }            
+            }
         }
     } //while
     std::cout << "client exit...\n";

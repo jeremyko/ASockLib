@@ -12,13 +12,15 @@
 class Client : public asock::ASock
 {
   public:
-    Client(){this_instance_ = this;}
+    Client(){
+        this_instance_ = this;
+    }
     static void SigIntHandler(int signo);
   private:
-    static  Client* this_instance_ ;
+    static Client* this_instance_ ;
     bool OnRecvedCompleteData(asock::Context* context_ptr, 
                               char* data_ptr, size_t len) override;
-    void OnDisconnectedFromServer()  override;
+    void OnDisconnectedFromServer() override;
 };
 
 Client* Client::this_instance_ = nullptr;
@@ -45,8 +47,7 @@ void Client::SigIntHandler(int signo) {
         std::cout << "stop client\n";
         this_instance_->Disconnect();
         exit(EXIT_SUCCESS);
-    }
-    else {
+    } else {
         std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
         exit(EXIT_FAILURE);
     }
@@ -76,7 +77,7 @@ int main(int argc, char* argv[]) {
                 exit(EXIT_FAILURE);
             }
         }
-    }//while
+    }
     std::cout << "client exit...\n";
     exit(EXIT_SUCCESS);
 }
