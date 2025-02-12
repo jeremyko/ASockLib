@@ -1223,7 +1223,7 @@ public :
                 << ", connection closing ,graceful="
                 << (is_graceful ? "TRUE" : "FALSE"));
         ctx_ptr->is_connected = false;
-        if (cb_on_client_connected_ != nullptr) {
+        if (cb_on_client_disconnected_ != nullptr) {
             cb_on_client_disconnected_(ctx_ptr);
         } else {
             OnClientDisconnected(ctx_ptr);
