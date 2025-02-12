@@ -914,9 +914,6 @@ public :
             closesocket(context_.socket);
         }
         context_.socket = INVALID_SOCKET;
-    }
-    //-------------------------------------------------------------------------
-    void WaitForClientLoopExit() {
         //wait thread exit
         if (client_thread_.joinable()) {
             client_thread_.join();

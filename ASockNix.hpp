@@ -187,30 +187,31 @@ public :
             return true;
         }
         // header 를 앞에 추가한다. 
-        char* data_position_ptr = new char[total_len];// FIX:
+        char* data_buffer = new char[total_len];// FIX:
+        char* data_position_ptr = data_buffer;
         memcpy(data_position_ptr,(char*)&header, HEADER_SIZE);
         memcpy(data_position_ptr+HEADER_SIZE, data_ptr, len);
 
         while( total_sent < total_len) {
             int sent_len =0;
-            size_t remained_len = total_len-total_sent;           
+            size_t remained_len = total_len-total_sent;
             if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
                 //UDP : all or nothing. no partial sent, send with header.
-                sent_len = sendto(ctx_ptr->socket,  data_position_ptr, remained_len , 0, 
-                                (struct sockaddr*)& ctx_ptr->udp_remote_addr,   
+                sent_len = sendto(ctx_ptr->socket,  data_position_ptr, remained_len , 0,
+                                (struct sockaddr*)& ctx_ptr->udp_remote_addr,
                                 sizeof(ctx_ptr->udp_remote_addr)) ;
             } else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
                 //UDP : all or nothing. no partial sent, send with header.
-                sent_len = sendto(ctx_ptr->socket,  data_position_ptr, remained_len , 0, 
-                                0, //client : already set! (via connect)  
+                sent_len = sendto(ctx_ptr->socket,  data_position_ptr, remained_len , 0,
+                                0, //client : already set! (via connect)
                                 sizeof(ctx_ptr->udp_remote_addr)) ;
             } else {
                 sent_len = send(ctx_ptr->socket, data_position_ptr, remained_len, 0);
             }
 
             if(sent_len > 0) {
-                total_sent += sent_len ;  
-                data_position_ptr += sent_len ;      
+                total_sent += sent_len ;
+                data_position_ptr += sent_len ;
             } else if( sent_len < 0 ) {
                 if ( errno == EWOULDBLOCK || errno == EAGAIN ) {
                     //send later
@@ -233,9 +234,11 @@ public :
 #endif
                         delete [] pending_sent.pending_sent_data;
                         ctx_ptr->pending_send_deque.pop_back();
+                        delete [] data_buffer;
                         return false;
                     }
                     ctx_ptr->is_sent_pending = true;
+                    delete [] data_buffer;
                     return true;
                 } else if ( errno != EINTR ) {
                     // err_msg_ need lock for multithread
@@ -246,6 +249,7 @@ public :
                 }
             }
         }//while
+        delete [] data_buffer;
         return true;
     } 
 
@@ -727,16 +731,14 @@ public :
         }
         context_.socket = -1;
         is_connected_ = false;
+        //wait thread exit
+        while (is_client_thread_running_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
     } ;
 
     //-------------------------------------------------------------------------
     //for client use
-    void WaitForClientLoopExit() {
-        //wait thread exit
-        if (client_thread_.joinable()) {
-            client_thread_.join();
-        }
-    };
 
 private :
     int         connect_timeout_secs_    ;
@@ -745,7 +747,7 @@ private :
     Context     context_;
     SOCKADDR_IN tcp_server_addr_ ;
     SOCKADDR_IN udp_server_addr_ ;
-    std::thread client_thread_;
+    //std::thread client_thread_;
     SOCKADDR_UN ipc_conn_addr_   ;
     std::atomic<bool> is_client_thread_running_ {false};
 
@@ -1042,7 +1044,7 @@ private :
             int event_cnt = kevent(kq_fd_, NULL, 0, 
                                    kq_events_ptr_, 1, &ts); 
 #elif __linux__
-            int event_cnt = epoll_wait(ep_fd_, ep_events_, 1, 1000 );
+            int event_cnt = epoll_wait(ep_fd_, ep_events_, 1, 10 );
 #endif
             if (event_cnt < 0) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -1097,6 +1099,7 @@ private :
             }//send
         } //while
         is_client_thread_running_ = false;
+        DBG_LOG("client thread exited");
     };
 
     //-------------------------------------------------------------------------
@@ -1227,6 +1230,9 @@ public :
     bool  IsServerRunning(){return is_server_running_;};
     //-------------------------------------------------------------------------
     void  StopServer() {
+        // Wait a moment for the current task (client termination) to complete.
+        // This is to prevent memory leaks.
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         close(listen_socket_);
         is_need_server_run_ = false;
     }
@@ -1387,7 +1393,32 @@ private :
         is_server_running_ = false;
     }
 
-    // bool BuildClientContextCache();
+    //-------------------------------------------------------------------------
+    Context* PopClientContextFromCache() {
+        Context* ctx_ptr = nullptr;
+        {//lock scope
+            std::lock_guard<std::mutex> lock(ctx_cache_lock_);
+            if (!queue_ctx_cache_.empty()) {
+                ctx_ptr = queue_ctx_cache_.front();
+                queue_ctx_cache_.pop();
+                return ctx_ptr;
+            }
+        }
+        //LOG("~~~~~~~~~~ pop new ctx");
+        ctx_ptr = new (std::nothrow) Context();
+        if(!ctx_ptr) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+            err_msg_ = "Context alloc failed !";
+            return nullptr;
+        }
+        if ( cumbuffer::OP_RSLT_OK != ctx_ptr->recv_buffer.Init(max_data_len_) ) {
+            std::lock_guard<std::mutex> lock(err_msg_lock_);
+            err_msg_  = std::string("cumBuffer Init error : ") + 
+                std::string(ctx_ptr->recv_buffer.GetErrMsg());
+            return nullptr;
+        }
+        return ctx_ptr ;
+    }
     //-------------------------------------------------------------------------
     void PushClientContextToCache(Context* ctx_ptr) {
         //reset
@@ -1403,6 +1434,7 @@ private :
             ctx_ptr->pending_send_deque.pop_front();
         }
         std::lock_guard<std::mutex> lock(ctx_cache_lock_);
+        //LOG("~~~~~~~~~ push cache");
         queue_ctx_cache_.push(ctx_ptr);
     }
 
@@ -1416,6 +1448,7 @@ private :
                 delete [] pending_sent.pending_sent_data;
                 ctx_ptr->pending_send_deque.pop_front();
             }
+            //LOG("~~~~~~~~~~~ clear cache");
             delete ctx_ptr;
             queue_ctx_cache_.pop();
         }
@@ -1476,31 +1509,6 @@ private :
         return true;
     }
 
-    //-------------------------------------------------------------------------
-    Context*    PopClientContextFromCache() {
-        Context* ctx_ptr = nullptr;
-        {//lock scope
-            std::lock_guard<std::mutex> lock(ctx_cache_lock_);
-            if (!queue_ctx_cache_.empty()) {
-                ctx_ptr = queue_ctx_cache_.front();
-                queue_ctx_cache_.pop();
-                return ctx_ptr;
-            }
-        }
-        ctx_ptr = new (std::nothrow) Context();
-        if(!ctx_ptr) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
-            err_msg_ = "Context alloc failed !";
-            return nullptr;
-        }
-        if ( cumbuffer::OP_RSLT_OK != ctx_ptr->recv_buffer.Init(max_data_len_) ) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
-            err_msg_  = std::string("cumBuffer Init error : ") + 
-                std::string(ctx_ptr->recv_buffer.GetErrMsg());
-            return nullptr;
-        }
-        return ctx_ptr ;
-    }
 
     //for composition : Assign yours to these callbacks 
 public :

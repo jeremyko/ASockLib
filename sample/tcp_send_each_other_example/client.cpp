@@ -41,7 +41,6 @@ class STEO_Client
     void DisConnectTcpClient();
     bool IsConnected() { return tcp_client_.IsConnected();}
     void SendThread(size_t index) ;
-    void WaitForClientLoopExit();
     std::string  GetLastErrMsg(){return  tcp_client_.GetLastErrMsg() ; }
     size_t client_id_;
   private:
@@ -71,10 +70,6 @@ bool STEO_Client::IntTcpClient(size_t client_id) {
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Client::DisConnectTcpClient() {
     tcp_client_.Disconnect();
-}
-///////////////////////////////////////////////////////////////////////////////
-void STEO_Client::WaitForClientLoopExit() {
-    tcp_client_.WaitForClientLoopExit();
 }
 ///////////////////////////////////////////////////////////////////////////////
 void STEO_Client::SendThread(size_t index) {
@@ -186,12 +181,9 @@ int main(int , char* []) {
     g_all_done_cond_var.WaitForSignal();
 
     size_t elapsed_time =  elapsed.SetEndTime(MILLI_SEC_RESOLUTION) ;
-
+    std::cout << "waiting all clients exit\n";
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
         (*it)->DisConnectTcpClient();
-    }
-    for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
-        (*it)->WaitForClientLoopExit();
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(200)); // wait all disconnect callback invoked
     while (! vec_clients.empty()) {

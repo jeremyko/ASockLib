@@ -46,6 +46,7 @@ elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   add_subdirectory(sample/tcp_send_each_other_example)
 endif()
 
+# tests
 add_subdirectory(test/tcp_test)
 add_subdirectory(test/udp_test)
 add_subdirectory(test/buffer_test)

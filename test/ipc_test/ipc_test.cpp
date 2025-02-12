@@ -69,7 +69,6 @@ class TestClient {
     bool SendToServer (const char* data, size_t len) ;
     void DisConnect();
     bool IsConnected() { return ipc_client_.IsConnected();}
-    void WaitForClientLoopExit();
     std::string  GetLastErrMsg(){return  ipc_client_.GetLastErrMsg() ; }
     size_t client_id_;
     std::string svr_res_ = "";
@@ -99,9 +98,6 @@ bool TestClient::SendToServer (const char* data, size_t len) {
 
 void TestClient::DisConnect() {
     ipc_client_.Disconnect();
-}
-void TestClient::WaitForClientLoopExit() {
-    ipc_client_.WaitForClientLoopExit();
 }
 
 bool TestClient:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
@@ -158,9 +154,8 @@ TEST(IpcTest, SendRecv) {
     EXPECT_EQ(client.svr_res_, test_msg_2);
 
     //--- Start termination procedure
-    server.StopServer();
     client.DisConnect();
-    client.WaitForClientLoopExit();
+    server.StopServer();
 
     //--- Waiting for termination to complete.
     while(server.IsServerRunning() ) {
