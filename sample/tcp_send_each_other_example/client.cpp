@@ -38,7 +38,7 @@ class STEO_Client
 {
   public:
     bool IntTcpClient(size_t client_id);
-    void DisConnectTcpClient();
+    void DisConnect();
     bool IsConnected() { return tcp_client_.IsConnected();}
     void SendThread(size_t index) ;
     std::string  GetLastErrMsg(){return  tcp_client_.GetLastErrMsg() ; }
@@ -68,7 +68,7 @@ bool STEO_Client::IntTcpClient(size_t client_id) {
     return true;
 }
 ///////////////////////////////////////////////////////////////////////////////
-void STEO_Client::DisConnectTcpClient() {
+void STEO_Client::DisConnect() {
     tcp_client_.Disconnect();
 }
 ///////////////////////////////////////////////////////////////////////////////
@@ -183,7 +183,7 @@ int main(int , char* []) {
     size_t elapsed_time =  elapsed.SetEndTime(MILLI_SEC_RESOLUTION) ;
     std::cout << "waiting all clients exit\n";
     for (auto it = vec_clients.begin(); it != vec_clients.end(); ++it) {
-        (*it)->DisConnectTcpClient();
+        (*it)->DisConnect();
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(200)); // wait all disconnect callback invoked
     while (! vec_clients.empty()) {
