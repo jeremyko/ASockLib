@@ -77,9 +77,6 @@ void Server::SigIntHandler(int signo) {
     if (signo == SIGINT) {
         std::cout << "stop server! \n";
         this_instance_->server_.StopServer();
-        while(this_instance_->IsServerRunning() ) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
         exit(EXIT_SUCCESS);
     }
     else {

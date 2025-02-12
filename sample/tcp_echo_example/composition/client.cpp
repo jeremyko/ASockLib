@@ -70,10 +70,6 @@ void Client::SigIntHandler(int signo) {
     if (signo == SIGINT) {
         std::cout << "stop client\n";
         this_instance_->client_.Disconnect();
-        //--- Waiting for termination to complete.
-        while(this_instance_->IsConnected() ) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
         exit(EXIT_SUCCESS);
     }
     else {

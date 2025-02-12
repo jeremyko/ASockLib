@@ -155,15 +155,7 @@ TEST(TcpTest, SendRecv) {
     client.DisConnect();
     server.StopServer();
 
-    //--- Waiting for termination to complete.
-    while(server.IsServerRunning() ) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    std::cout << "==> tcp server exiting " << "\n";
-    while (client.IsConnected()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10)); 
-    }
-    std::cout << "==> tcp client exiting " << "\n";
+    std::cout << "==> exiting " << "\n";
 }
 
 ///////////////////////////////////////////////////////////////////////////////

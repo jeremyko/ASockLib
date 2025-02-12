@@ -161,15 +161,7 @@ TEST(BufferTest, IncreaseCapacity) {
     client.DisConnect();
     server.StopServer();
 
-    //--- Waiting for termination to complete.
-    while(server.IsServerRunning() ) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    std::cout << "==> server exiting " << "\n";
-    while (client.IsConnected()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10)); 
-    }
-    std::cout << "==> client exiting " << "\n";
+    std::cout << "==> exiting " << "\n";
 }
 
 ///////////////////////////////////////////////////////////////////////////////

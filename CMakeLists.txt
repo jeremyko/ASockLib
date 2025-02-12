@@ -5,8 +5,8 @@ project(ASockLib LANGUAGES CXX)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-#set(CMAKE_BUILD_TYPE Debug)
-set(CMAKE_BUILD_TYPE Release)
+set(CMAKE_BUILD_TYPE Debug)
+#set(CMAKE_BUILD_TYPE Release)
 
 #add_definitions( -DDEBUG_PRINT ) # for debugging log
 

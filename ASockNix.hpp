@@ -1246,7 +1246,10 @@ public :
     }
 #endif
     //-------------------------------------------------------------------------
-    bool  IsServerRunning(){return is_server_running_;};
+    bool  IsServerRunning(){
+        return is_server_running_;
+    }
+
     //-------------------------------------------------------------------------
     void  StopServer() {
         // Wait a moment for the current task (client termination) to complete.
@@ -1258,6 +1261,9 @@ public :
             DBG_LOG("unlink :" << server_ipc_socket_path_);
             unlink(server_ipc_socket_path_.c_str());
             server_ipc_socket_path_="";
+        }
+        while(is_server_running_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
     //-------------------------------------------------------------------------
@@ -1318,6 +1324,7 @@ private :
                     //# accept #----------
                     if(!AcceptNewClient()) {
                         std::cerr <<"accept error:" << err_msg_ << "\n";
+                        is_server_running_ = false;
                         return;
                     }
                 } else {
@@ -1349,12 +1356,14 @@ private :
 #endif
                         //# send #----------
                         if(!SendPendingData(ctx_ptr)) {
+                            is_server_running_ = false;
                             return; //error!
                         }
                     } 
                 } 
             } 
         } //while
+        DBG_LOG("server thread exit");
         is_server_running_ = false;
     }
     //-------------------------------------------------------------------------
@@ -1409,6 +1418,7 @@ private :
 #endif
                     //# send #----------
                     if(!SendPendingData(listen_context_ptr_)) {
+                        is_server_running_ = false;
                         return; //error!
                     }
                 } 

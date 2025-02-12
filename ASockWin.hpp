@@ -1304,7 +1304,10 @@ public :
     }
 
     //-------------------------------------------------------------------------
-    bool  IsServerRunning(){return is_server_running_;};
+    bool  IsServerRunning(){
+        return is_server_running_;
+    }
+
     //-------------------------------------------------------------------------
     void  StopServer() {
         is_need_server_run_ = false;
@@ -1330,6 +1333,9 @@ public :
         }
         if (sock_usage_ == SOCK_USAGE_TCP_SERVER) {
             closesocket(listen_socket_);
+        }
+        while(is_server_running_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 
