@@ -44,6 +44,7 @@ SOFTWARE.
 #include <errno.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <unordered_map>
 
 #ifdef __APPLE__
 #include <sys/select.h>
@@ -652,9 +653,9 @@ protected :
 #endif
 
 
-    //---------------------------------------------------------    
-    // CLIENT Usage
-    //---------------------------------------------------------    
+    //--------------------------------------------------------- 
+    //NOTE: ClientUsage
+    //--------------------------------------------------------- 
 public :
     //-------------------------------------------------------------------------
     // - If you know the maximum data size you will be sending and receiving in advance, 
@@ -1185,9 +1186,9 @@ private :
     //for inheritance : Implement these virtual functions.
     virtual void  OnDisconnectedFromServer() {}; 
 
-    //---------------------------------------------------------    
-    // SERVER Usage
-    //---------------------------------------------------------    
+    //--------------------------------------------------------- 
+    // NOTE: ServerUsage
+    //--------------------------------------------------------- 
 public :
     //-------------------------------------------------------------------------
     // - If you know the maximum data size you will be sending and receiving in advance, 
@@ -1297,6 +1298,7 @@ private :
 #if defined __APPLE__ || defined __linux__ 
     Context*  listen_context_ptr_ {nullptr};
 #endif
+    std::unordered_map<SOCKET_T, Context*> map_sock_ctx_;
 
     //-------------------------------------------------------------------------
     void ServerThreadRoutine() {
@@ -1448,7 +1450,6 @@ private :
             }
         }
         DBG_LOG("~~~~~~~~~~ pop new ctx");
-        // TODO: server가 먼저 종료하면 mem leak ..
         ctx_ptr = new (std::nothrow) Context();
         if(!ctx_ptr) {
             std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -1465,6 +1466,8 @@ private :
     }
     //-------------------------------------------------------------------------
     void PushClientContextToCache(Context* ctx_ptr) {
+        map_sock_ctx_.erase(ctx_ptr->socket);
+
         //reset
         ctx_ptr->recv_buffer.ReSet();
         ctx_ptr->socket = -1;
@@ -1492,9 +1495,21 @@ private :
                 delete [] pending_sent.pending_sent_data;
                 ctx_ptr->pending_send_deque.pop_front();
             }
-            DBG_LOG("~~~~~~~~~~~ clear cache");
+            DBG_LOG("~~~~~~~~~~~ #0 clear cache");
             delete ctx_ptr;
             queue_ctx_cache_.pop();
+        }
+        // server 가 먼저 종료하는 경우, queue_ctx_cache_ 에 없을수 있다
+        for (auto& p : map_sock_ctx_){
+            Context* ctx_ptr = p.second;
+            std::cout << ' ' << p.first << " => " << ctx_ptr << '\n';
+            while(!ctx_ptr->pending_send_deque.empty() ) {
+                PENDING_SENT pending_sent= ctx_ptr->pending_send_deque.front();
+                delete [] pending_sent.pending_sent_data;
+                ctx_ptr->pending_send_deque.pop_front();
+            }
+            DBG_LOG("~~~~~~~~~~~ #1 clear cache");
+            delete ctx_ptr;
         }
     }
 
@@ -1533,6 +1548,7 @@ private :
             }
             client_context_ptr->socket = client_fd;
             client_context_ptr->is_connected = true;
+            map_sock_ctx_.insert({client_fd, client_context_ptr});
 
 #ifdef __APPLE__
             if(!ControlKq(client_context_ptr, EVFILT_READ, EV_ADD )){
