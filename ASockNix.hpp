@@ -1066,7 +1066,7 @@ private :
 #ifdef __APPLE__
             struct timespec ts;
             ts.tv_sec  =0;
-            ts.tv_nsec =100000000;
+            ts.tv_nsec =10000000;
             int event_cnt = kevent(kq_fd_, NULL, 0, 
                                    kq_events_ptr_, 1, &ts); 
 #elif __linux__
