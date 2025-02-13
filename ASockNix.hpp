@@ -1203,6 +1203,7 @@ public :
         server_port_ = bind_port ; 
         max_event_ = max_event ; 
         if(max_event_==0) {
+            err_msg_="max event is 0";
             return false;
         }
         if(!SetBufferCapacity(max_data_len)) {
@@ -1223,6 +1224,7 @@ public :
         server_port_ = bind_port ; 
         max_event_ = max_event ; 
         if(max_event_==0) {
+            err_msg_="max event is 0";
             return false;
         }
         if(!SetBufferCapacity(max_data_len)) {
@@ -1276,7 +1278,7 @@ public :
         ClearServer();
     }
     //-------------------------------------------------------------------------
-    size_t  GetMaxClientLimit(){return max_event_ ; }
+    size_t  GetMaxEventCount(){return max_event_ ; }
     //-------------------------------------------------------------------------
     int   GetCountOfClients(){ return client_cnt_ ; }
 
@@ -1391,9 +1393,7 @@ private :
         }
         while(is_need_server_run_) {
 #ifdef __APPLE__
-            int event_cnt = kevent(kq_fd_, NULL, 0, 
-                                   kq_events_ptr_, max_event_, 
-                                   &ts); 
+            int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, max_event_, &ts); 
             if (event_cnt < 0) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";

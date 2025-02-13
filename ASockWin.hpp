@@ -329,7 +329,7 @@ protected :
     bool StartServer() {
         DBG_LOG("PER_IO_DATA size ==> " << sizeof(PER_IO_DATA));
         if ( sock_usage_ == SOCK_USAGE_IPC_SERVER ) {
-            // TODO
+            //TODO: ipc windows
             //listen_socket_ = WSASocketW(AF_UNIX, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
         } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER ) {
             listen_socket_ = WSASocketW(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
@@ -365,7 +365,7 @@ protected :
 
         int result = -1;
         if (sock_usage_ == SOCK_USAGE_IPC_SERVER) {
-            //TODO
+            //TODO: ipc windows
         } else if (sock_usage_ == SOCK_USAGE_TCP_SERVER || 
                    sock_usage_ == SOCK_USAGE_UDP_SERVER) {
             SOCKADDR_IN    server_addr  ;
@@ -1271,12 +1271,13 @@ public :
     bool  RunTcpServer(const char* bind_ip,
                         int         bind_port,
                         size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE,
-                        size_t  max_client = asock::DEFAULT_MAX_CLIENT) {
+                        size_t  max_event = asock::DEFAULT_MAX_EVENT) {
         sock_usage_ = SOCK_USAGE_TCP_SERVER;
         server_ip_ = bind_ip;
         server_port_ = bind_port;
-        max_client_limit_ = max_client;
-        if (max_client_limit_ < 0) {
+        max_event_ = max_event;
+        if (max_event_ == 0) {
+            err_msg_="max event is 0";
             return false;
         }
         if (!SetBufferCapacity(max_data_len)) {
@@ -1289,12 +1290,13 @@ public :
     bool  RunUdpServer(const char* bind_ip,
                         size_t  bind_port,
                         size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE,
-                        size_t  max_client = asock::DEFAULT_MAX_CLIENT) {
+                        size_t  max_event = asock::DEFAULT_MAX_EVENT) {
         sock_usage_ = SOCK_USAGE_UDP_SERVER  ;
         server_ip_ = bind_ip ; 
         server_port_ = int(bind_port) ; 
-        max_client_limit_ = max_client ; 
-        if(max_client_limit_<0) {
+        max_event_ = max_event ; 
+        if(max_event_ == 0) {
+            err_msg_="max event is 0";
             return false;
         }
         if(!SetBufferCapacity(max_data_len)) {
@@ -1340,7 +1342,7 @@ public :
     }
 
     //-------------------------------------------------------------------------
-    size_t  GetMaxClientLimit(){return max_client_limit_ ; }
+    size_t  GetMaxEventCount(){return max_event_ ; }
     //-------------------------------------------------------------------------
     int   GetCountOfClients(){ return client_cnt_ ; }
     //-------------------------------------------------------------------------
@@ -1357,7 +1359,7 @@ private :
     std::atomic<bool> is_need_server_run_ {true};
     std::atomic<bool> is_server_running_  {false};
     SOCKET_T          listen_socket_     ;
-    size_t            max_client_limit_  {0};
+    size_t            max_event_  {0};
     int               max_worker_cnt_{ 0 };
     std::atomic<int>  cur_quit_cnt_{0};
     std::queue<Context*> queue_ctx_cache_;
@@ -1370,7 +1372,7 @@ private :
     bool BuildClientContextCache() {
         //DBG_LOG("queue_client_cache alloc ");
         Context* ctx_ptr = nullptr;
-        for (int i = 0; i < max_client_limit_; i++) {
+        for (int i = 0; i < max_event_; i++) {
             ctx_ptr = new (std::nothrow) Context();
             if (nullptr == ctx_ptr) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -1437,7 +1439,7 @@ private :
             if (!queue_ctx_cache_.empty()) {
                 ctx_ptr = queue_ctx_cache_.front();
                 queue_ctx_cache_.pop(); 
-                //DBG_LOG("queue_ctx_cache not empty! -> " << "queue ctx cache size = " << queue_ctx_cache_.size());
+                //DBG_LOG("queue_ctx_cache not empty! -> " << queue_ctx_cache_.size());
                 ReSetCtxPtr(ctx_ptr);
                 return ctx_ptr;
             }
@@ -1457,7 +1459,7 @@ private :
     bool BuildPerIoDataCache() {
         //DBG_LOG("queue_per_io_data_cache_ alloc ");
         PER_IO_DATA* per_io_data_ptr = nullptr;
-        for (int i = 0; i < max_client_limit_ * 2; i++) { // 최대 예상 client 의 2배로 시작
+        for (int i = 0; i < max_event_ * 2; i++) { 
             per_io_data_ptr = new (std::nothrow) PER_IO_DATA;
             if (nullptr == per_io_data_ptr) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -1486,7 +1488,7 @@ private :
         if (!queue_per_io_data_cache_.empty()) {
             per_io_data_ptr = queue_per_io_data_cache_.front();
             queue_per_io_data_cache_.pop();
-            //DBG_LOG("queue_per_io_data_cache_ not empty! -> " << "queue_per_io_data_cache_ client cache size = " << queue_per_io_data_cache_.size());
+            //DBG_LOG("queue_per_io_data_cache_ not empty! -> " << queue_per_io_data_cache_.size());
             return per_io_data_ptr;
         }
         //alloc new !!!
