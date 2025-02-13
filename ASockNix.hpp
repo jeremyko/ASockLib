@@ -109,33 +109,41 @@ public :
         } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
             sock_usage_ == SOCK_USAGE_UDP_SERVER ||  
             sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
+            ClearServer();
+        }
+    }
+
+    //-------------------------------------------------------------------------
+    void ClearServer(){
 #ifdef __APPLE__
-            if ( kq_events_ptr_ ) { 
-                delete [] kq_events_ptr_;    
-            }
+        if ( kq_events_ptr_ ){
+            delete [] kq_events_ptr_;
+            kq_events_ptr_=nullptr;
+        }
 #elif __linux__
-            if (ep_events_)   { 
-                delete [] ep_events_;    
-            }
+        if (ep_events_){
+            delete [] ep_events_;
+            ep_events_=nullptr;
+        }
 #endif
-            ClearClientCache();
+        ClearClientCache();
+        if(sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
+            if(server_ipc_socket_path_.length()>0){
+                DBG_LOG("unlink :" << server_ipc_socket_path_);
+                unlink(server_ipc_socket_path_.c_str());
+                server_ipc_socket_path_="";
+            }
+        }
+        if ( listen_context_ptr_ ){
 #ifdef __APPLE__
             ControlKq(listen_context_ptr_, EVFILT_READ, EV_DELETE );
 #elif __linux__
-            // destructor 
-            ControlEpoll(listen_context_ptr_, 
-                          EPOLLIN , EPOLL_CTL_DEL ); //just in case
-            if(sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
-                if(server_ipc_socket_path_.length()>0){
-                    DBG_LOG("unlink :" << server_ipc_socket_path_);
-                    unlink(server_ipc_socket_path_.c_str());
-                }
-            }
+            ControlEpoll(listen_context_ptr_, EPOLLIN , EPOLL_CTL_DEL );
 #endif
-
             delete listen_context_ptr_ ;
+            listen_context_ptr_=nullptr;
         }
-    }  
+    }
 
     //-------------------------------------------------------------------------
     bool SetSocketNonBlocking(int sock_fd) {
@@ -887,11 +895,11 @@ private :
         is_need_server_run_ = true;
         is_server_running_  = true;
 #ifdef __APPLE__
-        kq_events_ptr_ = new struct kevent[max_client_limit_];
-        memset(kq_events_ptr_, 0x00, sizeof(struct kevent) * max_client_limit_);
+        kq_events_ptr_ = new struct kevent[max_event_];
+        memset(kq_events_ptr_, 0x00, sizeof(struct kevent) * max_event_);
 #elif __linux__
-        ep_events_ = new struct epoll_event[max_client_limit_];
-        memset(ep_events_, 0x00, sizeof(struct epoll_event) * max_client_limit_);
+        ep_events_ = new struct epoll_event[max_event_];
+        memset(ep_events_, 0x00, sizeof(struct epoll_event) * max_event_);
 #endif
         if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
             std::thread server_thread(&ASock::ServerThreadUdpRoutine, this);
@@ -1189,12 +1197,12 @@ public :
     bool  RunTcpServer (const char* bind_ip, 
                          int         bind_port, 
                          size_t  max_data_len=asock::DEFAULT_BUFFER_SIZE,
-                         size_t  max_client=asock::DEFAULT_MAX_CLIENT) {
+                         size_t  max_event=asock::DEFAULT_MAX_EVENT) {
         sock_usage_ = SOCK_USAGE_TCP_SERVER  ;
         server_ip_ = bind_ip ; 
         server_port_ = bind_port ; 
-        max_client_limit_ = max_client ; 
-        if(max_client_limit_==0) {
+        max_event_ = max_event ; 
+        if(max_event_==0) {
             return false;
         }
         if(!SetBufferCapacity(max_data_len)) {
@@ -1209,12 +1217,12 @@ public :
     bool  RunUdpServer (const char* bind_ip, 
                          size_t      bind_port, 
                          size_t  max_data_len,
-                         size_t  max_client=asock::DEFAULT_MAX_CLIENT) {
+                         size_t  max_event=asock::DEFAULT_MAX_EVENT) {
         sock_usage_ = SOCK_USAGE_UDP_SERVER  ;
         server_ip_ = bind_ip ; 
         server_port_ = bind_port ; 
-        max_client_limit_ = max_client ; 
-        if(max_client_limit_==0) {
+        max_event_ = max_event ; 
+        if(max_event_==0) {
             return false;
         }
         if(!SetBufferCapacity(max_data_len)) {
@@ -1231,11 +1239,11 @@ public :
     //   dynamic memory allocation occurs internally. 
     bool  RunIpcServer (const char* sock_path, 
                          size_t  max_data_len=asock::DEFAULT_BUFFER_SIZE,
-                         size_t  max_client=asock::DEFAULT_MAX_CLIENT ) {
+                         size_t  max_event=asock::DEFAULT_MAX_EVENT ) {
         sock_usage_ = SOCK_USAGE_IPC_SERVER  ;
         server_ipc_socket_path_ = sock_path;
-        max_client_limit_ = max_client ; 
-        if(max_client_limit_==0) {
+        max_event_ = max_event ; 
+        if(max_event_==0) {
             ELOG("max client is 0");
             return false;
         }
@@ -1262,9 +1270,13 @@ public :
         while(is_server_running_) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
+        // 사용자가 이것호출이후 바로 exit 하는 경우, thread 깔끔하게 정리안되는
+        // 현상이 발생함. valgrind : possibly lost --> 약간 여유를 준다 
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        ClearServer();
     }
     //-------------------------------------------------------------------------
-    size_t  GetMaxClientLimit(){return max_client_limit_ ; }
+    size_t  GetMaxClientLimit(){return max_event_ ; }
     //-------------------------------------------------------------------------
     int   GetCountOfClients(){ return client_cnt_ ; }
 
@@ -1276,7 +1288,7 @@ private :
     std::atomic<bool> is_need_server_run_ {true};
     std::atomic<bool> is_server_running_  {false};
     SOCKET_T          listen_socket_     ;
-    size_t            max_client_limit_  {0};
+    size_t            max_event_  {0};
     std::atomic<int>  cur_quit_cnt_{0};
     std::queue<Context*> queue_ctx_cache_;
     std::mutex           ctx_cache_lock_ ; 
@@ -1294,7 +1306,7 @@ private :
         while(is_need_server_run_) {
 #ifdef __APPLE__
             int event_cnt = kevent(kq_fd_, NULL, 0, 
-                                   kq_events_ptr_, max_client_limit_, 
+                                   kq_events_ptr_, max_event_, 
                                    &ts); 
             if (event_cnt < 0) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -1303,7 +1315,7 @@ private :
                 return;
             }
 #elif __linux__
-            int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 100 );
+            int event_cnt = epoll_wait(ep_fd_, ep_events_, max_event_, 100 );
             if (event_cnt < 0) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
@@ -1380,7 +1392,7 @@ private :
         while(is_need_server_run_) {
 #ifdef __APPLE__
             int event_cnt = kevent(kq_fd_, NULL, 0, 
-                                   kq_events_ptr_, max_client_limit_, 
+                                   kq_events_ptr_, max_event_, 
                                    &ts); 
             if (event_cnt < 0) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -1389,7 +1401,7 @@ private :
                 return;
             }
 #elif __linux__
-            int event_cnt = epoll_wait(ep_fd_, ep_events_, max_client_limit_, 100 );
+            int event_cnt = epoll_wait(ep_fd_, ep_events_, max_event_, 100 );
             if (event_cnt < 0) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
@@ -1435,7 +1447,8 @@ private :
                 return ctx_ptr;
             }
         }
-        //LOG("~~~~~~~~~~ pop new ctx");
+        DBG_LOG("~~~~~~~~~~ pop new ctx");
+        // TODO: server가 먼저 종료하면 mem leak ..
         ctx_ptr = new (std::nothrow) Context();
         if(!ctx_ptr) {
             std::lock_guard<std::mutex> lock(err_msg_lock_);
@@ -1465,7 +1478,7 @@ private :
             ctx_ptr->pending_send_deque.pop_front();
         }
         std::lock_guard<std::mutex> lock(ctx_cache_lock_);
-        //LOG("~~~~~~~~~ push cache");
+        DBG_LOG("~~~~~~~~~ push cache");
         queue_ctx_cache_.push(ctx_ptr);
     }
 
@@ -1479,7 +1492,7 @@ private :
                 delete [] pending_sent.pending_sent_data;
                 ctx_ptr->pending_send_deque.pop_front();
             }
-            //LOG("~~~~~~~~~~~ clear cache");
+            DBG_LOG("~~~~~~~~~~~ clear cache");
             delete ctx_ptr;
             queue_ctx_cache_.pop();
         }

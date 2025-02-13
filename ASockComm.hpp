@@ -73,7 +73,7 @@ namespace asock {
 #define  DBG_GREEN_LOG(x)
 #endif //DEBUG_PRINT
 
-const size_t  DEFAULT_MAX_CLIENT  =10000;
+const size_t  DEFAULT_MAX_EVENT =100;
 const size_t  MORE_TO_COME        =0;
 
 typedef enum _ENUM_SOCK_USAGE_ {
