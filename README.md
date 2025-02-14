@@ -26,12 +26,6 @@ Just copy all `*.hpp` header files to your project. And include `ASock.hpp`
 // This is an inheritance usage.  
 // you can find composition usage and udp, domain socket example too.
 
-// echo_server.cpp
-
-#include <iostream>
-#include <cassert>
-#include <csignal>
-
 #include "ASock.hpp"
 
 #define DEFAULT_PACKET_SIZE 1024
@@ -83,11 +77,6 @@ int main(int argc, char* argv[]) {
 #### tcp echo client
 
 ```cpp
-#include <iostream>
-#include <string>
-#include <cstdlib>
-#include <stdio.h>
-#include <cassert>
 #include "ASock.hpp"
 
 #define DEFAULT_PACKET_SIZE 1024
