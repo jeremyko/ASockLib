@@ -30,7 +30,7 @@ class Server {
     asock::ASock server_ ; //composite usage
   private:
     bool OnRecvedCompleteData(asock::Context* ctx_ptr, 
-                              char* data_ptr, size_t len ) ;
+                              const char* const data_ptr, size_t len ) ;
     void OnClientConnected(asock::Context* ctx_ptr) ; 
     void SendThread(asock::Context* ctx_ptr) ;
 };
@@ -78,7 +78,7 @@ void Server::SendThread(asock::Context* ctx_ptr) {
 
 ///////////////////////////////////////////////////////////////////////////////
 bool Server::OnRecvedCompleteData(asock::Context* ctx_ptr, 
-                                         char* data_ptr, size_t len ) {
+                                const char* const data_ptr, size_t len ) {
     //user specific : your whole data has arrived.
  
     //char packet[DEFAULT_PACKET_SIZE];

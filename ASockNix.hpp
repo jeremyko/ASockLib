@@ -282,7 +282,7 @@ public :
     }
 
     //-------------------------------------------------------------------------
-    bool SetCbOnRecvedCompletePacket(std::function<bool(Context*,char*,size_t)> cb) {
+    bool SetCbOnRecvedCompletePacket(std::function<bool(Context*,const char* const,size_t)> cb ) {
         //for composition usage 
         if(cb != nullptr) {
             cb_on_recved_complete_packet_ = cb;
@@ -331,7 +331,7 @@ private:
         return supposed_total_len ;
     }
 
-    virtual bool OnRecvedCompleteData(Context* , char* , size_t ) {
+    virtual bool OnRecvedCompleteData(Context* , const char* const , size_t ) {
         std::cerr << "ERROR! OnRecvedCompleteData not implemented! \n";
         return false;
     } 
@@ -350,8 +350,7 @@ protected :
     std::mutex   err_msg_lock_ ; 
     std::string  err_msg_ ;
     ENUM_SOCK_USAGE sock_usage_ {asock::SOCK_USAGE_UNKNOWN};
-    //std::function<size_t(Context*)>   cb_on_calculate_data_len_ {nullptr} ;
-    std::function<bool(Context*,char*,size_t)>cb_on_recved_complete_packet_{nullptr};
+    std::function<bool(Context*,const char* const,size_t)> cb_on_recved_complete_packet_{nullptr};
 
     //-------------------------------------------------------------------------
     bool SetSockoptSndRcvBufUdp(SOCKET_T socket){

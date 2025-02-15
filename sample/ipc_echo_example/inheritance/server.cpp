@@ -17,7 +17,7 @@ class Server : public asock::ASock {
 
   private:
     bool OnRecvedCompleteData(asock::Context* context_ptr, 
-                              char* data_ptr, size_t len ) override;
+                              const char* const  data_ptr, size_t len ) override;
     void OnClientConnected(asock::Context* context_ptr) override;
     void OnClientDisconnected(asock::Context* context_ptr) override;
     static Server* this_instance_ ;
@@ -26,8 +26,8 @@ class Server : public asock::ASock {
 Server* Server::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
-bool Server::OnRecvedCompleteData(asock::Context* context_ptr, 
-                                  char*  data_ptr, size_t len ) {
+bool Server::OnRecvedCompleteData(asock::Context* context_ptr,
+                                   const char* const data_ptr, size_t len) {
     //user specific : - your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr, len);

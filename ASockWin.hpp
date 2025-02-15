@@ -231,7 +231,7 @@ public :
     }
 
     //-------------------------------------------------------------------------
-    bool SetCbOnRecvedCompletePacket(std::function<bool(Context*,char*,size_t)> cb) {
+    bool SetCbOnRecvedCompletePacket(std::function<bool(Context*,const char* const,size_t)> cb) {
         //for composition usage 
         if(cb != nullptr) {
             cb_on_recved_complete_packet_ = cb;
@@ -250,7 +250,7 @@ protected :
     std::mutex   err_msg_lock_ ; 
     std::string  err_msg_ ;
     ENUM_SOCK_USAGE sock_usage_ {asock::SOCK_USAGE_UNKNOWN};
-    std::function<bool(Context*,char*,size_t)>cb_on_recved_complete_packet_{nullptr};
+    std::function<bool(Context*,const char* const,size_t)>cb_on_recved_complete_packet_{nullptr};
 
     //-------------------------------------------------------------------------
     //for udp server, client only
@@ -749,8 +749,7 @@ private:
         return supposed_total_len;
     }
 
-    virtual bool    OnRecvedCompleteData(Context* ctx_ptr, 
-                                         char* data_ptr, size_t size_t) {
+    virtual bool OnRecvedCompleteData(Context* ,const char* const, size_t) {
         std::cerr << "ERROR! OnRecvedCompleteData not implemented!\n";
         return false;
     }

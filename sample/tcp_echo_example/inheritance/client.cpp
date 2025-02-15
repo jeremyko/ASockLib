@@ -18,14 +18,14 @@ class Client : public asock::ASock {
   private:
     static Client* this_instance_ ;
     bool OnRecvedCompleteData(asock::Context* context_ptr, 
-                              char* data_ptr, size_t len) override;
+                              const char* const data_ptr, size_t len) override;
     void OnDisconnectedFromServer() override ;
 };
 
 Client* Client::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
-bool Client:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
+bool Client:: OnRecvedCompleteData(asock::Context* , const char* const data_ptr, size_t len) {
     //user specific : - your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr ,len);

@@ -21,7 +21,7 @@ class Server {
     asock::ASock server_ ; //composite usage
     static Server* this_instance_ ;
   private:
-    bool OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) ;
+    bool OnRecvedCompleteData(asock::Context* context_ptr,const char* const data_ptr, size_t len) ;
 };
 
 Server* Server::this_instance_ = nullptr;
@@ -44,7 +44,7 @@ bool Server::RunUdpServer() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-bool Server::OnRecvedCompleteData(asock::Context* context_ptr,char* data_ptr, size_t len) {
+bool Server::OnRecvedCompleteData(asock::Context* context_ptr,const char* const data_ptr, size_t len) {
     //user specific : your whole data has arrived. 
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet, data_ptr, len);

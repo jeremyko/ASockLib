@@ -26,7 +26,7 @@ class Server {
     asock::ASock tcp_server_ ; 
     std::string cli_msg_ = "";
   private:
-    bool OnRecvedCompleteData(asock::Context* ctx_ptr, char* data_ptr, size_t len);
+    bool OnRecvedCompleteData(asock::Context* ctx_ptr, const char* const data_ptr, size_t len);
 };
 
 static Server* this_instance_ = nullptr;
@@ -46,7 +46,7 @@ bool Server::RunTcpServer() {
     return true;
 }
 
-bool Server::OnRecvedCompleteData(asock::Context* ctx_ptr, char* data_ptr, size_t len){
+bool Server::OnRecvedCompleteData(asock::Context* ctx_ptr, const char* const data_ptr, size_t len){
     //user specific : your whole data has arrived.
     // note : this buffer must be large enough to receive the data sent.
     char packet[DEFAULT_PACKET_SIZE]; 
@@ -78,7 +78,7 @@ class Client {
     std::string svr_res_ = "";
   private:
     asock::ASock tcp_client_ ; //composite usage
-    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr, size_t len);
+    bool OnRecvedCompleteData(asock::Context* context_ptr, const char* const data_ptr, size_t len);
 };
 
 bool Client::IntTcpClient() {
@@ -104,7 +104,7 @@ void Client::DisConnect() {
     tcp_client_.Disconnect();
 }
 
-bool Client::OnRecvedCompleteData(asock::Context*, char* data_ptr, size_t len) {
+bool Client::OnRecvedCompleteData(asock::Context*, const char* const data_ptr, size_t len) {
     //user specific : your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet, data_ptr,len);

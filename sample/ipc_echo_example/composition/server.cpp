@@ -23,7 +23,7 @@ class Server {
     static Server* this_instance_ ;
   private:
     bool OnRecvedCompleteData(asock::Context* context_ptr,
-                              char* data_ptr, size_t len ) ;
+                              const char* const data_ptr, size_t len ) ;
     void OnClientConnected(asock::Context* context_ptr) ;
     void OnClientDisconnected(asock::Context* context_ptr) ;
 };
@@ -53,7 +53,7 @@ bool Server::InitIpcServer(const char* ipc_sock_path) {
 
 ///////////////////////////////////////////////////////////////////////////////
 bool Server::OnRecvedCompleteData(asock::Context* context_ptr, 
-                                         char* data_ptr, size_t len ) {
+                                const char* const data_ptr, size_t len ) {
     //user specific : your whole data has arrived.
     // this is echo server
     char packet[DEFAULT_PACKET_SIZE];

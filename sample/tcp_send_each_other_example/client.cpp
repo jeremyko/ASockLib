@@ -48,7 +48,7 @@ class Client {
     size_t client_id_;
   private:
     asock::ASock client_ ; //composite usage
-    bool OnRecvedCompleteData(asock::Context* context_ptr, char* data_ptr,
+    bool OnRecvedCompleteData(asock::Context* context_ptr, const char* const data_ptr ,
                               size_t len);
     std::vector<std::string> vec_sent_strings_ ;
     std::mutex  sent_chk_lock_ ; // XXX vec_sent_strings_ is used by multiple threads.
@@ -103,7 +103,7 @@ void Client::SendThread(size_t index) {
     //LOG("send thread exiting : " << index);
 }
 ///////////////////////////////////////////////////////////////////////////////
-bool Client:: OnRecvedCompleteData(asock::Context* , char* data_ptr, size_t len) {
+bool Client:: OnRecvedCompleteData(asock::Context* , const char* const data_ptr, size_t len) {
     //user specific : your whole data has arrived.
 
     char packet[DEFAULT_PACKET_SIZE];
