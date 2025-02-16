@@ -22,6 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
  *****************************************************************************/
 
+#ifndef ASOCKNIX_HPP
+#define ASOCKNIX_HPP
+
 #include "ASockComm.hpp"
 #include "ASockBuffer.hpp"
 
@@ -1600,4 +1603,4 @@ private :
     virtual void OnClientDisconnected(Context*) {} ;  
 };
 } //namespace
-
+#endif

@@ -28,6 +28,9 @@ SOFTWARE.
 //TODO SOCK_USAGE_IPC_SERVER 
 //TODO SOCK_USAGE_IPC_CLIENT 
 
+#ifndef ASOCKWIN_HPP
+#define ASOCKWIN_HPP
+
 #include "ASockComm.hpp"
 #include "ASockBuffer.hpp"
 
@@ -1832,4 +1835,4 @@ private :
     virtual void    OnClientDisconnected(Context* ctx_ptr) {} ;  
 };
 } //namaspace
-
+#endif
