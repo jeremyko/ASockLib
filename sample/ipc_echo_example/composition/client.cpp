@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <cassert>
 #include <csignal>
-#include "ASock.hpp"
+#include "asock/asock_ipc_client.hpp"
 
 // The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
@@ -21,7 +21,7 @@ class Client {
     }
     static void SigIntHandler(int signo);
   private:
-    asock::ASock client_ ; //composite usage
+    asock::ASockIpcClient client_ ; //composite usage
     static Client* this_instance_ ;
     bool OnRecvedCompleteData(asock::Context* context_ptr, const char* const data_ptr, size_t len);
     void OnDisconnectedFromServer() ;

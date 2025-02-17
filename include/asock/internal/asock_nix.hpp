@@ -25,8 +25,8 @@ SOFTWARE.
 #ifndef ASOCKNIX_HPP
 #define ASOCKNIX_HPP
 
-#include "ASockComm.hpp"
-#include "ASockBuffer.hpp"
+#include "asock_comm.hpp"
+#include "asock_buffer.hpp"
 
 #include <atomic>
 #include <cassert>
@@ -89,16 +89,16 @@ typedef struct _Context_ {
 
 
 ////////////////////////////////////////////////////////////////////////////////
-class ASock {
+class ASockBase {
 public :
 
-    ASock(){
+    ASockBase(){
         is_connected_ = false;
-    }; 
+    }
 
-    ~ASock() {
-        if (sock_usage_ == SOCK_USAGE_TCP_CLIENT || 
-            sock_usage_ == SOCK_USAGE_UDP_CLIENT ||   
+    ~ASockBase() {
+        if (sock_usage_ == SOCK_USAGE_TCP_CLIENT ||
+            sock_usage_ == SOCK_USAGE_UDP_CLIENT ||
             sock_usage_ == SOCK_USAGE_IPC_CLIENT ) {
 #ifdef __APPLE__
             if(kq_events_ptr_) {
@@ -110,8 +110,8 @@ public :
             }
 #endif
             Disconnect();
-        } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER || 
-            sock_usage_ == SOCK_USAGE_UDP_SERVER ||  
+        } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER ||
+            sock_usage_ == SOCK_USAGE_UDP_SERVER ||
             sock_usage_ == SOCK_USAGE_IPC_SERVER  ) {
             ClearServer();
         }
@@ -338,8 +338,10 @@ private:
         std::cerr << "ERROR! OnRecvedCompleteData not implemented! \n";
         return false;
     } 
-
+public:
+    virtual void SetUsage()=0;
 protected :
+    ENUM_SOCK_USAGE sock_usage_ {asock::SOCK_USAGE_UNKNOWN};
     size_t  max_data_len_ {0};
     std::mutex   lock_ ; 
 #ifdef __APPLE__
@@ -352,7 +354,6 @@ protected :
 
     std::mutex   err_msg_lock_ ; 
     std::string  err_msg_ ;
-    ENUM_SOCK_USAGE sock_usage_ {asock::SOCK_USAGE_UNKNOWN};
     std::function<bool(Context*,const char* const,size_t)> cb_on_recved_complete_packet_{nullptr};
 
     //-------------------------------------------------------------------------
@@ -659,66 +660,6 @@ protected :
     //NOTE: ClientUsage
     //--------------------------------------------------------- 
 public :
-    //-------------------------------------------------------------------------
-    // - If you know the maximum data size you will be sending and receiving in advance, 
-    //   it is better to allocate a buffer large enough to match that.
-    // - If you do not know the size in advance or if it exceeds the buffer, 
-    //   dynamic memory allocation occurs internally. 
-    bool InitTcpClient(const char* server_ip, 
-                       unsigned short  server_port, 
-                       int         connect_timeout_secs=10, 
-                       size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE) {
-        sock_usage_ = SOCK_USAGE_TCP_CLIENT  ;
-        connect_timeout_secs_ = connect_timeout_secs;
-        if(!SetBufferCapacity(max_data_len) ) {
-            return false;
-        }
-        context_.socket = socket(AF_INET,SOCK_STREAM,0) ;
-        memset((void *)&tcp_server_addr_,0x00,sizeof(tcp_server_addr_)) ;
-        tcp_server_addr_.sin_family      = AF_INET ;
-        tcp_server_addr_.sin_addr.s_addr = inet_addr( server_ip ) ;
-        tcp_server_addr_.sin_port = htons( server_port );
-        return ConnectToServer();  
-    }
-
-    //-------------------------------------------------------------------------
-    // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
-    bool InitUdpClient(const char* server_ip, 
-                       unsigned short  server_port, 
-                       size_t  max_data_len) {
-        sock_usage_ = SOCK_USAGE_UDP_CLIENT  ;
-        if(!SetBufferCapacity(max_data_len) ) {
-            return false;
-        }
-        context_.socket = socket(AF_INET,SOCK_DGRAM,0) ;
-        memset((void *)&udp_server_addr_,0x00,sizeof(udp_server_addr_)) ;
-        udp_server_addr_.sin_family      = AF_INET ;
-        udp_server_addr_.sin_addr.s_addr = inet_addr( server_ip ) ;
-        udp_server_addr_.sin_port = htons( server_port );
-        return ConnectToServer();  
-    }
-
-    //-------------------------------------------------------------------------
-    // - If you know the maximum data size you will be sending and receiving in advance, 
-    //   it is better to allocate a buffer large enough to match that.
-    // - If you do not know the size in advance or if it exceeds the buffer, 
-    //   dynamic memory allocation occurs internally. 
-    bool InitIpcClient(const char* sock_path, 
-                       int         connect_timeout_secs=10,
-                       size_t  max_data_len=asock::DEFAULT_BUFFER_SIZE) {
-        sock_usage_ = SOCK_USAGE_IPC_CLIENT  ;
-        connect_timeout_secs_ = connect_timeout_secs;
-        if(!SetBufferCapacity(max_data_len) ) {
-            return false;
-        }
-        server_ipc_socket_path_ = sock_path ;
-        context_.socket = socket(AF_UNIX,SOCK_STREAM,0) ;
-        memset((void *)&ipc_conn_addr_,0x00,sizeof(ipc_conn_addr_)) ;
-        ipc_conn_addr_.sun_family = AF_UNIX;
-        snprintf(ipc_conn_addr_.sun_path, sizeof(ipc_conn_addr_.sun_path), 
-                 "%s",sock_path); 
-        return ConnectToServer();  
-    }
 
     //-------------------------------------------------------------------------
     bool SendToServer (const char* data, size_t len) {
@@ -730,6 +671,9 @@ public :
         return SendData(&context_, data, len);
     } 
 
+    //-------------------------------------------------------------------------
+    // bool SendFile (const char* file_path) { TODO: send file .
+    // }
     //-------------------------------------------------------------------------
     SOCKET_T  GetSocket () { return  context_.socket ; }
     //-------------------------------------------------------------------------
@@ -767,7 +711,7 @@ public :
     //-------------------------------------------------------------------------
     //for client use
 
-private :
+protected :
     int         connect_timeout_secs_    ;
     bool        is_buffer_init_ {false};
     std::atomic<bool>    is_connected_   {false};
@@ -905,10 +849,10 @@ private :
         memset(ep_events_, 0x00, sizeof(struct epoll_event) * max_event_);
 #endif
         if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
-            std::thread server_thread(&ASock::ServerThreadUdpRoutine, this);
+            std::thread server_thread(&ASockBase::ServerThreadUdpRoutine, this);
             server_thread.detach();
         } else {
-            std::thread server_thread(&ASock::ServerThreadRoutine, this);
+            std::thread server_thread(&ASockBase::ServerThreadRoutine, this);
             server_thread.detach();
         }
         return true;
@@ -1055,7 +999,7 @@ private :
                 return false;
             }
 #endif
-            std::thread client_thread(&ASock::ClientThreadRoutine, this);
+            std::thread client_thread(&ASockBase::ClientThreadRoutine, this);
             client_thread.detach();
             is_client_thread_running_ = true;
         }
@@ -1192,72 +1136,7 @@ private :
     // NOTE: ServerUsage
     //--------------------------------------------------------- 
 public :
-    //-------------------------------------------------------------------------
-    // - If you know the maximum data size you will be sending and receiving in advance, 
-    //   it is better to allocate a buffer large enough to match that.
-    // - If you do not know the size in advance or if it exceeds the buffer, 
-    //   dynamic memory allocation occurs internally. 
-    bool  RunTcpServer (const char* bind_ip, 
-                         int         bind_port, 
-                         size_t  max_data_len=asock::DEFAULT_BUFFER_SIZE,
-                         size_t  max_event=asock::DEFAULT_MAX_EVENT) {
-        sock_usage_ = SOCK_USAGE_TCP_SERVER  ;
-        server_ip_ = bind_ip ; 
-        server_port_ = bind_port ; 
-        max_event_ = max_event ; 
-        if(max_event_==0) {
-            err_msg_="max event is 0";
-            return false;
-        }
-        if(!SetBufferCapacity(max_data_len)) {
-            return false;
-        }
-        return RunServer();
-    };
 
-    //-------------------------------------------------------------------------
-    // In case of UDP, you need to know the maximum receivable size in advance 
-    // and allocate a buffer.
-    bool  RunUdpServer (const char* bind_ip, 
-                         size_t      bind_port, 
-                         size_t  max_data_len,
-                         size_t  max_event=asock::DEFAULT_MAX_EVENT) {
-        sock_usage_ = SOCK_USAGE_UDP_SERVER  ;
-        server_ip_ = bind_ip ; 
-        server_port_ = bind_port ; 
-        max_event_ = max_event ; 
-        if(max_event_==0) {
-            err_msg_="max event is 0";
-            return false;
-        }
-        if(!SetBufferCapacity(max_data_len)) {
-            return false;
-        }
-        return RunServer();
-    }
-
-#if defined __APPLE__ || defined __linux__ 
-    //-------------------------------------------------------------------------
-    // - If you know the maximum data size you will be sending and receiving in advance, 
-    //   it is better to allocate a buffer large enough to match that.
-    // - If you do not know the size in advance or if it exceeds the buffer, 
-    //   dynamic memory allocation occurs internally. 
-    bool  RunIpcServer (const char* sock_path, 
-                         size_t  max_data_len=asock::DEFAULT_BUFFER_SIZE,
-                         size_t  max_event=asock::DEFAULT_MAX_EVENT ) {
-        sock_usage_ = SOCK_USAGE_IPC_SERVER  ;
-        server_ipc_socket_path_ = sock_path;
-        max_event_ = max_event ; 
-        if(max_event_==0) {
-            ELOG("max client is 0");
-            return false;
-        }
-        if(!SetBufferCapacity(max_data_len)) {
-            return false;
-        }
-        return RunServer();
-    }
-#endif
     //-------------------------------------------------------------------------
     bool  IsServerRunning(){
         return is_server_running_;
@@ -1285,7 +1164,7 @@ public :
     //-------------------------------------------------------------------------
     int   GetCountOfClients(){ return client_cnt_ ; }
 
-private :
+protected :
     std::string       server_ip_   ;
     std::string       server_ipc_socket_path_ ="";
     int               server_port_ {-1};

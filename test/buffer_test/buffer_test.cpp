@@ -2,10 +2,9 @@
 #include <iostream>
 #include <cassert>
 #include <csignal>
-
 #include <gtest/gtest.h>
-#include "ASock.hpp"
-#include "ASockComm.hpp"
+#include "asock/asock_tcp_client.hpp"
+#include "asock/asock_tcp_server.hpp"
 
 // !!! make buffer insufficient for test !!! 
 #define BUFFER_SIZE (10 + 20) // HEADER_SIZE(10) + user_data(20)
@@ -24,7 +23,7 @@ class Server {
     std::string GetLastErrMsg(){
         return tcp_server_.GetLastErrMsg();
     }
-    asock::ASock tcp_server_ ;
+    asock::ASockTcpServer tcp_server_ ;
     std::string cli_msg_ = "";
   private:
     bool OnRecvedCompleteData(asock::Context* ctx_ptr, const char* const data_ptr, size_t len);
@@ -77,7 +76,7 @@ class Client {
     size_t client_id_;
     std::string svr_res_ = "";
   private:
-    asock::ASock tcp_client_ ; //composite usage
+    asock::ASockTcpClient tcp_client_ ; //composite usage
     bool OnRecvedCompleteData(asock::Context* context_ptr, const char* const data_ptr, size_t len);
 };
 

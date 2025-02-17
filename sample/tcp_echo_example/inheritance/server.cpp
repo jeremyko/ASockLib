@@ -2,13 +2,12 @@
 #include <iostream>
 #include <cassert>
 #include <csignal>
-
-#include "ASock.hpp"
+#include "asock/asock_tcp_server.hpp"
 
 // The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
-class Server : public asock::ASock {
+class Server : public asock::ASockTcpServer {
   public:
     Server(){
         this_instance_ = this; 

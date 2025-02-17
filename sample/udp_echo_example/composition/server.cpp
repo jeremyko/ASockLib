@@ -2,8 +2,7 @@
 #include <iostream>
 #include <cassert>
 #include <csignal>
-
-#include "ASock.hpp"
+#include "asock/asock_udp_server.hpp"
 
 // The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
@@ -18,7 +17,7 @@ class Server {
         return server_.GetLastErrMsg();
     }
     static void SigIntHandler(int signo);
-    asock::ASock server_ ; //composite usage
+    asock::ASockUdpServer server_ ; //composite usage
     static Server* this_instance_ ;
   private:
     bool OnRecvedCompleteData(asock::Context* context_ptr,const char* const data_ptr, size_t len) ;

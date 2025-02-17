@@ -7,7 +7,7 @@
 #include <cassert>
 #include <mutex> 
 #include <atomic>
-#include "ASock.hpp"
+#include "asock/asock_tcp_client.hpp"
 #include "../condvar.hpp"
 #include "../elapsed_time.hpp"
 
@@ -47,7 +47,7 @@ class Client {
     }
     size_t client_id_;
   private:
-    asock::ASock client_ ; //composite usage
+    asock::ASockTcpClient client_ ; //composite usage
     bool OnRecvedCompleteData(asock::Context* context_ptr, const char* const data_ptr ,
                               size_t len);
     std::vector<std::string> vec_sent_strings_ ;

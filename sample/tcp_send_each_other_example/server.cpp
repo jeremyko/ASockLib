@@ -2,8 +2,7 @@
 #include <iostream>
 #include <cassert>
 #include <csignal>
-
-#include "ASock.hpp"
+#include "asock/asock_tcp_server.hpp"
 
 // The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
@@ -27,7 +26,7 @@ class Server {
     std::string GetLastErrMsg(){
         return  server_.GetLastErrMsg();
     }
-    asock::ASock server_ ; //composite usage
+    asock::ASockTcpServer server_ ; //composite usage
   private:
     bool OnRecvedCompleteData(asock::Context* ctx_ptr, 
                               const char* const data_ptr, size_t len ) ;

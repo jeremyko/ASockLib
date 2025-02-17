@@ -2,10 +2,9 @@
 #include <iostream>
 #include <cassert>
 #include <csignal>
-
 #include <gtest/gtest.h>
-#include "ASock.hpp"
-#include "ASockComm.hpp"
+#include "asock/asock_udp_server.hpp"
+#include "asock/asock_udp_client.hpp"
 
 #define BUFFER_SIZE 1024
 
@@ -23,7 +22,7 @@ class Server {
     std::string GetLastErrMsg(){
         return udp_server_.GetLastErrMsg();
     }
-    asock::ASock udp_server_ ;
+    asock::ASockUdpServer udp_server_ ;
     std::string cli_msg_ = "";
   private:
     bool OnRecvedCompleteData(asock::Context* ctx_ptr, const char* const data_ptr, size_t len);
@@ -77,7 +76,7 @@ class Client {
     size_t client_id_;
     std::string svr_res_ = "";
   private:
-    asock::ASock udp_client_ ; //composite usage
+    asock::ASockUdpClient udp_client_ ; //composite usage
     bool OnRecvedCompleteData(asock::Context* context_ptr, const char* const data_ptr, size_t len);
 };
 

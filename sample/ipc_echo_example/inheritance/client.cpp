@@ -4,12 +4,12 @@
 #include <stdio.h>
 #include <cassert>
 #include <csignal>
-#include "ASock.hpp"
+#include "asock/asock_ipc_client.hpp"
 
 // The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
-class Client : public asock::ASock
+class Client : public asock::ASockIpcClient
 {
   public:
     Client(){

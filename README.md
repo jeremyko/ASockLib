@@ -14,7 +14,7 @@ A C++11 header-only, simple and easy cross-platform c++ socket server/client fra
 
 ### Install 
 
-Just copy all `*.hpp` header files to your project. And include `ASock.hpp`
+This is a header-only library, so you can just add the asock folder to your project include directory.
 
 ### Usage 
 
@@ -26,10 +26,10 @@ Just copy all `*.hpp` header files to your project. And include `ASock.hpp`
 // This is an inheritance usage.  
 // you can find composition usage and udp, domain socket example too.
 
-#include "ASock.hpp"
+#include "asock/asock_tcp_server.hpp"
 
 #define DEFAULT_PACKET_SIZE 1024
-class Server : public asock::ASock {
+class Server : public asock::ASockTcpServer {
   private:
     bool OnRecvedCompleteData(asock::Context* context_ptr, const char* const data_ptr, size_t len ) override;
     void OnClientConnected(asock::Context* context_ptr) override;
@@ -77,17 +77,17 @@ int main(int argc, char* argv[]) {
 #### tcp echo client
 
 ```cpp
-#include "ASock.hpp"
+#include "asock/asock_tcp_client.hpp"
 
 #define DEFAULT_PACKET_SIZE 1024
-class Client : public asock::ASock
+class Client : public asock::ASockTcpClient
 {
   private:
     bool OnRecvedCompleteData(asock::Context* , const char* const data_ptr, size_t len) override; 
     void OnDisconnectedFromServer() override ; 
 };
 
-bool Client:: OnRecvedCompleteData(asock::Context* , const char* const data_ptr, size_t len) {
+bool Client:: OnRecvedCompleteData(asock::Context* , const char* data_ptr, size_t len) {
     //user specific : - your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr ,len);
@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
 git clone https://github.com/jeremyko/ASockLib.git
 cd ASockLib
 mkdir build && cd build 
-cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..
+cmake ..
 make  # or msbuild(windows)
 ```
 

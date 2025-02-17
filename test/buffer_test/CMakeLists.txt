@@ -1,18 +1,10 @@
-add_executable(test_buffer buffer_test.cpp)
-
-# gtest requires c++14. AsockLib does not.
+# gtest requires c++14. asock does not.
 set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(APPLE)
   add_definitions(-std=c++14)
 endif()
 
-if(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
-  find_library(GTEST_LIBRARY
-    NAMES gtest
-    PATHS /usr/lib /usr/local/lib
-  )
-  if(GTEST_LIBRARY)
-    target_link_libraries(test_buffer LINK_PUBLIC ${GTEST_LIBRARY})
-  endif()
-endif()
+add_executable(test_buffer buffer_test.cpp)
+target_link_libraries(test_buffer gtest asock)
 

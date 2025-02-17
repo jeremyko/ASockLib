@@ -2,10 +2,9 @@
 #include <iostream>
 #include <cassert>
 #include <csignal>
-
 #include <gtest/gtest.h>
-#include "ASock.hpp"
-#include "ASockComm.hpp"
+#include "asock/asock_ipc_client.hpp"
+#include "asock/asock_ipc_server.hpp"
 
 #define DEFAULT_PACKET_SIZE 1024
 
@@ -26,7 +25,7 @@ class Server {
     std::string GetLastErrMsg(){
         return  ipc_server_.GetLastErrMsg();
     }
-    asock::ASock ipc_server_ ; 
+    asock::ASockIpcServer ipc_server_ ;
     std::string cli_msg_ = "";
   private:
     bool OnRecvedCompleteData(asock::Context* ctx_ptr, const char* const data_ptr, size_t len) ;
@@ -80,7 +79,7 @@ class Client {
     size_t client_id_;
     std::string svr_res_ = "";
   private:
-    asock::ASock ipc_client_ ; //composite usage
+    asock::ASockIpcClient ipc_client_ ; //composite usage
     bool OnRecvedCompleteData(asock::Context* context_ptr, const char* const data_ptr, size_t len);
 };
 

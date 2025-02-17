@@ -2,8 +2,7 @@
 #include <iostream>
 #include <cassert>
 #include <csignal>
-
-#include "ASock.hpp"
+#include "asock/asock_ipc_server.hpp"
 
 // The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
@@ -19,7 +18,7 @@ class Server {
         return  server_.GetLastErrMsg();
     }
   private:
-    asock::ASock server_ ; //composite usage
+    asock::ASockIpcServer server_ ; //composite usage
     static Server* this_instance_ ;
   private:
     bool OnRecvedCompleteData(asock::Context* context_ptr,

@@ -31,8 +31,8 @@ SOFTWARE.
 #ifndef ASOCKWIN_HPP
 #define ASOCKWIN_HPP
 
-#include "ASockComm.hpp"
-#include "ASockBuffer.hpp"
+#include "asock_comm.hpp"
+#include "asock_buffer.hpp"
 
 #include <atomic>
 #include <thread>
@@ -93,14 +93,14 @@ typedef struct _Context_ {
 } Context ;
 
 ////////////////////////////////////////////////////////////////////////////////
-class ASock {
+class ASockBase {
 public :
 
-    ASock(){
+    ASockBase(){
         is_connected_ = false;
-    } 
+    }
 
-    ~ASock() {
+    ~ASockBase() {
         if (sock_usage_ == SOCK_USAGE_TCP_CLIENT ||
             sock_usage_ == SOCK_USAGE_UDP_CLIENT ||
             sock_usage_ == SOCK_USAGE_IPC_CLIENT) {
@@ -112,7 +112,7 @@ public :
             ClearPerIoDataCache();
         }
         WSACleanup();
-    }  
+    }
 
     //-------------------------------------------------------------------------
     bool SetSocketNonBlocking(int sock_fd) {
@@ -247,6 +247,8 @@ public :
 
     HANDLE  handle_completion_port_;
 
+public:
+    virtual void SetUsage()=0;
 protected :
     size_t  max_data_len_ {0};
     std::mutex   lock_ ; 
@@ -324,7 +326,7 @@ protected :
         max_worker_cnt_ = system_info.dwNumberOfProcessors * 2;
         DBG_LOG("(server) worker cnt = " << max_worker_cnt_);
         for (size_t i = 0; i < max_worker_cnt_ ; i++) {
-            std::thread worker_thread(&ASock::WorkerThreadRoutine, this, i); 
+            std::thread worker_thread(&ASockBase::WorkerThreadRoutine, this, i); 
             worker_thread.detach();
         }
     }
@@ -436,7 +438,7 @@ protected :
                 exit(EXIT_FAILURE);
             }
         } else {
-            std::thread server_thread(&ASock::AcceptThreadRoutine, this);
+            std::thread server_thread(&ASockBase::AcceptThreadRoutine, this);
             server_thread.detach();
         }
         is_server_running_ = true;
@@ -761,67 +763,6 @@ private:
     // CLIENT Usage
     //---------------------------------------------------------    
 public :
-    //-------------------------------------------------------------------------
-    bool InitTcpClient(const char* server_ip,
-                       unsigned short  server_port,
-                       int         connect_timeout_secs = 10,
-                       size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE) {
-        sock_usage_  = SOCK_USAGE_TCP_CLIENT;
-        server_ip_   = server_ip ;
-        server_port_ = server_port;
-        is_connected_ = false;
-        if(!InitWinsock()) {
-            return false;
-        }
-        connect_timeout_secs_ = connect_timeout_secs;
-        if (!SetBufferCapacity(max_data_len)) {
-            return false;
-        }
-        if (context_.per_recv_io_ctx != NULL) {
-            delete context_.per_recv_io_ctx;
-        }
-        context_.per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
-        if (context_.per_recv_io_ctx == nullptr) {
-            DBG_ELOG("mem alloc failed");
-            return false;
-        }
-        context_.socket = socket(AF_INET, SOCK_STREAM, 0);
-        memset((void *)&tcp_server_addr_, 0x00, sizeof(tcp_server_addr_));
-        tcp_server_addr_.sin_family = AF_INET;
-        inet_pton(AF_INET, server_ip_.c_str(), &(tcp_server_addr_.sin_addr));
-        tcp_server_addr_.sin_port = htons(server_port_);
-        return ConnectToServer();
-    }
-
-    //-------------------------------------------------------------------------
-    bool InitUdpClient(const char* server_ip,
-                       unsigned short  server_port,
-                       size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE) {
-        sock_usage_ = SOCK_USAGE_UDP_CLIENT  ;
-        server_ip_   = server_ip ;
-        server_port_ = server_port;
-        is_connected_ = false;
-        if(!InitWinsock()) {
-            return false;
-        }
-        if(!SetBufferCapacity(max_data_len) ) {
-            return false;
-        }
-        if (context_.per_recv_io_ctx != NULL) {
-            delete context_.per_recv_io_ctx;
-        }
-        context_.per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
-        if (context_.per_recv_io_ctx == nullptr) {
-            DBG_ELOG("mem alloc failed");
-            return false;
-        }
-        context_.socket = socket(AF_INET, SOCK_DGRAM, 0);
-        memset((void *)&udp_server_addr_, 0x00, sizeof(udp_server_addr_));
-        udp_server_addr_.sin_family = AF_INET;
-        inet_pton(AF_INET, server_ip_.c_str(), &(udp_server_addr_.sin_addr));
-        udp_server_addr_.sin_port = htons(server_port_);
-        return ConnectToServer();
-    }
 
     //-------------------------------------------------------------------------
     bool SendToServer(const char* data, size_t len) {
@@ -922,7 +863,7 @@ public :
         }
     }
 
-private :
+protected :
     int         connect_timeout_secs_    ;
     bool        is_buffer_init_ {false};
     std::atomic<bool>    is_connected_   {false};
@@ -1047,7 +988,7 @@ private :
     bool RunClientThread() {
         if (!is_client_thread_running_) {
 
-            client_thread_ = std::thread (&ASock::ClientThreadRoutine, this);
+            client_thread_ = std::thread (&ASockBase::ClientThreadRoutine, this);
             //client_thread.detach();
             is_client_thread_running_ = true;        
         }
@@ -1270,44 +1211,6 @@ public :
     }
 
     //-------------------------------------------------------------------------
-    bool  RunTcpServer(const char* bind_ip,
-                        int         bind_port,
-                        size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE,
-                        size_t  max_event = asock::DEFAULT_MAX_EVENT) {
-        sock_usage_ = SOCK_USAGE_TCP_SERVER;
-        server_ip_ = bind_ip;
-        server_port_ = bind_port;
-        max_event_ = max_event;
-        if (max_event_ == 0) {
-            err_msg_="max event is 0";
-            return false;
-        }
-        if (!SetBufferCapacity(max_data_len)) {
-            return false;
-        }
-        return RunServer();
-    }
-
-    //-------------------------------------------------------------------------
-    bool  RunUdpServer(const char* bind_ip,
-                        size_t  bind_port,
-                        size_t  max_data_len = asock::DEFAULT_BUFFER_SIZE,
-                        size_t  max_event = asock::DEFAULT_MAX_EVENT) {
-        sock_usage_ = SOCK_USAGE_UDP_SERVER  ;
-        server_ip_ = bind_ip ; 
-        server_port_ = int(bind_port) ; 
-        max_event_ = max_event ; 
-        if(max_event_ == 0) {
-            err_msg_="max event is 0";
-            return false;
-        }
-        if(!SetBufferCapacity(max_data_len)) {
-            return false;
-        }
-        return RunServer();
-    }
-
-    //-------------------------------------------------------------------------
     bool  IsServerRunning(){
         return is_server_running_;
     }
@@ -1353,7 +1256,7 @@ public :
         return queue_ctx_cache_.size(); 
     }
 
-private :
+protected :
     std::string       server_ip_   ;
     std::string       server_ipc_socket_path_ ;
     int               server_port_ {-1};
