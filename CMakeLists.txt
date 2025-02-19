@@ -1,77 +1,76 @@
 cmake_minimum_required(VERSION 3.14)
 
 project(asock
+        VERSION 1.0.0
         DESCRIPTION "A C++ header only portable networking library"
         LANGUAGES CXX)
 
 set(PROJECT_AUTHOR "jeremyko")
 set(CMAKE_VERBOSE_MAKEFILE true)
 
+set(JEREMYKO_ASOCK_IS_MAIN OFF)
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+  set(JEREMYKO_ASOCK_IS_MAIN ON)
+endif()
+
 add_library(asock INTERFACE)
 add_library(asock::asock ALIAS asock)
 
-target_include_directories(asock INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>)
-
-#set(CMAKE_BUILD_TYPE Debug)
-set(CMAKE_BUILD_TYPE Release)
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
-
-#add_definitions( -DDEBUG_PRINT ) # for debugging log
-
-if(WIN32)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /nologo /W3 /Gy /EHsc")
-  set(CMAKE_CXX_FLAGS_DEBUG           " /MTd /ZI /Od ")
-  set(CMAKE_CXX_FLAGS_RELEASE         " /MT /O2 ")
-  link_libraries(ws2_32 wsock32)
-elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
-endif()
-
-if(WIN32)
-  add_definitions(/wd4244 /wd4324 /wd4819 -D_CRT_SECURE_NO_WARNINGS)
-elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
-  add_definitions(-Wall)
-  add_definitions(-Werror)
-  add_definitions(-Wextra)
-  # include_directories(/usr/local/include)
-endif()
-
-# --------------------------------------------------------------------- install
-# install asock
-if(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
-include(GNUInstallDirs)
-
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/asock
-        DESTINATION ${CMAKE_INSTALL_PREFIX}/include)
+# --------------------------------------------------------------------- testing
+option(JEREMYKO_ASOCK_BUILD_TESTS "Build tests" ${JEREMYKO_ASOCK_IS_MAIN})
+if(JEREMYKO_ASOCK_BUILD_TESTS)
+  add_subdirectory(test)
 endif()
 
 # --------------------------------------------------------------------- samples
-if(WIN32)
-  add_subdirectory(sample/tcp_echo_example/composition)
-  add_subdirectory(sample/tcp_echo_example/inheritance)
-  add_subdirectory(sample/tcp_send_each_other_example)
-  add_subdirectory(sample/udp_echo_example/composition)
-  add_subdirectory(sample/udp_echo_example/inheritance)
-elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
-  add_subdirectory(sample/ipc_echo_example/inheritance)
-  add_subdirectory(sample/ipc_echo_example/composition)
-  add_subdirectory(sample/tcp_echo_example/inheritance)
-  add_subdirectory(sample/tcp_echo_example/composition)
-  add_subdirectory(sample/udp_echo_example/inheritance)
-  add_subdirectory(sample/udp_echo_example/composition)
-  add_subdirectory(sample/tcp_send_each_other_example)
+option(JEREMYKO_ASOCK_BUILD_SAMPLES "Build samples" ${JEREMYKO_ASOCK_IS_MAIN})
+if(JEREMYKO_ASOCK_BUILD_SAMPLES)
+  add_subdirectory(sample)
 endif()
 
-# --------------------------------------------------------------------- tests
-# tests
-add_subdirectory(test/tcp_test)
-add_subdirectory(test/udp_test)
-add_subdirectory(test/buffer_test)
+# --------------------------------------------------------------------- install
+include(GNUInstallDirs)
 
-if(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
-add_subdirectory(test/ipc_test)
+option(JEREMYKO_ASOCK_INSTALL "install target" ${JEREMYKO_ASOCK_IS_MAIN})
+if(JEREMYKO_ASOCK_INSTALL)
+
+  target_include_directories(
+      ${PROJECT_NAME} INTERFACE
+      $<BUILD_INTERFACE:${${PROJECT_NAME}_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+
+  target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_11)
+
+  install(TARGETS ${PROJECT_NAME}
+          EXPORT ${PROJECT_NAME}_Targets
+          ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+  include(CMakePackageConfigHelpers)
+  write_basic_package_version_file("${PROJECT_NAME}ConfigVersion.cmake"
+                                  VERSION ${PROJECT_VERSION}
+                                  COMPATIBILITY SameMajorVersion)
+
+  configure_package_config_file(
+  "${PROJECT_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
+  "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+  INSTALL_DESTINATION
+  ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake)
+
+  install(EXPORT ${PROJECT_NAME}_Targets
+          FILE ${PROJECT_NAME}Targets.cmake
+          NAMESPACE ${PROJECT_NAME}::
+          DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake)
+
+  install(FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+              "${PROJECT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+          DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake)
+
+  install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/asock DESTINATION include)
+
+  if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
+    include(CPack)
+  endif()
 endif()
-

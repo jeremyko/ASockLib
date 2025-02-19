@@ -8,8 +8,8 @@
 #include <mutex> 
 #include <atomic>
 #include "asock/asock_tcp_client.hpp"
-#include "../condvar.hpp"
-#include "../elapsed_time.hpp"
+#include "condvar.hpp"
+#include "elapsed_time.hpp"
 
 // The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
