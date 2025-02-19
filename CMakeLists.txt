@@ -30,47 +30,54 @@ endif()
 
 # --------------------------------------------------------------------- install
 include(GNUInstallDirs)
+target_include_directories(
+    ${PROJECT_NAME} INTERFACE
+    $<BUILD_INTERFACE:${${PROJECT_NAME}_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 option(JEREMYKO_ASOCK_INSTALL "install target" ${JEREMYKO_ASOCK_IS_MAIN})
 if(JEREMYKO_ASOCK_INSTALL)
+  install(
+    DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
 
-  target_include_directories(
-      ${PROJECT_NAME} INTERFACE
-      $<BUILD_INTERFACE:${${PROJECT_NAME}_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+  # (Generate and) install the target import file
+  install(
+    EXPORT asockTargets
+    NAMESPACE asock::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/asock
+  )
 
-  target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_11)
-
-  install(TARGETS ${PROJECT_NAME}
-          EXPORT ${PROJECT_NAME}_Targets
-          ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-          LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-          RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-
+  # Generate the package version file
   include(CMakePackageConfigHelpers)
-  write_basic_package_version_file("${PROJECT_NAME}ConfigVersion.cmake"
-                                  VERSION ${PROJECT_VERSION}
-                                  COMPATIBILITY SameMajorVersion)
+  write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/asockConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY AnyNewerVersion
+  )
 
+  # Generate the package configuration file, that allows other
+  # CMake projects to find the library with find_package()
   configure_package_config_file(
-  "${PROJECT_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
-  "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-  INSTALL_DESTINATION
-  ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake)
+    cmake/asockConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/asockConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/asock
+  )
 
-  install(EXPORT ${PROJECT_NAME}_Targets
-          FILE ${PROJECT_NAME}Targets.cmake
-          NAMESPACE ${PROJECT_NAME}::
-          DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake)
+# Install the package version and configuration files
+  install(
+    FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/asockConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/asockConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/asock
+  )
 
-  install(FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-              "${PROJECT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
-          DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake)
-
-  install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/asock DESTINATION include)
-
-  if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-    set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
-    include(CPack)
-  endif()
+  # Install readme and license
+  install(
+    FILES
+    README.md
+    LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/asock
+  )
 endif()

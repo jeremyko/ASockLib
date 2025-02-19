@@ -1,4 +1,6 @@
-@PACKAGE_INIT@
+get_filename_component(asock_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+if (NOT TARGET asock::asock)
+  include("${asock_CMAKE_DIR}/asockTargets.cmake")
+endif ()
 
-include("${CMAKE_CURRENT_LIST_DIR}/@PROJECT_NAME@Targets.cmake")
-check_required_components("@PROJECT_NAME@")
+set(ASOCK_LIBRARIES asock::asock)
