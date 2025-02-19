@@ -48,6 +48,6 @@ foreach(testfile ${TEST_FILES})
   get_filename_component(exename ${testfile} NAME_WE)
   add_executable(${exename} ${testfile})
   target_link_libraries(${exename} PRIVATE GTest::gtest GTest::gtest_main asock)
+  add_test(AllTestsInMain ${exename})
 endforeach()
 
-add_test(AllTestsInMain main)

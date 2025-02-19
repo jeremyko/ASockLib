@@ -168,11 +168,3 @@ TEST(BufferTest, IncreaseCapacity) {
     std::cout << "==> exiting " << "\n";
 }
 
-///////////////////////////////////////////////////////////////////////////////
-int main(int argc, char* argv[]) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    //::testing::GTEST_FLAG(filter) = "BufferTest.IncreaseCapacity";
-    return RUN_ALL_TESTS();
-}
-
