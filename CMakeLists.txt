@@ -38,6 +38,13 @@ target_include_directories(
 option(JEREMYKO_ASOCK_INSTALL "install target" ${JEREMYKO_ASOCK_IS_MAIN})
 if(JEREMYKO_ASOCK_INSTALL)
   install(
+    TARGETS asock
+    EXPORT asockTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+
+  install(
     DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
