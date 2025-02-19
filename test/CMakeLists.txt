@@ -3,10 +3,8 @@ cmake_minimum_required(VERSION 3.14)
 project(asocktest)
 
 set(CMAKE_VERBOSE_MAKEFILE true)
-# gtest requires c++14. asock does not.
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
 #set(CMAKE_BUILD_TYPE Debug)
@@ -43,20 +41,13 @@ elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   )
 endif()
 
+enable_testing()
+find_package(GTest CONFIG REQUIRED)
+
 foreach(testfile ${TEST_FILES})
   get_filename_component(exename ${testfile} NAME_WE)
   add_executable(${exename} ${testfile})
-  if(APPLE)
-    add_definitions(-std=c++14)
-    include_directories(/usr/local/include)
-    find_library(GTEST_LIBRARY
-        NAMES gtest
-        PATHS /usr/lib /usr/local/lib
-    )
-    if(GTEST_LIBRARY)
-      target_link_libraries(${exename} LINK_PUBLIC ${GTEST_LIBRARY} asock)
-    endif()
-  else()
-    target_link_libraries(${exename} PRIVATE gtest asock)
-  endif()
+  target_link_libraries(${exename} PRIVATE GTest::gtest GTest::gtest_main asock)
 endforeach()
+
+add_test(AllTestsInMain main)
