@@ -49,7 +49,7 @@ if(JEREMYKO_ASOCK_INSTALL)
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
     FILES_MATCHING PATTERN "*.*pp")
 
-  install(TARGETS asock asock-headers EXPORT asockTargets)
+  install(TARGETS asock EXPORT asockTargets)
 
   install(EXPORT asockTargets
     FILE asock-targets.cmake
