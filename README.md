@@ -87,7 +87,7 @@ class Client : public asock::ASockTcpClient
     void OnDisconnectedFromServer() override ; 
 };
 
-bool Client:: OnRecvedCompleteData(asock::Context* , const char* data_ptr, size_t len) {
+bool Client:: OnRecvedCompleteData(asock::Context* , const char* const data_ptr, size_t len) {
     //user specific : - your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr ,len);
