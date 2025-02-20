@@ -13,6 +13,7 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
   set(JEREMYKO_ASOCK_IS_MAIN ON)
 endif()
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
