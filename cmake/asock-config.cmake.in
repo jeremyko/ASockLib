@@ -1,6 +1,6 @@
 get_filename_component(asock_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 if (NOT TARGET asock::asock)
-  include("${asock_CMAKE_DIR}/asockTargets.cmake")
+  include("${asock_CMAKE_DIR}/asock-targets.cmake")
 endif ()
 
 set(ASOCK_LIBRARIES asock::asock)
