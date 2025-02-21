@@ -1,6 +1,6 @@
 # ASockLib 
 
-### What 
+### Features 
 
 A C++11 header-only, simple and easy cross-platform c++ socket server/client framework. 
 
