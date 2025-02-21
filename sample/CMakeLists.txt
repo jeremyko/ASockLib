@@ -27,37 +27,22 @@ elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   add_definitions(-Wall -Werror -Wextra -Wpedantic)
 endif()
 
-if(WIN32)
-  set(SAMPLE_FILES
-    client_tcp_comp.cpp
-    client_tcp_eo.cpp
-    client_tcp_inh.cpp
-    client_udp_comp.cpp
-    client_udp_inh.cpp
-    server_tcp_comp.cpp
-    server_tcp_eo.cpp
-    server_tcp_inh.cpp
-    server_udp_comp.cpp
-    server_udp_inh.cpp
-  )
-elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
-  set(SAMPLE_FILES
-    client_tcp_comp.cpp
-    client_tcp_eo.cpp
-    client_tcp_inh.cpp
-    client_udp_comp.cpp
-    client_udp_inh.cpp
-    server_tcp_comp.cpp
-    server_tcp_eo.cpp
-    server_tcp_inh.cpp
-    server_udp_comp.cpp
-    server_udp_inh.cpp
-    client_ipc_comp.cpp
-    client_ipc_inh.cpp
-    server_ipc_comp.cpp
-    server_ipc_inh.cpp
-  )
-endif()
+set(SAMPLE_FILES
+  client_tcp_comp.cpp
+  client_tcp_eo.cpp
+  client_tcp_inh.cpp
+  client_udp_comp.cpp
+  client_udp_inh.cpp
+  server_tcp_comp.cpp
+  server_tcp_eo.cpp
+  server_tcp_inh.cpp
+  server_udp_comp.cpp
+  server_udp_inh.cpp
+  client_ipc_comp.cpp
+  client_ipc_inh.cpp
+  server_ipc_comp.cpp
+  server_ipc_inh.cpp
+)
 
 foreach(samplefile ${SAMPLE_FILES})
   get_filename_component(exename ${samplefile} NAME_WE)

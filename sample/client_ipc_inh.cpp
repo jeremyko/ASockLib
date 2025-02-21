@@ -6,6 +6,7 @@
 #include <csignal>
 #include "asock/asock_ipc_client.hpp"
 
+// NOTE: Not implemented on Windows.
 // The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
@@ -70,7 +71,7 @@ int main(int argc, char* argv[]) {
     while( client.IsConnected() ) {
         std::cin.clear();
         getline(std::cin, user_msg); 
-        int msg_len = user_msg.length();
+        int msg_len = (int)user_msg.length();
         if(msg_len>0) {
             if(! client.SendToServer(user_msg.c_str(),user_msg.length()) ) {
                 std::cerr << client.GetLastErrMsg() <<"\n"; 

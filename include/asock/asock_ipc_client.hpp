@@ -8,9 +8,9 @@
 #endif
 
 namespace asock {
-#if defined __APPLE__ || defined __linux__
 class ASockIpcClient: public asock::ASockBase {
 public :
+#if defined __APPLE__ || defined __linux__
     // - If you know the maximum data size you will be sending and receiving in advance, 
     //   it is better to allocate a buffer large enough to match that.
     // - If you do not know the size in advance or if it exceeds the buffer, 
@@ -36,7 +36,20 @@ public :
         sock_usage_ = SOCK_USAGE_IPC_CLIENT;
     }
 #elif WIN32
-    //TODO: windows
+    // TODO: Not implemented on Windows.
+    bool InitIpcClient(const char* sock_path,
+                       int connect_timeout_secs=10,
+                       size_t max_data_len=asock::DEFAULT_BUFFER_SIZE) {
+        err_msg_ = "not implemented";
+        ELOG(err_msg_);
+        return false;
+    }
+
+    void SetUsage() override {
+        err_msg_ = "not implemented";
+        ELOG(err_msg_);
+        sock_usage_ = SOCK_USAGE_UNKNOWN;
+    }
 #endif
 };
 } //namespace

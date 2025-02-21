@@ -26,20 +26,12 @@ elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   add_definitions(-Wall -Werror -Wextra -Wpedantic)
 endif()
 
-if(WIN32)
-  set(TEST_FILES
-    buffer_test.cpp
-    tcp_test.cpp
-    udp_test.cpp
-  )
-elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
-  set(TEST_FILES
-    buffer_test.cpp
-    tcp_test.cpp
-    udp_test.cpp
-    ipc_test.cpp
-  )
-endif()
+set(TEST_FILES
+  buffer_test.cpp
+  tcp_test.cpp
+  udp_test.cpp
+  ipc_test.cpp
+)
 
 enable_testing()
 find_package(GTest CONFIG REQUIRED)

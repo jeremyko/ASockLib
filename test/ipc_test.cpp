@@ -7,7 +7,7 @@
 #include "asock/asock_ipc_server.hpp"
 
 #define DEFAULT_PACKET_SIZE 1024
-
+// NOTE: Not implemented on Windows.
 // This file is created in the current directory and automatically deleted.
 #define TEST_IPC_PATH "asock.test.ipc"
 

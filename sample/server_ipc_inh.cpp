@@ -4,6 +4,7 @@
 #include <csignal>
 #include "asock/asock_ipc_server.hpp"
 
+// NOTE: Not implemented on Windows.
 // The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
 ///////////////////////////////////////////////////////////////////////////////
@@ -74,7 +75,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }std::cout << "server started" << "\n";
     while( server.IsServerRunning() ) {
-        sleep(1);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "server exit...\n";
     exit(EXIT_SUCCESS);
