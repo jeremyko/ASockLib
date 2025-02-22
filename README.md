@@ -12,11 +12,44 @@ A C++11 header-only, simple and easy cross-platform c++ socket server/client fra
 - windows : tcp, udp using winsock.
 
 
-### Install 
+### Install and use asock in your project
 
-This is a header-only library, so you can just add the asock folder to your project include directory.
+- #### Option 1: Including the source code directly in your project.  
+  This is a header-only library, so you can just add the asock folder to your project include directory.
+  
+        cp -ar asock your_include_path/.
 
-### Usage 
+
+- #### Option 2: Using CMake FetchContent.  
+  Add below code to your CMake file
+
+        include(FetchContent)
+        fetchcontent_declare(
+            asock
+            GIT_REPOSITORY https://github.com/jeremyko/ASockLib
+            GIT_TAG        e1f87ef5f59544cd0d03013b84be156a80d120e3 #1.0.4
+        )
+        fetchcontent_makeavailable(asock)
+  
+  
+- #### Option 3: Using vcpkg.
+  comming soon
+  
+- #### Option 4: Installing locally using CMake.
+  The test code has a [googletest](https://github.com/google/googletest) dependency, and is not necessarily compiled if you simply install asock. The sample code has no dependencies, but is also not required for installation. That's why `DJEREMYKO_ASOCK_BUILD_TESTS=OFF` and `-DJEREMYKO_ASOCK_BUILD_SAMPLES=OFF` are used.
+
+        mkdir build
+        cd build
+        cmake .. -DJEREMYKO_ASOCK_BUILD_TESTS=OFF -DJEREMYKO_ASOCK_BUILD_SAMPLES=OFF
+        sudo make install
+
+
+    **Once installed with the option 2,3,4, you can use asock using cmake like this:**
+  
+      find_package(asock CONFIG REQUIRED)
+      target_link_libraries(yours PRIVATE asock::asock)
+
+### Sample code 
 
 #### tcp echo server 
 
@@ -122,14 +155,3 @@ int main(int argc, char* argv[]) {
     exit(EXIT_SUCCESS);
 }
 ```
-
-#### sample compile
-
-```sh
-git clone https://github.com/jeremyko/ASockLib.git
-cd ASockLib
-mkdir build && cd build 
-cmake ..
-make  # or msbuild(windows)
-```
-
