@@ -36,7 +36,7 @@ A C++11 header-only, simple and easy cross-platform c++ socket server/client fra
   comming soon
   
 - #### Option 4: Installing locally using CMake.
-  The test code has a [googletest](https://github.com/google/googletest) dependency, and is not necessarily compiled if you simply install asock. The sample code has no dependencies, but is also not required for installation. That's why `DJEREMYKO_ASOCK_BUILD_TESTS=OFF` and `-DJEREMYKO_ASOCK_BUILD_SAMPLES=OFF` are used.
+  The test code has a [googletest](https://github.com/google/googletest) dependency. If you are simply installing asock, no compilation is required. The sample code also has no dependencies, but is not required for installation. That's why `DJEREMYKO_ASOCK_BUILD_TESTS=OFF` and `-DJEREMYKO_ASOCK_BUILD_SAMPLES=OFF` are used.
 
         mkdir build
         cd build
