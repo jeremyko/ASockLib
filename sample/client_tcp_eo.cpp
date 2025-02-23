@@ -13,6 +13,7 @@
 
 // The buffer must be large enough to hold the entire data.
 #define DEFAULT_PACKET_SIZE 1024
+
 ///////////////////////////////////////////////////////////////////////////////
 //Send To Each Other Client
 // An example in which the server and the client randomly exchange data with each other.
@@ -36,8 +37,23 @@ std::atomic<size_t> g_server_msg_cnt{ 0 };
 
 class Client {
   public:
-    bool IntTcpClient(size_t client_id);
-    void DisConnect();
+    bool IntTcpClient(size_t client_id) {
+        using std::placeholders::_1;
+        using std::placeholders::_2;
+        using std::placeholders::_3;
+        client_id_ = client_id ;
+        client_.SetCbOnRecvedCompletePacket(std::bind( 
+                                    &Client::OnRecvedCompleteData, this, _1,_2,_3));
+    
+        if(!client_.InitTcpClient("127.0.0.1", 9990   ) ) {
+            std::cerr <<"error : "<< client_.GetLastErrMsg() << "\n"; 
+            exit(EXIT_FAILURE);
+        }
+        return true;
+    }
+    void DisConnect() {
+        client_.Disconnect();
+    }
     bool IsConnected(){
         return client_.IsConnected();
     }
@@ -54,25 +70,6 @@ class Client {
     std::mutex  sent_chk_lock_ ; // XXX vec_sent_strings_ is used by multiple threads.
 };
 
-///////////////////////////////////////////////////////////////////////////////
-bool Client::IntTcpClient(size_t client_id) {
-    client_id_ = client_id ;
-    using std::placeholders::_1;
-    using std::placeholders::_2;
-    using std::placeholders::_3;
-    client_.SetCbOnRecvedCompletePacket(std::bind( 
-                                &Client::OnRecvedCompleteData, this, _1,_2,_3));
- 
-    if(!client_.InitTcpClient("127.0.0.1", 9990   ) ) {
-        std::cerr <<"error : "<< client_.GetLastErrMsg() << "\n"; 
-        exit(EXIT_FAILURE);
-    }
-    return true;
-}
-///////////////////////////////////////////////////////////////////////////////
-void Client::DisConnect() {
-    client_.Disconnect();
-}
 ///////////////////////////////////////////////////////////////////////////////
 void Client::SendThread(size_t index) {
     while (!IsConnected()) {
@@ -102,6 +99,7 @@ void Client::SendThread(size_t index) {
     }
     //LOG("send thread exiting : " << index);
 }
+
 ///////////////////////////////////////////////////////////////////////////////
 bool Client:: OnRecvedCompleteData(asock::Context* , const char* const data_ptr, size_t len) {
     //user specific : your whole data has arrived.

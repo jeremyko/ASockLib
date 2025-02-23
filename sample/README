@@ -1,6 +1,6 @@
-xxx_inh.cpp  ==>> inheritance usage  
+xxx_inh.cpp  ==>> inheritance usage
 
-xxx_comp.cpp ==>> composition usage  
+xxx_comp.cpp ==>> composition usage
 
-client_tcp_eo.cpp, server_tcp_eo.cpp  
+client_tcp_eo.cpp, server_tcp_eo.cpp
   ==>> An example in which the server and the client randomly exchange data with each other.

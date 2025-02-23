@@ -12,39 +12,34 @@ class Server : public asock::ASockUdpServer {
     Server(){
         this_instance_ = this;
     }
-    static void SigIntHandler(int signo);
+    static void SigIntHandler(int signo) {
+        if (signo == SIGINT) {
+            std::cout << "stop server! \n";
+            this_instance_->StopServer();
+            exit(EXIT_SUCCESS);
+        } else {
+            std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
+            exit(EXIT_FAILURE);
+        }
+    }
   private:
-    bool OnRecvedCompleteData(asock::Context* context_ptr,const char* const data_ptr, size_t len) override;
+    bool OnRecvedCompleteData(asock::Context* context_ptr,const char* const data_ptr, size_t len) override {
+        //user specific : - your whole data has arrived.
+        char packet[DEFAULT_PACKET_SIZE];
+        memcpy(&packet,data_ptr,len );
+        packet[len] = '\0';
+        std::cout << "recved [" << packet << "]\n";
+        // this is echo server
+        if(! SendData(context_ptr, data_ptr, len) ) {
+            std::cerr << GetLastErrMsg() <<"\n"; 
+            exit(EXIT_FAILURE);
+        }
+        return true;
+    }
     static Server* this_instance_ ;
 };
 Server* Server::this_instance_ = nullptr;
 
-///////////////////////////////////////////////////////////////////////////////
-bool Server::OnRecvedCompleteData(asock::Context* context_ptr,const char* const data_ptr, size_t len) {
-    //user specific : - your whole data has arrived.
-    char packet[DEFAULT_PACKET_SIZE];
-    memcpy(&packet,data_ptr,len );
-    packet[len] = '\0';
-    std::cout << "recved [" << packet << "]\n";
-    // this is echo server
-    if(! SendData(context_ptr, data_ptr, len) ) {
-        std::cerr << GetLastErrMsg() <<"\n"; 
-        exit(EXIT_FAILURE);
-    }
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-void Server::SigIntHandler(int signo) {
-    if (signo == SIGINT) {
-        std::cout << "stop server! \n";
-        this_instance_->StopServer();
-        exit(EXIT_SUCCESS);
-    } else {
-        std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
-        exit(EXIT_FAILURE);
-    }
-}
 ///////////////////////////////////////////////////////////////////////////////
 int main(int , char* []) {
     // std::signal(SIGINT,Server::SigIntHandler);

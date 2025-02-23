@@ -8,11 +8,24 @@
 
 #define DEFAULT_PACKET_SIZE 1024
 
+using std::placeholders::_1;
+using std::placeholders::_2;
+using std::placeholders::_3;
+
 //////////////////////////////////////////////////////////////////////// server
 class Server {
   public:
     Server(){}
-    bool RunTcpServer();
+    bool RunTcpServer() {
+        tcp_server_.SetCbOnRecvedCompletePacket(std::bind(
+                            &Server::OnRecvedCompleteData, this, _1,_2,_3));
+
+        if(!tcp_server_.RunTcpServer("127.0.0.1", 9990)) {
+            std::cerr << tcp_server_.GetLastErrMsg() <<"\n"; 
+            return false;
+        }
+        return true;
+    }
     bool IsServerRunning(){
         return tcp_server_.IsServerRunning();
     }
@@ -25,48 +38,43 @@ class Server {
     asock::ASockTcpServer tcp_server_ ;
     std::string cli_msg_ = "";
   private:
-    bool OnRecvedCompleteData(asock::Context* ctx_ptr, const char* const data_ptr, size_t len);
+    bool OnRecvedCompleteData(asock::Context* ctx_ptr, const char* const data_ptr, size_t len) {
+        //user specific : your whole data has arrived.
+        // note : this buffer must be large enough to receive the data sent.
+        char packet[DEFAULT_PACKET_SIZE]; 
+        memcpy(&packet, data_ptr, len);
+        packet[len] = '\0';
+        cli_msg_ = packet;
+        //LOG("server get client msg [" << cli_msg_ << "]" << " len="<< cli_msg_.length() );
+        //this is echo server
+        if (!tcp_server_.SendData(  ctx_ptr, data_ptr, len)) {
+            ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
+            return false;
+        }
+        return true;
+    }
 };
-
-static Server* this_instance_ = nullptr;
-
-bool Server::RunTcpServer() {
-    this_instance_ = this;
-    using std::placeholders::_1;
-    using std::placeholders::_2;
-    using std::placeholders::_3;
-    tcp_server_.SetCbOnRecvedCompletePacket(std::bind(
-                        &Server::OnRecvedCompleteData, this, _1,_2,_3));
-
-    if(!tcp_server_.RunTcpServer("127.0.0.1", 9990)) {
-        std::cerr << tcp_server_.GetLastErrMsg() <<"\n"; 
-        return false;
-    }
-    return true;
-}
-
-bool Server::OnRecvedCompleteData(asock::Context* ctx_ptr, const char* const data_ptr, size_t len){
-    //user specific : your whole data has arrived.
-    // note : this buffer must be large enough to receive the data sent.
-    char packet[DEFAULT_PACKET_SIZE]; 
-    memcpy(&packet, data_ptr, len);
-    packet[len] = '\0';
-    cli_msg_ = packet;
-    //LOG("server get client msg [" << cli_msg_ << "]" << " len="<< cli_msg_.length() );
-    //this is echo server
-    if (!tcp_server_.SendData(  ctx_ptr, data_ptr, len)) {
-        ELOG( "error! "<< tcp_server_.GetLastErrMsg() ); 
-        return false;
-    }
-    return true;
-}
 
 //////////////////////////////////////////////////////////////////////// client 
 class Client {
   public:
-    bool IntTcpClient();
-    bool SendToServer (const char* data, size_t len) ;
-    void DisConnect();
+    bool IntTcpClient(){
+        //register callbacks
+        tcp_client_.SetCbOnRecvedCompletePacket(std::bind(
+                            &Client::OnRecvedCompleteData, this, _1,_2,_3));
+
+        if(!tcp_client_.InitTcpClient("127.0.0.1", 9990)){
+            ELOG("error : "<< tcp_client_.GetLastErrMsg() ); 
+            return false;
+        }
+        return true;
+    }
+    bool SendToServer (const char* data, size_t len) {
+        return tcp_client_.SendToServer(data, len);
+    }
+    void DisConnect(){
+        tcp_client_.Disconnect();
+    }
     bool IsConnected(){ 
         return tcp_client_.IsConnected();
     }
@@ -77,41 +85,16 @@ class Client {
     std::string svr_res_ = "";
   private:
     asock::ASockTcpClient tcp_client_ ; //composite usage
-    bool OnRecvedCompleteData(asock::Context* context_ptr, const char* const data_ptr, size_t len);
-};
-
-bool Client::IntTcpClient() {
-    //register callbacks
-    using std::placeholders::_1;
-    using std::placeholders::_2;
-    using std::placeholders::_3;
-    tcp_client_.SetCbOnRecvedCompletePacket(std::bind(
-                        &Client::OnRecvedCompleteData, this, _1,_2,_3));
-    
-    if(!tcp_client_.InitTcpClient("127.0.0.1", 9990)){
-        ELOG("error : "<< tcp_client_.GetLastErrMsg() ); 
-        return false;
+    bool OnRecvedCompleteData(asock::Context* , const char* const data_ptr, size_t len) {
+        //user specific : your whole data has arrived.
+        char packet[DEFAULT_PACKET_SIZE];
+        memcpy(&packet, data_ptr,len);
+        packet[len] = '\0';
+        svr_res_ = packet;
+        //LOG("client get server response [" << packet << "] len=" << len );
+        return true;
     }
-    return true;
-}
-
-bool Client::SendToServer (const char* data, size_t len) {
-    return tcp_client_.SendToServer(data, len);
-}
-
-void Client::DisConnect() {
-    tcp_client_.Disconnect();
-}
-
-bool Client::OnRecvedCompleteData(asock::Context*, const char* const data_ptr, size_t len) {
-    //user specific : your whole data has arrived.
-    char packet[DEFAULT_PACKET_SIZE];
-    memcpy(&packet, data_ptr,len);
-    packet[len] = '\0';
-    svr_res_ = packet;
-    //LOG("client get server response [" << packet << "] len=" << len );
-    return true;
-}
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 TEST(TcpTest, SendRecv) {
@@ -162,5 +145,4 @@ TEST(TcpTest, SendRecv) {
 
     std::cout << "==> exiting " << "\n";
 }
-
 

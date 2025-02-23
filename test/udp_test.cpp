@@ -8,11 +8,24 @@
 
 #define BUFFER_SIZE 1024
 
+using std::placeholders::_1;
+using std::placeholders::_2;
+using std::placeholders::_3;
+
 //////////////////////////////////////////////////////////////////////// server
 class Server {
   public:
     Server(){}
-    bool RunUdpServer();
+    bool RunUdpServer() {
+        udp_server_.SetCbOnRecvedCompletePacket(std::bind(
+                            &Server::OnRecvedCompleteData, this, _1,_2,_3));
+
+        if(!udp_server_.RunUdpServer("127.0.0.1", 9990, BUFFER_SIZE)){
+            std::cerr << udp_server_.GetLastErrMsg() <<"\n"; 
+            return false;
+        }
+        return true;
+    }
     bool IsServerRunning(){
         return udp_server_.IsServerRunning();
     }
@@ -25,48 +38,43 @@ class Server {
     asock::ASockUdpServer udp_server_ ;
     std::string cli_msg_ = "";
   private:
-    bool OnRecvedCompleteData(asock::Context* ctx_ptr, const char* const data_ptr, size_t len);
+    bool OnRecvedCompleteData(asock::Context* ctx_ptr, const char* const data_ptr, size_t len) {
+        //user specific : your whole data has arrived.
+        // note : this buffer must be large enough to receive the data sent.
+        char packet[BUFFER_SIZE]; 
+        memcpy(&packet, data_ptr, len);
+        packet[len] = '\0';
+        cli_msg_ = packet;
+        //LOG("server get client msg [" << cli_msg_ << "]" << " len="<< cli_msg_.length() );
+        //this is echo server
+        if (!udp_server_.SendData(ctx_ptr, data_ptr, len)) {
+            ELOG( "error! "<< udp_server_.GetLastErrMsg() ); 
+            return false;
+        }
+        return true;
+    }
 };
 
-static Server* this_instance_ = nullptr;
-
-bool Server::RunUdpServer() {
-    this_instance_ = this; 
-    using std::placeholders::_1;
-    using std::placeholders::_2;
-    using std::placeholders::_3;
-    udp_server_.SetCbOnRecvedCompletePacket(std::bind(
-                        &Server::OnRecvedCompleteData, this, _1,_2,_3));
-
-    if(!udp_server_.RunUdpServer("127.0.0.1", 9990, BUFFER_SIZE)){
-        std::cerr << udp_server_.GetLastErrMsg() <<"\n"; 
-        return false;
-    }
-    return true;
-}
-
-bool Server::OnRecvedCompleteData(asock::Context* ctx_ptr, const char* const data_ptr, size_t len){
-    //user specific : your whole data has arrived.
-    // note : this buffer must be large enough to receive the data sent.
-    char packet[BUFFER_SIZE]; 
-    memcpy(&packet, data_ptr, len);
-    packet[len] = '\0';
-    cli_msg_ = packet;
-    //LOG("server get client msg [" << cli_msg_ << "]" << " len="<< cli_msg_.length() );
-    //this is echo server
-    if (!udp_server_.SendData(  ctx_ptr, data_ptr, len)) {
-        ELOG( "error! "<< udp_server_.GetLastErrMsg() ); 
-        return false;
-    }
-    return true;
-}
-
-//////////////////////////////////////////////////////////////////////// client 
+//////////////////////////////////////////////////////////////////////// client
 class Client {
   public:
-    bool IntUdpClient();
-    bool SendToServer (const char* data, size_t len) ;
-    void DisConnect();
+    bool IntUdpClient() {
+        //register callbacks
+        udp_client_.SetCbOnRecvedCompletePacket(std::bind( 
+                            &Client::OnRecvedCompleteData, this, _1,_2,_3));
+ 
+        if(!udp_client_.InitUdpClient("127.0.0.1", 9990, BUFFER_SIZE)){
+            ELOG("error : "<< udp_client_.GetLastErrMsg() );
+            return false;
+        }
+        return true;
+    }
+    bool SendToServer (const char* data, size_t len) {
+        return udp_client_.SendToServer(data, len);
+    }
+    void DisConnect() {
+        udp_client_.Disconnect();
+    }
     bool IsConnected(){ 
         return udp_client_.IsConnected();
     }
@@ -77,41 +85,16 @@ class Client {
     std::string svr_res_ = "";
   private:
     asock::ASockUdpClient udp_client_ ; //composite usage
-    bool OnRecvedCompleteData(asock::Context* context_ptr, const char* const data_ptr, size_t len);
-};
-
-bool Client::IntUdpClient() {
-    //register callbacks
-    using std::placeholders::_1;
-    using std::placeholders::_2;
-    using std::placeholders::_3;
-    udp_client_.SetCbOnRecvedCompletePacket(std::bind( 
-                        &Client::OnRecvedCompleteData, this, _1,_2,_3));
- 
-    if(!udp_client_.InitUdpClient("127.0.0.1", 9990, BUFFER_SIZE)){
-        ELOG("error : "<< udp_client_.GetLastErrMsg() );
-        return false;
+    bool OnRecvedCompleteData(asock::Context* , const char* const data_ptr, size_t len) {
+        //user specific : your whole data has arrived.
+        char packet[1024]; // note : this buffer must be large enough to receive the data sent.
+        memcpy(&packet, data_ptr,len);
+        packet[len] = '\0';
+        svr_res_ = packet;
+        //LOG("client get server response [" << packet << "] len=" << len );
+        return true;
     }
-    return true;
-}
-
-bool Client::SendToServer (const char* data, size_t len){
-    return udp_client_.SendToServer(data, len);
-}
-
-void Client::DisConnect() {
-    udp_client_.Disconnect();
-}
-
-bool Client::OnRecvedCompleteData(asock::Context* , const char* const data_ptr, size_t len){
-    //user specific : your whole data has arrived.
-    char packet[1024]; // note : this buffer must be large enough to receive the data sent.
-    memcpy(&packet, data_ptr,len);
-    packet[len] = '\0';
-    svr_res_ = packet;
-    //LOG("client get server response [" << packet << "] len=" << len );
-    return true;
-}
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 TEST(UdpTest, SendRecv) {
