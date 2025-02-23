@@ -57,14 +57,13 @@ WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent la
       target_link_libraries(yours PRIVATE asock::asock)
 
 ## Sample code
+The following is an tcp echo example using class inheritance. See the sample folder for all examples. 
+You can find composition usage and udp, domain socket example too.
 
 ### tcp echo server
 
 ```cpp
-// See the sample folder for all examples.  
-// This is an inheritance usage.  
-// you can find composition usage and udp, domain socket example too.
-
+//This is an inheritance usage.  
 #include "asock/asock_tcp_server.hpp"
 
 #define DEFAULT_PACKET_SIZE 1024
@@ -110,6 +109,7 @@ int main(int argc, char* argv[]) {
 #### tcp echo client
 
 ```cpp
+//This is an inheritance usage.  
 #include "asock/asock_tcp_client.hpp"
 
 #define DEFAULT_PACKET_SIZE 1024
