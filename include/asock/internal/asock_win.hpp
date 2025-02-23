@@ -25,8 +25,6 @@ SOFTWARE.
 ///////////////////////////////////////////////////////////////////////////////
 //for windows, ipcp(server), wsapoll(client) is used.
 ///////////////////////////////////////////////////////////////////////////////
-//TODO SOCK_USAGE_IPC_SERVER 
-//TODO SOCK_USAGE_IPC_CLIENT 
 
 #ifndef ASOCKWIN_HPP
 #define ASOCKWIN_HPP
@@ -45,6 +43,7 @@ SOFTWARE.
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <iphlpapi.h>
+#include <afunix.h> 
 #include <stdio.h>
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -111,6 +110,14 @@ public :
             ClearClientCache();
             ClearPerIoDataCache();
         }
+        if (sock_usage_ == SOCK_USAGE_IPC_SERVER) {
+            if (server_ipc_socket_path_.length() > 0) {
+                DBG_LOG("unlink :" << server_ipc_socket_path_);
+                DeleteFile(server_ipc_socket_path_.c_str());
+                server_ipc_socket_path_ = "";
+            }
+        }
+
         WSACleanup();
     }
 
@@ -334,8 +341,7 @@ protected :
     bool StartServer() {
         DBG_LOG("PER_IO_DATA size ==> " << sizeof(PER_IO_DATA));
         if ( sock_usage_ == SOCK_USAGE_IPC_SERVER ) {
-            //TODO: ipc windows
-            //listen_socket_ = WSASocketW(AF_UNIX, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+            listen_socket_ = WSASocketW(AF_UNIX, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
         } else if ( sock_usage_ == SOCK_USAGE_TCP_SERVER ) {
             listen_socket_ = WSASocketW(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
         } else if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
@@ -355,22 +361,29 @@ protected :
             }
         }
         int opt_on = 1;
-        if (setsockopt(listen_socket_, SOL_SOCKET, SO_REUSEADDR, 
-                       (char*)&opt_on, sizeof(opt_on)) == SOCKET_ERROR) {
-            BuildErrMsgString(WSAGetLastError());
-            return false;
-        }
-        if (sock_usage_ != SOCK_USAGE_UDP_SERVER) {
-            if (setsockopt(listen_socket_, SOL_SOCKET, SO_KEEPALIVE, 
+        if (sock_usage_ != SOCK_USAGE_IPC_SERVER) {
+            //XXX windows는 domain socket 인 경우 다음을 호출하면 에러 발생됨 ! why ? 
+            if (setsockopt(listen_socket_, SOL_SOCKET, SO_REUSEADDR,
                            (char*)&opt_on, sizeof(opt_on)) == SOCKET_ERROR) {
                 BuildErrMsgString(WSAGetLastError());
                 return false;
+            }
+            if (sock_usage_ != SOCK_USAGE_UDP_SERVER) {
+                if (setsockopt(listen_socket_, SOL_SOCKET, SO_KEEPALIVE, (char*)&opt_on, sizeof(opt_on)) == SOCKET_ERROR) {
+                    BuildErrMsgString(WSAGetLastError());
+                    return false;
+                }
             }
         }
 
         int result = -1;
         if (sock_usage_ == SOCK_USAGE_IPC_SERVER) {
-            //TODO: ipc windows
+            SOCKADDR_UN ipc_server_addr;
+            memset((void*)&ipc_server_addr, 0x00, sizeof(ipc_server_addr));
+            ipc_server_addr.sun_family = AF_UNIX;
+            snprintf(ipc_server_addr.sun_path, sizeof(ipc_server_addr.sun_path),
+                     "%s", server_ipc_socket_path_.c_str());
+            result = bind(listen_socket_, (SOCKADDR*)&ipc_server_addr, sizeof(ipc_server_addr));
         } else if (sock_usage_ == SOCK_USAGE_TCP_SERVER || 
                    sock_usage_ == SOCK_USAGE_UDP_SERVER) {
             SOCKADDR_IN    server_addr  ;
@@ -870,6 +883,7 @@ protected :
     Context     context_;
     SOCKADDR_IN tcp_server_addr_ ;
     SOCKADDR_IN udp_server_addr_ ;
+    SOCKADDR_UN ipc_conn_addr_;
     std::thread client_thread_;
     std::atomic<bool> is_client_thread_running_ {false};
 
@@ -928,7 +942,8 @@ protected :
 
         int result = -1;
         if ( sock_usage_ == SOCK_USAGE_IPC_CLIENT ) {
-            //TODO
+            result = connect(context_.socket, (SOCKADDR*)&ipc_conn_addr_,
+                             (SOCKLEN_T)sizeof(SOCKADDR_UN));
         } else if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT ) {
             result = connect(context_.socket, 
                              (SOCKADDR*)&tcp_server_addr_, 
@@ -1238,6 +1253,12 @@ public :
                 ELOG(err_msg_);
             }
         }
+        if (sock_usage_ == SOCK_USAGE_IPC_SERVER) {
+            DBG_LOG("unlink :" << server_ipc_socket_path_);
+            DeleteFile(server_ipc_socket_path_.c_str());
+            server_ipc_socket_path_ = "";
+        }
+
         if (sock_usage_ == SOCK_USAGE_TCP_SERVER) {
             closesocket(listen_socket_);
         }
@@ -1258,7 +1279,7 @@ public :
 
 protected :
     std::string       server_ip_   ;
-    std::string       server_ipc_socket_path_ ;
+    std::string       server_ipc_socket_path_ = "";
     int               server_port_ {-1};
     std::atomic<int>  client_cnt_ {0}; 
     std::atomic<bool> is_need_server_run_ {true};

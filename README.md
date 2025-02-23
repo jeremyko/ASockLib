@@ -1,26 +1,28 @@
-# ASockLib 
+# ASockLib
 
-### Features 
+## Features
 
-A C++11 header-only, simple and easy cross-platform c++ socket server/client framework. 
+**A C++11 header-only, simple and easy cross-platform socket library.**
 
-- It performs TCP buffering internally.
-- When all user data is received, the user-specified callback is called. 
-- No repeat send calls until all are sent. When send returns WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent later.
-- composition or inheritance usage.
-- linux, os x : tcp, udp, domain socket using epoll and kqueue.
-- windows : tcp, udp using winsock.
+- Supports TCP, UDP, DOMAIN SOCKET(DS).
+- It performs buffering internally(TCP,DS).
+- When all user data is received, the user-specified callback is called.
+- No repeat send calls until all are sent. When send returns
+WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent later.
+- Composition or Inheritance class usage.
+- Using epoll (linux), kqueue (osx) and winsock (windows).
 
+## Install and use asock in your project
 
-### Install and use asock in your project
+- ### Option 1: Including the source code directly in your project  
 
-- #### Option 1: Including the source code directly in your project.  
-  This is a header-only library, so you can just add the asock folder to your project include directory.
+  This is a header-only library, so you can just add the asock folder
+  to your project include directory.
   
         cp -ar asock your_include_path/.
 
+- ### Option 2: Using CMake FetchContent  
 
-- #### Option 2: Using CMake FetchContent.  
   Add below code to your CMake file
 
         include(FetchContent)
@@ -31,28 +33,31 @@ A C++11 header-only, simple and easy cross-platform c++ socket server/client fra
         )
         fetchcontent_makeavailable(asock)
   
-  
-- #### Option 3: Using vcpkg.
+- ### Option 3: Using vcpkg
+
   comming soon
   
-- #### Option 4: Installing locally using CMake.
-  The test code has a [googletest](https://github.com/google/googletest) dependency. If you are simply installing asock, no test code compilation is required. The sample code has no dependencies, but is not required for asock installation. That's why `DJEREMYKO_ASOCK_BUILD_TESTS=OFF` and `-DJEREMYKO_ASOCK_BUILD_SAMPLES=OFF` are used.
+- ### Option 4: Installing locally using CMake
+
+  The test code has a [googletest](https://github.com/google/googletest) dependency.
+  If you are simply installing asock, no test code compilation is required.
+  The sample code has no dependencies, but is not required for asock installation.
+  That's why `DJEREMYKO_ASOCK_BUILD_TESTS=OFF`
+  and `-DJEREMYKO_ASOCK_BUILD_SAMPLES=OFF` are used.
 
         mkdir build
         cd build
         cmake .. -DJEREMYKO_ASOCK_BUILD_TESTS=OFF -DJEREMYKO_ASOCK_BUILD_SAMPLES=OFF
         sudo make install
 
-
     **Once installed with the option 2,3,4, you can use asock using cmake like this:**
   
       find_package(asock CONFIG REQUIRED)
       target_link_libraries(yours PRIVATE asock::asock)
 
-### Sample code 
+## Sample code
 
-#### tcp echo server 
-
+### tcp echo server
 
 ```cpp
 // See the sample folder for all examples.  
@@ -64,7 +69,8 @@ A C++11 header-only, simple and easy cross-platform c++ socket server/client fra
 #define DEFAULT_PACKET_SIZE 1024
 class Server : public asock::ASockTcpServer {
   private:
-    bool OnRecvedCompleteData(asock::Context* context_ptr, const char* const data_ptr, size_t len ) override;
+    bool OnRecvedCompleteData(asock::Context* context_ptr,
+                              const char* const data_ptr, size_t len ) override;
     void OnClientConnected(asock::Context* context_ptr) override;
     void OnClientDisconnected(asock::Context* context_ptr) override; 
 };
@@ -99,7 +105,7 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "server started" << "\n";
     while( Server.IsServerRunning() ) {
-		std::this_thread::sleep_for(std::chrono::seconds(1));
+  std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "server exit...\n";
     return 0;
@@ -116,11 +122,13 @@ int main(int argc, char* argv[]) {
 class Client : public asock::ASockTcpClient
 {
   private:
-    bool OnRecvedCompleteData(asock::Context* , const char* const data_ptr, size_t len) override; 
+    bool OnRecvedCompleteData(asock::Context* , const char* 
+                              const data_ptr, size_t len) override; 
     void OnDisconnectedFromServer() override ; 
 };
 
-bool Client:: OnRecvedCompleteData(asock::Context* , const char* const data_ptr, size_t len) {
+bool Client:: OnRecvedCompleteData(asock::Context* , 
+                                   const char* const data_ptr, size_t len) {
     //user specific : - your whole data has arrived.
     char packet[DEFAULT_PACKET_SIZE];
     memcpy(&packet,data_ptr ,len);

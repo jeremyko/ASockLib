@@ -36,19 +36,37 @@ public :
         sock_usage_ = SOCK_USAGE_IPC_CLIENT;
     }
 #elif WIN32
-    // TODO: Not implemented on Windows.
     bool InitIpcClient(const char* sock_path,
                        int connect_timeout_secs=10,
                        size_t max_data_len=asock::DEFAULT_BUFFER_SIZE) {
-        err_msg_ = "not implemented";
-        ELOG(err_msg_);
-        return false;
+        connect_timeout_secs_ = connect_timeout_secs;
+        SetUsage();
+        is_connected_ = false;
+        if (!InitWinsock()) {
+            return false;
+        }
+        if (!SetBufferCapacity(max_data_len)) {
+            return false;
+        }
+        if (context_.per_recv_io_ctx != NULL) {
+            delete context_.per_recv_io_ctx;
+        }
+        context_.per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
+        if (context_.per_recv_io_ctx == nullptr) {
+            ELOG("mem alloc failed");
+            return false;
+        }
+        server_ipc_socket_path_ = sock_path;
+        context_.socket = socket(AF_UNIX,SOCK_STREAM,0);
+        memset((void *)&ipc_conn_addr_,0x00,sizeof(ipc_conn_addr_));
+        ipc_conn_addr_.sun_family = AF_UNIX;
+        snprintf(ipc_conn_addr_.sun_path, sizeof(ipc_conn_addr_.sun_path),
+                 "%s",sock_path); 
+        return ConnectToServer();
     }
 
     void SetUsage() override {
-        err_msg_ = "not implemented";
-        ELOG(err_msg_);
-        sock_usage_ = SOCK_USAGE_UNKNOWN;
+        sock_usage_ = SOCK_USAGE_IPC_CLIENT;
     }
 #endif
 };
