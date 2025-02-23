@@ -11,6 +11,7 @@
 WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent later.
 - Composition or Inheritance class usage.
 - Using epoll (linux), kqueue (osx) and winsock (windows).
+- No additional dependencies required.
 
 ## Install and use asock in your project
 
@@ -19,7 +20,7 @@ WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent la
   This is a header-only library, so you can just add the asock folder
   to your project include directory.
   
-        cp -ar asock your_include_path/.
+        cp -r asock your_include_path/.
 
 - ### Option 2: Using CMake FetchContent  
 
