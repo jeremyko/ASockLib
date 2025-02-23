@@ -50,7 +50,7 @@ WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent la
         cmake .. -DJEREMYKO_ASOCK_BUILD_TESTS=OFF -DJEREMYKO_ASOCK_BUILD_SAMPLES=OFF
         sudo make install
 
-**Once installed with the option 2,3,4, you can use asock using cmake like this:**
+  **Once installed with the option 2,3,4, you can use asock using cmake like this:**
   
       find_package(asock CONFIG REQUIRED)
       target_link_libraries(yours PRIVATE asock::asock)
