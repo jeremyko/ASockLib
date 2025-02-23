@@ -30,7 +30,7 @@ WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent la
         fetchcontent_declare(
             asock
             GIT_REPOSITORY https://github.com/jeremyko/ASockLib
-            GIT_TAG        38475d580fc4e2106ec298ad32eeb573e5ee5ab8 #1.2.0
+            GIT_TAG        0e0edd96ea12fbf53e92253c44837f6d4ba69b4c #1.2.0
         )
         fetchcontent_makeavailable(asock)
   
