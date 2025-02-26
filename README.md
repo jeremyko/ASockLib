@@ -19,25 +19,37 @@ WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent la
 
   This is a header-only library, so you can just add the asock folder
   to your project include directory.
-  
-        cp -r asock your_include_path/.
 
+  ```
+  cp -r asock your_include_path/.
+  ```
+  
 - ### Option 2: Using CMake FetchContent  
 
   Add below code to your CMake file
 
-        include(FetchContent)
-        fetchcontent_declare(
-            asock
-            GIT_REPOSITORY https://github.com/jeremyko/ASockLib
-            GIT_TAG        5d75ac66dc1970955fc0c0b0be3c13b154a7f385 #1.0.5
-        )
-        fetchcontent_makeavailable(asock)
+  ```
+  include(FetchContent)
+  fetchcontent_declare(
+      asock
+      GIT_REPOSITORY https://github.com/jeremyko/ASockLib
+      GIT_TAG        5d75ac66dc1970955fc0c0b0be3c13b154a7f385 #1.0.5
+  )
+  fetchcontent_makeavailable(asock)
+  ```
   
 - ### Option 3: Using vcpkg
 
-  comming soon
+  ```
+  vcpkg install asock
+  ```
+  Then add below code to your CMake file,
   
+  ```
+  find_package(asock CONFIG REQUIRED)
+  target_link_libraries(yours PRIVATE asock::asock)  
+  ```
+
 - ### Option 4: Installing locally using CMake
 
   The test code has a [googletest](https://github.com/google/googletest) dependency.
@@ -46,15 +58,19 @@ WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent la
   That's why `DJEREMYKO_ASOCK_BUILD_TESTS=OFF`
   and `-DJEREMYKO_ASOCK_BUILD_SAMPLES=OFF` are used.
 
-        mkdir build
-        cd build
-        cmake .. -DJEREMYKO_ASOCK_BUILD_TESTS=OFF -DJEREMYKO_ASOCK_BUILD_SAMPLES=OFF
-        sudo make install
+  ```
+  mkdir build
+  cd build
+  cmake .. -DJEREMYKO_ASOCK_BUILD_TESTS=OFF -DJEREMYKO_ASOCK_BUILD_SAMPLES=OFF
+  sudo make install
+  ```
 
   **Once installed with the option 2,3,4, you can use asock using cmake like this:**
-  
-      find_package(asock CONFIG REQUIRED)
-      target_link_libraries(yours PRIVATE asock::asock)
+
+  ```
+  find_package(asock CONFIG REQUIRED)
+  target_link_libraries(yours PRIVATE asock::asock)
+  ```
 
 ## Sample code
 The following is an tcp echo example using class inheritance. See the sample folder for all examples. 
