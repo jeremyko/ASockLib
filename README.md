@@ -43,13 +43,7 @@ WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent la
   ```
   vcpkg install asock
   ```
-  Then add below code to your CMake file,
   
-  ```
-  find_package(asock CONFIG REQUIRED)
-  target_link_libraries(yours PRIVATE asock::asock)  
-  ```
-
 - ### Option 4: Installing locally using CMake
 
   The test code has a [googletest](https://github.com/google/googletest) dependency.
