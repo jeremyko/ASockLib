@@ -26,11 +26,20 @@ elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   add_definitions(-Wall -Werror -Wextra -Wpedantic)
 endif()
 
+set(TEST_FILES
+  buffer_test.cpp
+  tcp_test.cpp
+  udp_test.cpp
+  ipc_test.cpp
+)
+
 enable_testing()
 find_package(GTest CONFIG REQUIRED)
 
-add_executable(${PROJECT_NAME} asocktest.cpp)
-target_link_libraries(${PROJECT_NAME}
-                      PRIVATE GTest::gtest GTest::gtest_main asock)
-add_test(AllTestsInMain ${PROJECT_NAME})
+foreach(testfile ${TEST_FILES})
+  get_filename_component(exename ${testfile} NAME_WE)
+  add_executable(${exename} ${testfile})
+  target_link_libraries(${exename} PRIVATE GTest::gtest GTest::gtest_main asock)
+  add_test(AllTestsInMain ${exename})
+endforeach()
 
