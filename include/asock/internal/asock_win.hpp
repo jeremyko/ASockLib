@@ -330,7 +330,7 @@ protected :
     void StartWorkerThreads() {
         SYSTEM_INFO system_info;
         GetSystemInfo(&system_info);
-        max_worker_cnt_ = system_info.dwNumberOfProcessors * 2;
+        max_worker_cnt_ = system_info.dwNumberOfProcessors ;
         DBG_LOG("(server) worker cnt = " << max_worker_cnt_);
         for (size_t i = 0; i < max_worker_cnt_ ; i++) {
             std::thread worker_thread(&ASockBase::WorkerThreadRoutine, this, i); 
