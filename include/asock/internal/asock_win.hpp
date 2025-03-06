@@ -89,6 +89,7 @@ typedef struct _Context_ {
     SOCKADDR_IN  udp_remote_addr ; //for udp
     std::deque<PENDING_SENT> pending_send_deque ; 
     bool         is_sent_pending {false}; 
+    //bool         is_udp_server_first_recvfrom {false}; 
 } Context ;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -117,7 +118,6 @@ public :
                 server_ipc_socket_path_ = "";
             }
         }
-
         WSACleanup();
     }
 
@@ -263,6 +263,7 @@ protected :
     std::string  err_msg_ ;
     ENUM_SOCK_USAGE sock_usage_ {asock::SOCK_USAGE_UNKNOWN};
     std::function<bool(Context*,const char* const,size_t)>cb_on_recved_complete_packet_{nullptr};
+    Context* udp_server_ctx_ptr = nullptr;
 
     //-------------------------------------------------------------------------
     //for udp server, client only
@@ -415,38 +416,39 @@ protected :
         if ( sock_usage_ == SOCK_USAGE_UDP_SERVER ) {
             //UDP is special, no thread.
             SOCKLEN_T socklen = sizeof(SOCKADDR_IN);
-            Context* ctx_ptr = PopClientContextFromCache();
-            if (ctx_ptr == nullptr) {
+            //LOG("StartServer ");
+            udp_server_ctx_ptr =  PopClientContextFromCache();
+            if (udp_server_ctx_ptr == nullptr) {
                 ELOG(err_msg_);
                 exit(EXIT_FAILURE);
             }
-            ctx_ptr->is_connected = true;
-            ctx_ptr->socket = listen_socket_;
+            udp_server_ctx_ptr->is_connected = true;
+            udp_server_ctx_ptr->socket = listen_socket_;
             handle_completion_port_ = CreateIoCompletionPort((HANDLE)listen_socket_, 
                                                              handle_completion_port_, 
-                                                             (ULONG_PTR)ctx_ptr, 
+                                                             (ULONG_PTR)udp_server_ctx_ptr, 
                                                              0);
             if (NULL == handle_completion_port_) {
                 BuildErrMsgString(WSAGetLastError());
                 ELOG("alloc failed! delete ctx_ptr");
-                delete ctx_ptr;
+                delete udp_server_ctx_ptr;
                 exit(EXIT_FAILURE);
             }
             // Start receiving.
-            if (!IssueRecv(99999, ctx_ptr)) { // worker_index 99999 is for debugging.
+            if (!IssueRecv(99999, udp_server_ctx_ptr)) { // worker_index 99999 is for debugging.
                 int last_err = WSAGetLastError();
-                DBG_ELOG("sock=" << ctx_ptr->socket <<  ", error! : " << last_err);
-                shutdown(ctx_ptr->socket, SD_BOTH);
-                if (0 != closesocket(ctx_ptr->socket)) {
-                    DBG_ELOG("sock=" << ctx_ptr->socket << ",close socket error! : " 
+                DBG_ELOG("sock=" << udp_server_ctx_ptr->socket <<  ", error! : " << last_err);
+                shutdown(udp_server_ctx_ptr->socket, SD_BOTH);
+                if (0 != closesocket(udp_server_ctx_ptr->socket)) {
+                    DBG_ELOG("sock=" << udp_server_ctx_ptr->socket << ",close socket error! : " 
                              << last_err);
                 }
-                LOG("delete ctx_ptr , sock=" << ctx_ptr->socket);
-                ctx_ptr->socket = INVALID_SOCKET; //XXX
+                //LOG("delete ctx_ptr , sock=" << udp_server_ctx_ptr->socket);
+                udp_server_ctx_ptr->socket = INVALID_SOCKET; //XXX
                 if (last_err == WSAECONNRESET) {
                     DBG_ELOG("invoke PuchClientContextToCache.. sock=" 
-                             << ctx_ptr->sock_id_copy);
-                    PushClientContextToCache(ctx_ptr);
+                             << udp_server_ctx_ptr->sock_id_copy);
+                    PushClientContextToCache(udp_server_ctx_ptr);
                 }
                 exit(EXIT_FAILURE);
             }
@@ -467,6 +469,7 @@ protected :
         std::lock_guard<std::mutex> lock(err_msg_lock_);
         err_msg_ = std::string("(") + std::to_string(err_no) + std::string(") ");
         err_msg_ += std::string((LPCTSTR)lpMsgBuf);
+        ELOG(err_msg_);
         LocalFree(lpMsgBuf);
     }
 
@@ -534,10 +537,11 @@ protected :
     //-------------------------------------------------------------------------
     bool RecvfromData(size_t worker_id, Context* ctx_ptr, DWORD bytes_transferred) {
         ctx_ptr->GetBuffer()->IncreaseData(bytes_transferred);
-        DBG_LOG("worker="<< worker_id <<",sock="<<ctx_ptr->sock_id_copy
+        DBG_LOG(asock::GetSockUsageName(sock_usage_) << ": worker="<< worker_id <<",sock="<<ctx_ptr->socket
                 <<",GetCumulatedLen = " << ctx_ptr->GetBuffer()->GetCumulatedLen() 
-                << ",recv_ref_cnt=" << ctx_ptr->recv_ref_cnt << ",bytes_transferred=" 
-                << bytes_transferred );
+                << ",recv_ref_cnt=" << ctx_ptr->recv_ref_cnt << ",bytes_transferred=" << bytes_transferred
+                //<< ",is_udp_server_first_recvfrom =" << ctx_ptr->is_udp_server_first_recvfrom
+        );
         char* complete_packet_data = new (std::nothrow) char[bytes_transferred]; //XXX TODO !!!
         if (complete_packet_data == nullptr) {
             ELOG("mem alloc failed");
@@ -556,6 +560,16 @@ protected :
             //exit(1);
             return false;
         }
+   //     if (sock_usage_ ==  SOCK_USAGE_UDP_SERVER && ctx_ptr->is_udp_server_first_recvfrom) {
+   //         //UDP : performs a similar role to tcp accept.
+			//ctx_ptr->is_udp_server_first_recvfrom = false;
+			//LOG("**** new client : sock="<< ctx_ptr->socket );
+			//if (cb_on_client_connected_ != nullptr) {
+			//	cb_on_client_connected_(ctx_ptr);
+			//} else {
+			//	OnClientConnected(ctx_ptr);
+			//}
+   //     }
         //XXX UDP 이므로 받는 버퍼를 초기화해서, linear free space를 초기화 상태로 
         ctx_ptr->GetBuffer()->ReSet(); //this is udp. all data has arrived!
         DBG_LOG("worker=" << worker_id << ",sock=" << ctx_ptr->sock_id_copy 
@@ -576,7 +590,6 @@ protected :
 
     //-------------------------------------------------------------------------
     void ReSetCtxPtr(Context* ctx_ptr) {
-        //DBG_LOG("sock=" << ctx_ptr->socket << ",sock=" << ctx_ptr->sock_id_copy);
         SecureZeroMemory((PVOID)&ctx_ptr->per_recv_io_ctx->overlapped, sizeof(WSAOVERLAPPED));
         ctx_ptr->per_recv_io_ctx->cum_buffer.ReSet();
         ctx_ptr->socket = INVALID_SOCKET;
@@ -591,6 +604,11 @@ protected :
         ctx_ptr->per_recv_io_ctx->sent_len = 0;
         ctx_ptr->per_recv_io_ctx->is_packet_len_calculated = false;
         ctx_ptr->is_connected = false;
+		//if (sock_usage_ == SOCK_USAGE_UDP_SERVER) {
+		//	ctx_ptr->is_udp_server_first_recvfrom = true;
+		//} else {
+		//	ctx_ptr->is_udp_server_first_recvfrom = false;
+		//}
         while(!ctx_ptr->pending_send_deque.empty() ) {
             PENDING_SENT pending_sent= ctx_ptr->pending_send_deque.front();
             delete [] pending_sent.pending_sent_data;
@@ -799,7 +817,7 @@ public :
         if(context_.is_sent_pending){
             DBG_LOG("pending. just queue.");
             PENDING_SENT pending_sent;
-            pending_sent.pending_sent_data = new char [len + HEADER_SIZE]; 
+            pending_sent.pending_sent_data = new char [len + HEADER_SIZE];
             //pending_sent.pending_sent_data = new char [total_len]; // ? C6386 warn ?
             pending_sent.pending_sent_len  = total_len;
             memcpy(pending_sent.pending_sent_data, (char*)&header, HEADER_SIZE);
@@ -808,7 +826,9 @@ public :
             return true;
         }
 
-        char* data_position_ptr = new char[len + HEADER_SIZE];// XXX TODO 
+        char* data_buffer = new char[len + HEADER_SIZE];
+        char* data_position_ptr = data_buffer;
+
         memcpy(data_position_ptr, (char*)&header, HEADER_SIZE);
         memcpy(data_position_ptr + HEADER_SIZE, data, len);
 
@@ -819,7 +839,7 @@ public :
                 //XXX UDP : all or nothing. no partial sent!
                 sent_len = sendto(context_.socket, data_position_ptr, int(remained_len), 0,
                                   (SOCKADDR*)&udp_server_addr_, 
-                                  int(sizeof(udp_server_addr_)));
+                                  sizeof(udp_server_addr_)); 
             } else {
                 sent_len = send(context_.socket, data_position_ptr, 
                                 (int)(remained_len), 0);
@@ -837,6 +857,7 @@ public :
                     memcpy(pending_sent.pending_sent_data,data_position_ptr, remained_len);
                     context_.pending_send_deque.push_back(pending_sent);
                     context_.is_sent_pending = true;
+                    delete[] data_buffer;
                     return true;
                 } else {
                     BuildErrMsgString(WSAGetLastError());
@@ -845,10 +866,12 @@ public :
                         DBG_ELOG("close socket error! : " << WSAGetLastError());
                     }
                     context_.socket = INVALID_SOCKET;
+                    delete[] data_buffer;
                     return false;
                 }
             }
         }//while
+        delete[] data_buffer;
         return true;
     }
 
@@ -862,8 +885,8 @@ public :
         return false;
     }
     //-------------------------------------------------------------------------
+    // 소멸자에서도 호출된다. null 체크가 필요한 이유임
     void Disconnect() {
-        DBG_LOG("Disconnect");
         is_connected_ = false;
         if(context_.socket != INVALID_SOCKET ) {
             shutdown(context_.socket, SD_BOTH);
@@ -874,10 +897,19 @@ public :
         if (client_thread_.joinable()) {
             client_thread_.join();
         }
+        if (context_.per_recv_io_ctx) {
+            delete context_.per_recv_io_ctx;
+            context_.per_recv_io_ctx = NULL; // 소멸자에서도 호출되기 때문에 필요함
+        }
+        while(!context_.pending_send_deque.empty() ) {
+            PENDING_SENT pending_sent= context_.pending_send_deque.front();
+            delete [] pending_sent.pending_sent_data;
+            context_.pending_send_deque.pop_front();
+        }
     }
 
 protected :
-    int         connect_timeout_secs_    ;
+    int         connect_timeout_secs_{ 10 };
     bool        is_buffer_init_ {false};
     std::atomic<bool>    is_connected_   {false};
     Context     context_;
@@ -929,6 +961,7 @@ protected :
                             context_.per_recv_io_ctx->cum_buffer.GetErrMsg();
                 closesocket(context_.socket);
                 context_.socket = INVALID_SOCKET;
+                ELOG(err_msg_);
                 return false;
             }
             is_buffer_init_ = true;
@@ -1234,10 +1267,8 @@ public :
     void  StopServer() {
         is_need_server_run_ = false;
         for (size_t i = 0; i < max_worker_cnt_; i++) {
-            //DBG_LOG("PostQueuedCompletionStatus");
             DWORD       bytes_transferred = 0;
             Context* ctx_ptr = PopClientContextFromCache();
-            ctx_ptr->per_recv_io_ctx = PopPerIoDataFromCache();
             if (nullptr == ctx_ptr->per_recv_io_ctx) {
                 ELOG("memory alloc failed");
                 return;
@@ -1252,6 +1283,9 @@ public :
                 BuildErrMsgString(WSAGetLastError());
                 ELOG(err_msg_);
             }
+        }
+        if (sock_usage_ == SOCK_USAGE_UDP_SERVER) {
+			PushClientContextToCache(udp_server_ctx_ptr);
         }
         if (sock_usage_ == SOCK_USAGE_IPC_SERVER) {
             DBG_LOG("unlink :" << server_ipc_socket_path_);
@@ -1296,7 +1330,6 @@ protected :
 
     //-------------------------------------------------------------------------
     bool BuildClientContextCache() {
-        //DBG_LOG("queue_client_cache alloc ");
         Context* ctx_ptr = nullptr;
         for (int i = 0; i < max_event_; i++) {
             ctx_ptr = new (std::nothrow) Context();
@@ -1305,7 +1338,7 @@ protected :
                 err_msg_ = "Context alloc failed !";
                 return false;
             }
-            ctx_ptr->per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
+            ctx_ptr->per_recv_io_ctx = new (std::nothrow) PER_IO_DATA; 
             if (nullptr == ctx_ptr->per_recv_io_ctx) {
                 std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "per_io_ctx alloc failed !";
@@ -1318,30 +1351,27 @@ protected :
                     std::string(ctx_ptr->per_recv_io_ctx->cum_buffer.GetErrMsg());
                 delete ctx_ptr->per_recv_io_ctx;
                 delete ctx_ptr;
+                ELOG(err_msg_);
                 return false;
             }
             ctx_ptr->pending_send_deque.clear();
             ReSetCtxPtr(ctx_ptr);
             queue_ctx_cache_.push(ctx_ptr);
         }
-        DBG_LOG("current queue_ctx_cache_ size =" << queue_ctx_cache_.size());
+        //LOG("build ctx: queue_ctx_cache_ size =" << queue_ctx_cache_.size());
         return true;
     }
     //-------------------------------------------------------------------------
     void PushClientContextToCache(Context* ctx_ptr) {
         std::lock_guard<std::mutex> lock(ctx_cache_lock_);
-        {
-            //reset all
-            DBG_LOG("sock=" << ctx_ptr->sock_id_copy);
-            ReSetCtxPtr(ctx_ptr);
-        }
+        ReSetCtxPtr(ctx_ptr);
         queue_ctx_cache_.push(ctx_ptr);
-        DBG_LOG("queue ctx cache size = " << queue_ctx_cache_.size());
+        //LOG("push: queue ctx cache size = " << queue_ctx_cache_.size());
     }
 
     //-------------------------------------------------------------------------
     void ClearClientCache() {
-        DBG_LOG("======= clear all cache ========");
+        //LOG("======= clear all ctx cache ======== : " << queue_ctx_cache_.size());
         std::lock_guard<std::mutex> lock(ctx_cache_lock_);
         while (!queue_ctx_cache_.empty()) {
             Context* ctx_ptr = queue_ctx_cache_.front();
@@ -1350,22 +1380,23 @@ protected :
                 delete [] pending_sent.pending_sent_data;
                 ctx_ptr->pending_send_deque.pop_front();
             }
+            //LOG("delete per rec io ctx");
+			delete ctx_ptr->per_recv_io_ctx; 
             delete ctx_ptr;
             queue_ctx_cache_.pop();
         }
     }
 
     //-------------------------------------------------------------------------
-    bool AcceptNewClient();
-    //-------------------------------------------------------------------------
     Context* PopClientContextFromCache() {
+		//LOG("pop : queue_ctx_cache  -> " << queue_ctx_cache_.size());
         Context* ctx_ptr = nullptr;
         { //lock scope
             std::lock_guard<std::mutex> lock(ctx_cache_lock_);
+			//LOG("pop : queue_ctx_cache -> " << queue_ctx_cache_.size());
             if (!queue_ctx_cache_.empty()) {
                 ctx_ptr = queue_ctx_cache_.front();
                 queue_ctx_cache_.pop(); 
-                //DBG_LOG("queue_ctx_cache not empty! -> " << queue_ctx_cache_.size());
                 ReSetCtxPtr(ctx_ptr);
                 return ctx_ptr;
             }
@@ -1377,13 +1408,15 @@ protected :
         }
         Context* rtn_ctx_ptr = queue_ctx_cache_.front();
         queue_ctx_cache_.pop();
+		//LOG("pop ctx: queue_ctx_cache  -> " << queue_ctx_cache_.size());
         ReSetCtxPtr(rtn_ctx_ptr);
         return rtn_ctx_ptr ;
     }
 
     //-------------------------------------------------------------------------
+    // SendData 에서만 사용함
     bool BuildPerIoDataCache() {
-        //DBG_LOG("queue_per_io_data_cache_ alloc ");
+        DBG_LOG("queue_per_io_data_cache_ alloc ");
         PER_IO_DATA* per_io_data_ptr = nullptr;
         for (int i = 0; i < max_event_ * 2; i++) { 
             per_io_data_ptr = new (std::nothrow) PER_IO_DATA;
@@ -1404,17 +1437,18 @@ protected :
             SecureZeroMemory((PVOID)&per_io_data_ptr->overlapped, sizeof(WSAOVERLAPPED));
             queue_per_io_data_cache_.push(per_io_data_ptr);
         }
-        DBG_LOG("current queue_per_io_data_cache_ size =" << queue_per_io_data_cache_.size());
+        DBG_LOG("build per io data: queue_per_io_data_cache_ size =" << queue_per_io_data_cache_.size());
         return true;
     }
     //-------------------------------------------------------------------------
+    // SendData 에서만 사용함
     PER_IO_DATA* PopPerIoDataFromCache() {
         PER_IO_DATA* per_io_data_ptr = nullptr;
         std::lock_guard<std::mutex> lock(per_io_data_cache_lock_);
         if (!queue_per_io_data_cache_.empty()) {
             per_io_data_ptr = queue_per_io_data_cache_.front();
             queue_per_io_data_cache_.pop();
-            //DBG_LOG("queue_per_io_data_cache_ not empty! -> " << queue_per_io_data_cache_.size());
+            //LOG("queue_per_io_data_cache_ not empty! -> " << queue_per_io_data_cache_.size());
             return per_io_data_ptr;
         }
         //alloc new !!!
@@ -1427,6 +1461,7 @@ protected :
     }
 
     //-------------------------------------------------------------------------
+    // SendData 에서만 사용함
     void PushPerIoDataToCache(PER_IO_DATA* per_io_data_ptr) {
         std::lock_guard<std::mutex> lock(per_io_data_cache_lock_);
         delete [] per_io_data_ptr->wsabuf.buf;
@@ -1439,18 +1474,18 @@ protected :
         per_io_data_ptr->sent_len = 0;
         //per_io_data_ptr->cum_buffer.ReSet(); //현재 send 에서만 사용하므로 불필요
         queue_per_io_data_cache_.push(per_io_data_ptr);
-        DBG_LOG("queue_per_io_data_cache_ client cache size = " 
-                << queue_per_io_data_cache_.size());
+        DBG_LOG("queue_per_io_data_cache_ client cache size = " << queue_per_io_data_cache_.size());
     }
 
     //-------------------------------------------------------------------------
+    // SendData 에서만 사용함
     void ClearPerIoDataCache() {
-        DBG_LOG("queue_per_io_data_cache_ size =" << queue_per_io_data_cache_.size());
+        //LOG("~~~~ clear: queue_per_io_data_cache_ size =" << queue_per_io_data_cache_.size());
         std::lock_guard<std::mutex> lock(per_io_data_cache_lock_);
         while (!queue_per_io_data_cache_.empty()) {
             PER_IO_DATA* per_io_data_ptr = queue_per_io_data_cache_.front();
-            if (per_io_data_ptr->wsabuf.buf != NULL) {
-                delete [] per_io_data_ptr->wsabuf.buf;
+            if(per_io_data_ptr->wsabuf.buf != NULL) {
+                delete [] per_io_data_ptr->wsabuf.buf; 
             }
             delete per_io_data_ptr;
             queue_per_io_data_cache_.pop();
@@ -1517,8 +1552,6 @@ protected :
         DBG_LOG("accept thread exiting");
     }
 
-    //-------------------------------------------------------------------------
-    void        UdpServerThreadRoutine();
     //-------------------------------------------------------------------------
     //io 작업 결과에 대해 처리한다. --> multi thread 에 의해 수행된다 !!!
     void WorkerThreadRoutine(size_t worker_index) {
@@ -1712,14 +1745,17 @@ protected :
                 }
             }
             break;
-            //======================================================= IO_RECV
+            //======================================================= IO_QUIT
             case EnumIOType::IO_QUIT :
             {
-                //DBG_LOG( "IO_QUIT "); 
+                //XXX StopServer에서 다음처럼 사용했으므로, 메모리 정리 해야함
+				//--> Context* ctx_ptr = PopClientContextFromCache();
+				PushClientContextToCache(ctx_ptr);
                 cur_quit_cnt_++;
+                //LOG( "IO_QUIT :" << cur_quit_cnt_ << " : " << max_worker_cnt_);
                 if (max_worker_cnt_ == cur_quit_cnt_) {
                     is_server_running_ = false;
-                    DBG_LOG("set is_server_running_ false.");
+                    //LOG("set is_server_running_ false.");
                 }
                 return;
             }

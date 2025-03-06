@@ -86,6 +86,25 @@ typedef enum _ENUM_SOCK_USAGE_ {
     SOCK_USAGE_IPC_CLIENT 
 } ENUM_SOCK_USAGE ;
 
+const char* GetSockUsageName(ENUM_SOCK_USAGE usage) {
+    switch (usage) {
+        case SOCK_USAGE_TCP_SERVER: 
+            return "Tcp Server";
+        case SOCK_USAGE_UDP_SERVER: 
+            return "Udp Server";
+        case SOCK_USAGE_IPC_SERVER: 
+            return "Ipc Server";
+        case SOCK_USAGE_TCP_CLIENT: 
+            return "Tcp Client";
+        case SOCK_USAGE_UDP_CLIENT: 
+            return "Udp Client";
+        case SOCK_USAGE_IPC_CLIENT: 
+            return "Ipc Client";
+        default:
+            return "Unknown";
+    }
+}
+
 typedef struct _ST_HEADER_ {
     char msg_len[10];
 } ST_HEADER ;
