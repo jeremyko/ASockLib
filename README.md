@@ -10,7 +10,7 @@
 - No repeat send calls until all are sent. When send returns
 WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent later.
 - Composition or Inheritance class usage.
-- Using epoll (linux), kqueue (osx) and winsock (windows).
+- Using epoll (linux), kqueue (macOS) and winsock (windows).
 - No additional dependencies required.
 
 ## Install and use asock in your project
