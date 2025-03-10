@@ -21,7 +21,6 @@ class Client : public asock::ASockIpcClient
             this_instance_->Disconnect();
             exit(EXIT_SUCCESS);
         } else {
-            std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
             exit(EXIT_FAILURE);
         }
     }

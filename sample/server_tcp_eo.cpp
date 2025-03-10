@@ -43,7 +43,6 @@ class Server {
             this_instance_->server_.StopServer();
             exit(EXIT_SUCCESS);
         } else {
-            std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
             exit(EXIT_FAILURE);
         }
     }

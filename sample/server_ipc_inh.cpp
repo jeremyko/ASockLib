@@ -18,7 +18,6 @@ class Server : public asock::ASockIpcServer {
             this_instance_->StopServer();
             exit(EXIT_SUCCESS);
         } else {
-            std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
             exit(EXIT_FAILURE);
         }
     }

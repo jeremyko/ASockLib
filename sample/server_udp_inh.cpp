@@ -18,7 +18,6 @@ class Server : public asock::ASockUdpServer {
             this_instance_->StopServer();
             exit(EXIT_SUCCESS);
         } else {
-            std::cerr << strerror(errno) << "/"<<signo<<"\n"; 
             exit(EXIT_FAILURE);
         }
     }
@@ -42,7 +41,7 @@ Server* Server::this_instance_ = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
 int main(int , char* []) {
-    // std::signal(SIGINT,Server::SigIntHandler);
+    std::signal(SIGINT,Server::SigIntHandler);
     Server echoserver;
     // In case of UDP, you need to know the maximum receivable size in advance and allocate a buffer.
     if(!echoserver.RunUdpServer("127.0.0.1", 9990, DEFAULT_PACKET_SIZE )) {
