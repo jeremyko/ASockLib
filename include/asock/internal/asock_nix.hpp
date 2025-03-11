@@ -153,13 +153,11 @@ public :
     bool SetSocketNonBlocking(int sock_fd) {
         int oldflags  ;
         if ((oldflags = fcntl( sock_fd,F_GETFL, 0)) < 0 ) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "fcntl F_GETFL error [" + std::string(strerror(errno))+ "]";
             return  false;
         }
         int ret  = fcntl( sock_fd,F_SETFL,oldflags | O_NONBLOCK) ;
         if ( ret < 0 ) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "fcntl O_NONBLOCK error [" + std::string(strerror(errno))+ "]";
             return  false;
         }
@@ -257,7 +255,6 @@ public :
                     return true;
                 } else if ( errno != EINTR ) {
                     // err_msg_ need lock for multithread
-                    std::lock_guard<std::mutex> lock(err_msg_lock_);
                     err_msg_ = "send error [" + std::string(strerror(errno)) + "]";
                     ELOG(err_msg_);
                     delete [] data_buffer;
@@ -352,7 +349,6 @@ protected :
     int     ep_fd_ {-1};
 #endif
 
-    std::mutex   err_msg_lock_ ; 
     std::string  err_msg_ ;
     std::function<bool(Context*,const char* const,size_t)> cb_on_recved_complete_packet_{nullptr};
 
@@ -362,27 +358,23 @@ protected :
         int opt_val=max_data_len_ ; 
         int opt_len = sizeof(opt_cur) ;
         if (getsockopt(socket,SOL_SOCKET,SO_SNDBUF,&opt_cur, (SOCKLEN_T *) &opt_len)==-1) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "gsetsockopt SO_SNDBUF error ["  + 
                         std::string(strerror(errno)) + "]";
             return false;
         }
         if(max_data_len_ > opt_cur ) {
             if (setsockopt(socket,SOL_SOCKET,SO_SNDBUF,(char*)&opt_val, sizeof(opt_val))==-1) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "setsockopt SO_SNDBUF error ["  + 
                             std::string(strerror(errno)) + "]";
                 return false;
             }
         }
         if (getsockopt(socket,SOL_SOCKET,SO_RCVBUF,&opt_cur, (SOCKLEN_T *)&opt_len)==-1) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "setsockopt SO_RCVBUF error ["  + std::string(strerror(errno)) + "]";
             return false;
         }
         if(max_data_len_ > opt_cur ) {
             if (setsockopt(socket,SOL_SOCKET,SO_RCVBUF,(char*)&opt_val, sizeof(opt_val))==-1) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "setsockopt SO_RCVBUF error ["  + std::string(strerror(errno)) + "]";
                 return false;
             }
@@ -462,10 +454,7 @@ protected :
                 if ( errno == EWOULDBLOCK || errno == EAGAIN ) {
                     break; //next time
                 } else if ( errno != EINTR ) {
-                    {//lock scope
-                        std::lock_guard<std::mutex> lock(err_msg_lock_);
-                        err_msg_ = "send error ["  + std::string(strerror(errno)) + "]";
-                    }
+                    err_msg_ = "send error ["  + std::string(strerror(errno)) + "]";
                     if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT || 
                          sock_usage_ == SOCK_USAGE_IPC_CLIENT ) {
                         //client error!!!
@@ -528,10 +517,7 @@ protected :
                     if(cumbuffer::OP_RSLT_OK!= ctx_ptr->recv_buffer.GetData(ctx_ptr->complete_packet_len, 
                                                                        complete_packet_data )) {
                         //error !
-                        {
-                            std::lock_guard<std::mutex> lock(err_msg_lock_);
-                            err_msg_ = ctx_ptr->recv_buffer.GetErrMsg();
-                        }
+                        err_msg_ = ctx_ptr->recv_buffer.GetErrMsg();
                         ctx_ptr->is_packet_len_calculated = false;
                         delete[] complete_packet_data;
                         return false; 
@@ -558,7 +544,6 @@ protected :
                 }
             } //while
         } else if( recved_len == 0 ) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "recv 0, client disconnected , fd:" + std::to_string(ctx_ptr->socket);
             DBG_LOG(err_msg_);
             return false ;
@@ -593,7 +578,6 @@ protected :
             if(cumbuffer::OP_RSLT_OK!= 
             ctx_ptr->recv_buffer.GetData(recved_len, complete_packet_data )) {
                 //error !
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = ctx_ptr->recv_buffer.GetErrMsg();
                 ELOG(err_msg_);
                 ctx_ptr->is_packet_len_calculated = false;
@@ -631,7 +615,6 @@ protected :
 
         int result = kevent(kq_fd_, &kq_event, 1, NULL, 0, NULL);
         if (result == -1) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "kevent error [" + std::string(strerror(errno)) + "]";
             return false; 
         }
@@ -647,7 +630,6 @@ protected :
         ev_client.data.ptr   = ctx_ptr;
 
         if(epoll_ctl(ep_fd_, op, ctx_ptr->socket, &ev_client)<0) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "socket:" + std::to_string(ctx_ptr->socket) + " / error [" + std::string(strerror(errno)) + "]";
             return false; 
         }
@@ -664,7 +646,6 @@ public :
     //-------------------------------------------------------------------------
     bool SendToServer (const char* data, size_t len) {
         if ( !is_connected_ ) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "not connected";
             return false;
         }
@@ -730,7 +711,6 @@ protected :
 #elif __linux__
         if (ep_events_) {
 #endif
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "error [server is already running]";
             return false;
         }
@@ -742,7 +722,6 @@ protected :
             listen_socket_ = socket(AF_INET,SOCK_DGRAM,0) ;
         }
         if( listen_socket_ < 0 ) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "init error [" + std::string(strerror(errno)) + "]";
             return false;
         }   
@@ -752,13 +731,11 @@ protected :
         int opt_on=1;
         int result = -1;
         if (setsockopt(listen_socket_,SOL_SOCKET,SO_REUSEADDR,&opt_on,sizeof(opt_on))==-1) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "setsockopt SO_REUSEADDR error ["  + 
                         std::string(strerror(errno)) + "]";
             return false;
         }
         if (setsockopt(listen_socket_,SOL_SOCKET,SO_KEEPALIVE, &opt_on, sizeof(opt_on))==-1) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "setsockopt SO_KEEPALIVE error ["  + 
                         std::string(strerror(errno)) + "]";
             return false;
@@ -797,7 +774,6 @@ protected :
             sock_usage_ == SOCK_USAGE_TCP_SERVER ) {
             result = listen(listen_socket_,SOMAXCONN) ;
             if ( result < 0 ) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "listen error [" + std::string(strerror(errno)) + "]";
                 return false ;
             }
@@ -810,7 +786,6 @@ protected :
 #if defined __APPLE__ || defined __linux__ 
         listen_context_ptr_ = new (std::nothrow) Context();
         if(!listen_context_ptr_) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "Context alloc failed !";
             return false;
         }
@@ -819,7 +794,6 @@ protected :
 #ifdef __APPLE__
         kq_fd_ = kqueue();
         if (kq_fd_ == -1) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "kqueue error ["  + std::string(strerror(errno)) + "]";
             return false;
         }
@@ -829,7 +803,6 @@ protected :
 #elif __linux__
         ep_fd_ = epoll_create1(0);
         if (ep_fd_ == -1) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "epoll create error ["  + std::string(strerror(errno)) + "]";
             return false;
         }
@@ -864,7 +837,6 @@ protected :
             return true;
         }
         if( context_.socket < 0 ) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "error : server socket is invalid" ;
             return false;
         }   
@@ -874,7 +846,6 @@ protected :
         }
         if(!is_buffer_init_ ) {
             if(cumbuffer::OP_RSLT_OK != context_.recv_buffer.Init(max_data_len_) ) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = std::string("cumBuffer Init error :") + 
                            std::string(context_.recv_buffer.GetErrMsg());
                 close(context_.socket);
@@ -903,14 +874,12 @@ protected :
             result = connect(context_.socket,(SOCKADDR*)&udp_server_addr_,
                              (SOCKLEN_T)sizeof(SOCKADDR_IN)) ;
         } else {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "invalid socket usage" ;
             close(context_.socket);
             return false;
         }
         if ( result < 0) {
             if (errno != EINPROGRESS) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "connect error [" + std::string(strerror(errno))+ "]";
                 close(context_.socket);
                 return false;
@@ -926,12 +895,10 @@ protected :
         wset = rset;
         result = select(context_.socket+1, &rset, &wset, NULL, &timeoutVal ) ;
         if (result == 0 ) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "connect timeout";
             close(context_.socket);
             return false;
         } else if (result< 0) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
             close(context_.socket);
             return false;
@@ -940,21 +907,18 @@ protected :
             int  socketerror = 0;
             SOCKLEN_T  len = sizeof(socketerror);
             if (getsockopt(context_.socket, SOL_SOCKET, SO_ERROR, &socketerror, &len) < 0) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
                 close(context_.socket);
                 return false;
             }
             if (socketerror) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
                 close(context_.socket);
                 return false;
             }
         } else {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "connect error : fd not set ";
-            std::cerr <<"["<< __func__ <<"-"<<__LINE__ <<"] error! "<< err_msg_ <<"\n"; 
+            ELOG(err_msg_);
             close(context_.socket);
             return false;
         }
@@ -970,7 +934,6 @@ protected :
             memset(kq_events_ptr_, 0x00, sizeof(struct kevent) );
             kq_fd_ = kqueue();
             if (kq_fd_ == -1) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "kqueue error ["  + std::string(strerror(errno)) + "]";
                 close(context_.socket);
                 return false;
@@ -980,7 +943,6 @@ protected :
             memset(ep_events_, 0x00, sizeof(struct epoll_event) );
             ep_fd_ = epoll_create1(0);
             if ( ep_fd_== -1) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "epoll create error ["  + std::string(strerror(errno)) + "]";
                 close(context_.socket);
                 return false;
@@ -1019,7 +981,6 @@ protected :
             int event_cnt = epoll_wait(ep_fd_, ep_events_, 1, 10 );
 #endif
             if (event_cnt < 0) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
 #ifdef __APPLE__
                 err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";
 #elif __linux__
@@ -1194,7 +1155,6 @@ protected :
                                    kq_events_ptr_, max_event_, 
                                    &ts); 
             if (event_cnt < 0) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";
                 is_server_running_ = false;
                 return;
@@ -1202,7 +1162,6 @@ protected :
 #elif __linux__
             int event_cnt = epoll_wait(ep_fd_, ep_events_, max_event_, 100 );
             if (event_cnt < 0) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
                 is_server_running_ = false;
                 return;
@@ -1217,7 +1176,7 @@ protected :
 #endif
                     //# accept #----------
                     if(!AcceptNewClient()) {
-                        std::cerr <<"accept error:" << err_msg_ << "\n";
+                        ELOG(err_msg_);
                         is_server_running_ = false;
                         return;
                     }
@@ -1268,7 +1227,6 @@ protected :
         ts.tv_nsec =0;
 #endif
         if (cumbuffer::OP_RSLT_OK != listen_context_ptr_->recv_buffer.Init(max_data_len_) ) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_  = "cumBuffer Init error : " + 
                         std::string(listen_context_ptr_->recv_buffer.GetErrMsg());
             is_server_running_ = false;
@@ -1278,7 +1236,6 @@ protected :
 #ifdef __APPLE__
             int event_cnt = kevent(kq_fd_, NULL, 0, kq_events_ptr_, max_event_, &ts); 
             if (event_cnt < 0) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "kevent error ["  + std::string(strerror(errno)) + "]";
                 is_server_running_ = false;
                 return;
@@ -1286,7 +1243,6 @@ protected :
 #elif __linux__
             int event_cnt = epoll_wait(ep_fd_, ep_events_, max_event_, 100 );
             if (event_cnt < 0) {
-                std::lock_guard<std::mutex> lock(err_msg_lock_);
                 err_msg_ = "epoll wait error [" + std::string(strerror(errno)) + "]";
                 is_server_running_ = false;
                 return;
@@ -1333,12 +1289,10 @@ protected :
         DBG_LOG("~~~~~~~~~~ pop new ctx");
         ctx_ptr = new (std::nothrow) Context();
         if(!ctx_ptr) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_ = "Context alloc failed !";
             return nullptr;
         }
         if ( cumbuffer::OP_RSLT_OK != ctx_ptr->recv_buffer.Init(max_data_len_) ) {
-            std::lock_guard<std::mutex> lock(err_msg_lock_);
             err_msg_  = std::string("cumBuffer Init error : ") + 
                 std::string(ctx_ptr->recv_buffer.GetErrMsg());
             return nullptr;
@@ -1414,7 +1368,6 @@ protected :
                 } else if (errno == ECONNABORTED) {
                     break;
                 } else {
-                    std::lock_guard<std::mutex> lock(err_msg_lock_);
                     err_msg_ = "accept error [" + std::string(strerror(errno)) + "]";
                     is_server_running_ = false;
                     return false;
