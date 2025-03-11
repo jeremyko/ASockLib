@@ -43,15 +43,15 @@ public :
         if (!SetBufferCapacity(max_data_len)) {
             return false;
         }
-        if (context_.per_recv_io_ctx != NULL) {
-            delete context_.per_recv_io_ctx;
+        if (client_ctx_.per_recv_io_ctx != NULL) {
+            delete client_ctx_.per_recv_io_ctx;
         }
-        context_.per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
-        if (context_.per_recv_io_ctx == nullptr) {
+        client_ctx_.per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
+        if (client_ctx_.per_recv_io_ctx == nullptr) {
             DBG_ELOG("mem alloc failed");
             return false;
         }
-        context_.socket = socket(AF_INET, SOCK_STREAM, 0);
+        client_ctx_.socket = socket(AF_INET, SOCK_STREAM, 0);
         memset((void *)&tcp_server_addr_, 0x00, sizeof(tcp_server_addr_));
         tcp_server_addr_.sin_family = AF_INET;
         inet_pton(AF_INET, server_ip_.c_str(), &(tcp_server_addr_.sin_addr));

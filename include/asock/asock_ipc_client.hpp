@@ -48,16 +48,16 @@ public :
         if (!SetBufferCapacity(max_data_len)) {
             return false;
         }
-        if (context_.per_recv_io_ctx != NULL) {
-            delete context_.per_recv_io_ctx;
+        if (client_ctx_.per_recv_io_ctx != NULL) {
+            delete client_ctx_.per_recv_io_ctx;
         }
-        context_.per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
-        if (context_.per_recv_io_ctx == nullptr) {
+        client_ctx_.per_recv_io_ctx = new (std::nothrow) PER_IO_DATA;
+        if (client_ctx_.per_recv_io_ctx == nullptr) {
             ELOG("mem alloc failed");
             return false;
         }
         server_ipc_socket_path_ = sock_path;
-        context_.socket = socket(AF_UNIX,SOCK_STREAM,0);
+        client_ctx_.socket = socket(AF_UNIX,SOCK_STREAM,0);
         memset((void *)&ipc_conn_addr_,0x00,sizeof(ipc_conn_addr_));
         ipc_conn_addr_.sun_family = AF_UNIX;
         snprintf(ipc_conn_addr_.sun_path, sizeof(ipc_conn_addr_.sun_path),

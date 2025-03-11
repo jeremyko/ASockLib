@@ -8,7 +8,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
 if(WIN32)
-  set(CMAKE_CXX_FLAGS_RELEASE  "/O1 ")
   link_libraries(ws2_32 wsock32)
   add_definitions(/wd4819)
 elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
