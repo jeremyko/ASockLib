@@ -24,7 +24,7 @@ public :
             return false;
         }
         server_ipc_socket_path_ = sock_path;
-        context_.socket = socket(AF_UNIX,SOCK_STREAM,0);
+        client_ctx_.socket = socket(AF_UNIX,SOCK_STREAM,0);
         memset((void *)&ipc_conn_addr_,0x00,sizeof(ipc_conn_addr_));
         ipc_conn_addr_.sun_family = AF_UNIX;
         snprintf(ipc_conn_addr_.sun_path, sizeof(ipc_conn_addr_.sun_path),

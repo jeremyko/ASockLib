@@ -18,7 +18,7 @@ public :
         if(!SetBufferCapacity(max_data_len) ) {
             return false;
         }
-        context_.socket = socket(AF_INET,SOCK_DGRAM,0);
+        client_ctx_.socket = socket(AF_INET,SOCK_DGRAM,0);
         memset((void *)&udp_server_addr_,0x00,sizeof(udp_server_addr_));
         udp_server_addr_.sin_family  = AF_INET;
         udp_server_addr_.sin_addr.s_addr = inet_addr(server_ip);

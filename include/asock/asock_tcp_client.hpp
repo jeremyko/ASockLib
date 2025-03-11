@@ -25,7 +25,7 @@ public :
         if(!SetBufferCapacity(max_data_len) ) {
             return false;
         }
-        context_.socket = socket(AF_INET,SOCK_STREAM,0);
+        client_ctx_.socket = socket(AF_INET,SOCK_STREAM,0);
         memset((void *)&tcp_server_addr_,0x00,sizeof(tcp_server_addr_));
         tcp_server_addr_.sin_family = AF_INET;
         tcp_server_addr_.sin_addr.s_addr = inet_addr(server_ip);

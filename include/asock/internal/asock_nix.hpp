@@ -649,14 +649,14 @@ public :
             err_msg_ = "not connected";
             return false;
         }
-        return SendData(&context_, data, len);
+        return SendData(&client_ctx_, data, len);
     } 
 
     //-------------------------------------------------------------------------
     // bool SendFile (const char* file_path) { TODO: send file .
     // }
     //-------------------------------------------------------------------------
-    SOCKET_T  GetSocket () { return  context_.socket ; }
+    SOCKET_T  GetSocket () { return  client_ctx_.socket ; }
     //-------------------------------------------------------------------------
     bool IsConnected() {
         if (is_connected_ && is_client_thread_running_) {
@@ -668,10 +668,10 @@ public :
     //-------------------------------------------------------------------------
     // Disconnects from the server and waits for the client thread to terminate.
     void Disconnect() {
-        if(context_.socket > 0 ) {
-            close(context_.socket);
+        if(client_ctx_.socket > 0 ) {
+            close(client_ctx_.socket);
         }
-        context_.socket = -1;
+        client_ctx_.socket = -1;
         is_connected_ = false;
 
         // TODO: fix this. 아래 로직 개선할것.
@@ -696,7 +696,7 @@ protected :
     int         connect_timeout_secs_    ;
     bool        is_buffer_init_ {false};
     std::atomic<bool>    is_connected_   {false};
-    Context     context_;
+    Context     client_ctx_;
     SOCKADDR_IN tcp_server_addr_ ;
     SOCKADDR_IN udp_server_addr_ ;
     //std::thread client_thread_;
@@ -836,52 +836,52 @@ protected :
         if(is_connected_ ){
             return true;
         }
-        if( context_.socket < 0 ) {
+        if( client_ctx_.socket < 0 ) {
             err_msg_ = "error : server socket is invalid" ;
             return false;
         }   
-        if(!SetSocketNonBlocking (context_.socket)) {
-            close(context_.socket);
+        if(!SetSocketNonBlocking (client_ctx_.socket)) {
+            close(client_ctx_.socket);
             return  false;
         }
         if(!is_buffer_init_ ) {
-            if(cumbuffer::OP_RSLT_OK != context_.recv_buffer.Init(max_data_len_) ) {
+            if(cumbuffer::OP_RSLT_OK != client_ctx_.recv_buffer.Init(max_data_len_) ) {
                 err_msg_ = std::string("cumBuffer Init error :") + 
-                           std::string(context_.recv_buffer.GetErrMsg());
-                close(context_.socket);
+                           std::string(client_ctx_.recv_buffer.GetErrMsg());
+                close(client_ctx_.socket);
                 return false;
             }
             is_buffer_init_ = true;
         } else {
             //in case of reconnect
-            context_.recv_buffer.ReSet(); 
+            client_ctx_.recv_buffer.ReSet(); 
         }
         struct timeval timeoutVal;
         timeoutVal.tv_sec  = connect_timeout_secs_ ;  
         timeoutVal.tv_usec = 0;
         int result = -1;
         if ( sock_usage_ == SOCK_USAGE_IPC_CLIENT ) {
-            result = connect(context_.socket,(SOCKADDR*)&ipc_conn_addr_, 
+            result = connect(client_ctx_.socket,(SOCKADDR*)&ipc_conn_addr_, 
                              (SOCKLEN_T)sizeof(SOCKADDR_UN)) ; 
         } else if ( sock_usage_ == SOCK_USAGE_TCP_CLIENT ) {
-            result = connect(context_.socket,(SOCKADDR*)&tcp_server_addr_,
+            result = connect(client_ctx_.socket,(SOCKADDR*)&tcp_server_addr_,
                              (SOCKLEN_T)sizeof(SOCKADDR_IN)) ;
         } else if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
-            if(!SetSockoptSndRcvBufUdp(context_.socket)) {
-                close(context_.socket);
+            if(!SetSockoptSndRcvBufUdp(client_ctx_.socket)) {
+                close(client_ctx_.socket);
                 return false;
             }
-            result = connect(context_.socket,(SOCKADDR*)&udp_server_addr_,
+            result = connect(client_ctx_.socket,(SOCKADDR*)&udp_server_addr_,
                              (SOCKLEN_T)sizeof(SOCKADDR_IN)) ;
         } else {
             err_msg_ = "invalid socket usage" ;
-            close(context_.socket);
+            close(client_ctx_.socket);
             return false;
         }
         if ( result < 0) {
             if (errno != EINPROGRESS) {
                 err_msg_ = "connect error [" + std::string(strerror(errno))+ "]";
-                close(context_.socket);
+                close(client_ctx_.socket);
                 return false;
             }
         }
@@ -891,35 +891,35 @@ protected :
         }
         fd_set   rset, wset;
         FD_ZERO(&rset);
-        FD_SET(context_.socket, &rset);
+        FD_SET(client_ctx_.socket, &rset);
         wset = rset;
-        result = select(context_.socket+1, &rset, &wset, NULL, &timeoutVal ) ;
+        result = select(client_ctx_.socket+1, &rset, &wset, NULL, &timeoutVal ) ;
         if (result == 0 ) {
             err_msg_ = "connect timeout";
-            close(context_.socket);
+            close(client_ctx_.socket);
             return false;
         } else if (result< 0) {
             err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
-            close(context_.socket);
+            close(client_ctx_.socket);
             return false;
         }
-        if (FD_ISSET(context_.socket, &rset) || FD_ISSET(context_.socket, &wset)) {
+        if (FD_ISSET(client_ctx_.socket, &rset) || FD_ISSET(client_ctx_.socket, &wset)) {
             int  socketerror = 0;
             SOCKLEN_T  len = sizeof(socketerror);
-            if (getsockopt(context_.socket, SOL_SOCKET, SO_ERROR, &socketerror, &len) < 0) {
+            if (getsockopt(client_ctx_.socket, SOL_SOCKET, SO_ERROR, &socketerror, &len) < 0) {
                 err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
-                close(context_.socket);
+                close(client_ctx_.socket);
                 return false;
             }
             if (socketerror) {
                 err_msg_ = "connect error [" + std::string(strerror(errno)) + "]";
-                close(context_.socket);
+                close(client_ctx_.socket);
                 return false;
             }
         } else {
             err_msg_ = "connect error : fd not set ";
             ELOG(err_msg_);
-            close(context_.socket);
+            close(client_ctx_.socket);
             return false;
         }
         is_connected_ = true;
@@ -935,7 +935,7 @@ protected :
             kq_fd_ = kqueue();
             if (kq_fd_ == -1) {
                 err_msg_ = "kqueue error ["  + std::string(strerror(errno)) + "]";
-                close(context_.socket);
+                close(client_ctx_.socket);
                 return false;
             }
 #elif __linux__
@@ -944,20 +944,20 @@ protected :
             ep_fd_ = epoll_create1(0);
             if ( ep_fd_== -1) {
                 err_msg_ = "epoll create error ["  + std::string(strerror(errno)) + "]";
-                close(context_.socket);
+                close(client_ctx_.socket);
                 return false;
             }
 #endif
 
 #ifdef __APPLE__
-            if(!ControlKq(&context_, EVFILT_READ, EV_ADD )) {
-                close(context_.socket);
+            if(!ControlKq(&client_ctx_, EVFILT_READ, EV_ADD )) {
+                close(client_ctx_.socket);
                 return false;
             }
 #elif __linux__
             // RunClientThread
-            if(!ControlEpoll( &context_, EPOLLIN  , EPOLL_CTL_ADD )) {
-                close(context_.socket);
+            if(!ControlEpoll( &client_ctx_, EPOLLIN  , EPOLL_CTL_ADD )) {
+                close(client_ctx_.socket);
                 return false;
             }
 #endif
@@ -996,7 +996,7 @@ protected :
 #elif __linux__
             if (ep_events_->events & EPOLLRDHUP || ep_events_->events & EPOLLERR) {
 #endif
-                close( context_.socket);
+                close( client_ctx_.socket);
                 InvokeServerDisconnectedHandler();
                 break;
             }
@@ -1007,15 +1007,15 @@ protected :
             else if (ep_events_->events & EPOLLIN) {
 #endif
                 if ( sock_usage_ == SOCK_USAGE_UDP_CLIENT ) {
-                    if(! RecvfromData(&context_) ) {
-                        close( context_.socket);
+                    if(! RecvfromData(&client_ctx_) ) {
+                        close( client_ctx_.socket);
                         InvokeServerDisconnectedHandler();
                         break;
                     }
                 } else {
                     // ClientThreadRoutine
-                    if(! RecvData(&context_) ) {
-                        close( context_.socket);
+                    if(! RecvData(&client_ctx_) ) {
+                        close( client_ctx_.socket);
                         InvokeServerDisconnectedHandler();
                         break;
                     }
@@ -1027,7 +1027,7 @@ protected :
 #elif __linux__
             else if (ep_events_->events & EPOLLOUT) {
 #endif
-                if(!SendPendingData(&context_)) {
+                if(!SendPendingData(&client_ctx_)) {
                     return; //error!
                 }
             }//send
