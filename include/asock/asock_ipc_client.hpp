@@ -2,13 +2,13 @@
 #define ASOCKIPCCLIENT_HPP
 
 #if defined __APPLE__ || defined __linux__
-#include "asock/internal/asock_nix.hpp"
+#include "asock/internal/asock_nix_client.hpp"
 #elif WIN32
-#include "asock/internal/asock_win.hpp"
+#include "asock/internal/asock_win_client.hpp"
 #endif
 
 namespace asock {
-class ASockIpcClient: public asock::ASockBase {
+class ASockIpcClient: public ASockClientBase {
 public :
 #if defined __APPLE__ || defined __linux__
     // - If you know the maximum data size you will be sending and receiving in advance, 

@@ -2,14 +2,15 @@
 #define ASOCKUDPSERVER_HPP
 
 #if defined __APPLE__ || defined __linux__
-#include "asock/internal/asock_nix.hpp"
+#include "asock/internal/asock_nix_server.hpp"
 #elif WIN32
-#include "asock/internal/asock_win.hpp"
+#include "asock/internal/asock_win_server.hpp"
 #endif
 
 namespace asock {
-class ASockUdpServer: public asock::ASockBase {
+class ASockUdpServer: public ASockServerBase {
 public :
+    virtual ~ASockUdpServer(){}
     // In case of UDP, you need to know the maximum receivable size in advance
     // and allocate a buffer.
     bool RunUdpServer(const char* bind_ip, size_t bind_port, size_t max_data_len,

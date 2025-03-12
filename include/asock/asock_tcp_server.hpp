@@ -2,14 +2,15 @@
 #define ASOCKTCPSERVER_HPP
 
 #if defined __APPLE__ || defined __linux__
-#include "asock/internal/asock_nix.hpp"
+#include "asock/internal/asock_nix_server.hpp"
 #elif WIN32
-#include "asock/internal/asock_win.hpp"
+#include "asock/internal/asock_win_server.hpp"
 #endif
 
 namespace asock {
-class ASockTcpServer: public asock::ASockBase {
+class ASockTcpServer: public ASockServerBase {
 public :
+    virtual ~ASockTcpServer(){}
     //-------------------------------------------------------------------------
     // - If you know the maximum data size you will be sending and receiving in advance,
     //   it is better to allocate a buffer large enough to match that.
