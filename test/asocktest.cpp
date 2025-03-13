@@ -14,7 +14,9 @@
 // make buffer insufficient for test
 #define INSUFFICIENT_BUFFER_SIZE (10 + 20) // HEADER_SIZE(10) + user_data(20)
 
-class ServerTcpTest : public asock::ASockTcpServer  {
+////////////////////////////////////////////////////////////////////////////////
+template <typename Base>
+class Server : public Base {
   public:
     std::string cli_msg_ = "";
   private:
@@ -24,80 +26,17 @@ class ServerTcpTest : public asock::ASockTcpServer  {
         memcpy(&packet, data_ptr, len);
         packet[len] = '\0';
         cli_msg_ = packet;
-        if (!SendData(  ctx_ptr, data_ptr, len)) {
-            ELOG("error! "<< GetLastErrMsg());
+        if (!this->SendData(  ctx_ptr, data_ptr, len)) {
+            ELOG("error! "<< this->GetLastErrMsg());
             return false;
         }
         return true;
     }
 };
 
-class ClientTcpTest : public asock::ASockTcpClient  {
-  public:
-    std::string svr_res_ = "";
-  private:
-    bool OnRecvedCompleteData(asock::Context*,
-                              const char* const data_ptr, size_t len) override {
-        char packet[BUFFER_SIZE];
-        memcpy(&packet, data_ptr,len);
-        packet[len] = '\0';
-        svr_res_ = packet;
-        return true;
-    }
-};
-
-class ServerIpcTest : public asock::ASockIpcServer {
-  public:
-    std::string cli_msg_ = "";
-  private:
-    bool OnRecvedCompleteData(asock::Context* ctx_ptr,
-                              const char* const data_ptr, size_t len) override {
-        char packet[BUFFER_SIZE];
-        memcpy(&packet, data_ptr, len);
-        packet[len] = '\0';
-        cli_msg_ = packet;
-        if (!SendData(ctx_ptr, data_ptr, len)) {
-            ELOG("error! "<< GetLastErrMsg());
-            return false;
-        }
-        return true;
-    }
-};
-
-class ClientIpcTest : public asock::ASockIpcClient {
-  public:
-    std::string svr_res_ = "";
-  private:
-    bool OnRecvedCompleteData(asock::Context*,
-                              const char* const data_ptr, size_t len) override {
-        char packet[BUFFER_SIZE]; 
-        memcpy(&packet, data_ptr,len);
-        packet[len] = '\0';
-        svr_res_ = packet;
-        return true;
-    }
-};
-
-//////////////////////////////////////////////////////////////////////// UDP
-class ServerUdpTest : public asock::ASockUdpServer {
-  public:
-    std::string cli_msg_ = "";
-  private:
-    bool OnRecvedCompleteData(asock::Context* ctx_ptr,
-                              const char* const data_ptr, size_t len) override {
-        char packet[BUFFER_SIZE];
-        memcpy(&packet, data_ptr, len);
-        packet[len] = '\0';
-        cli_msg_ = packet;
-        if (!SendData(ctx_ptr, data_ptr, len)) {
-            ELOG( "error! "<< GetLastErrMsg());
-            return false;
-        }
-        return true;
-    }
-};
-
-class ClientUdpTest : public asock::ASockUdpClient {
+////////////////////////////////////////////////////////////////////////////////
+template <typename Base>
+class Client : public Base {
   public:
     std::string svr_res_ = "";
   private:
@@ -115,8 +54,8 @@ class ClientUdpTest : public asock::ASockUdpClient {
 TEST(AllTest, SendRecv) {
 	std::string test_msg(25, 'x');
 	//----------------------------------- buffer test
-	ServerTcpTest serverTcp1;
-	ClientTcpTest clientTcp1;
+    Server<asock::ASockTcpServer> serverTcp1;
+    Client<asock::ASockTcpClient> clientTcp1;
 	EXPECT_TRUE(serverTcp1.RunTcpServer("127.0.0.1", 9990, INSUFFICIENT_BUFFER_SIZE));
 	EXPECT_TRUE(clientTcp1.InitTcpClient("127.0.0.1", 9990, 3, INSUFFICIENT_BUFFER_SIZE));
     EXPECT_TRUE(clientTcp1.SendToServer(test_msg.c_str(), test_msg.length()));
@@ -128,8 +67,8 @@ TEST(AllTest, SendRecv) {
 	clientTcp1.Disconnect();
 	serverTcp1.StopServer();
 	//----------------------------------- tcp test
-	ServerTcpTest serverTcp2;
-	ClientTcpTest clientTcp2;
+    Server<asock::ASockTcpServer> serverTcp2;
+    Client<asock::ASockTcpClient> clientTcp2;
 	EXPECT_TRUE(serverTcp2.RunTcpServer("127.0.0.1", 9990));
 	EXPECT_TRUE(clientTcp2.InitTcpClient("127.0.0.1", 9990));
 	EXPECT_TRUE(clientTcp2.SendToServer(test_msg.c_str(),test_msg.length()));
@@ -138,11 +77,11 @@ TEST(AllTest, SendRecv) {
 	LOG( "    ==> cli : [" << clientTcp2.svr_res_ << " len : " << clientTcp2.svr_res_.length() <<"]");
     EXPECT_EQ(serverTcp2.cli_msg_, test_msg);
     EXPECT_EQ(clientTcp2.svr_res_, test_msg);
-	clientTcp2.Disconnect(); 
+	clientTcp2.Disconnect();
 	serverTcp2.StopServer();
 	//----------------------------------- udp test
-	ServerUdpTest serverUdp;
-	ClientUdpTest clientUdp;
+    Server<asock::ASockUdpServer> serverUdp;
+    Client<asock::ASockUdpClient> clientUdp;
     EXPECT_TRUE(serverUdp.RunUdpServer("127.0.0.1", 9990, BUFFER_SIZE));
 	EXPECT_TRUE(clientUdp.InitUdpClient("127.0.0.1", 9990, BUFFER_SIZE));
 	EXPECT_TRUE(clientUdp.SendToServer(test_msg.c_str(), test_msg.length()));
@@ -151,11 +90,11 @@ TEST(AllTest, SendRecv) {
 	LOG("    ==> cli : [" << clientUdp.svr_res_ << " len : " << clientUdp.svr_res_.length()<<"]");
     EXPECT_EQ(serverUdp.cli_msg_, test_msg);
     EXPECT_EQ(clientUdp.svr_res_, test_msg);
-	clientUdp.Disconnect(); 
+	clientUdp.Disconnect();
 	serverUdp.StopServer();
     //----------------------------------- ipc test
-	ServerIpcTest serverIpc;
-	ClientIpcTest clientIpc;
+    Server<asock::ASockIpcServer> serverIpc;
+    Client<asock::ASockIpcClient> clientIpc;
     EXPECT_TRUE(serverIpc.RunIpcServer(TEST_IPC_PATH));
 	EXPECT_TRUE(clientIpc.InitIpcClient(TEST_IPC_PATH));
     EXPECT_TRUE(clientIpc.SendToServer(test_msg.c_str(), test_msg.length()));
