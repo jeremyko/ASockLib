@@ -67,7 +67,7 @@ WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent la
   ```
 
 ## Sample code
-The following is an tcp echo example using class inheritance. See the sample folder for all examples. 
+The following is a tcp echo example using class inheritance. See the sample folder for all examples. 
 You can find composition usage and udp, domain socket example too.
 
 ### tcp echo server
