@@ -4,8 +4,8 @@
 
 **A C++11 header-only, simple and easy cross-platform socket library.**
 
-- Supports TCP, UDP, DOMAIN SOCKET(DS).
-- It performs buffering internally(TCP,DS).
+- Supports TCP, UDP and Unix Domain Socket(UDS).
+- It performs buffering internally(TCP,UDS).
 - When all user data is received, the user-specified callback is called.
 - No repeat send calls until all are sent. When send returns
 WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent later.
