@@ -38,7 +38,7 @@ WSAEWOULDBLOCK / EWOULDBLOCK / EAGAIN, It will be added to the queue and sent la
   fetchcontent_makeavailable(asock)
   ```
   
-- ### Option 3: Using vcpkg
+- ### Option 3: Using [vcpkg](https://github.com/microsoft/vcpkg)
 
   ```
   vcpkg install asock
